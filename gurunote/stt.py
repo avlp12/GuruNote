@@ -1,0 +1,311 @@
+"""
+Step 2: 음성 인식 + 화자 분리 (Speaker Diarization).
+
+기본 엔진은 **Microsoft VibeVoice-ASR** (오픈소스, MIT, 화자/타임스탬프/도메인
+핫워드를 단일 패스로 처리). VibeVoice 가 설치돼 있지 않거나 GPU 메모리가
+부족해 로딩에 실패하면 **AssemblyAI Cloud API** 로 자동 폴백한다.
+
+두 엔진 모두 결과를 `gurunote.types.Transcript` 형태로 정규화해 반환하므로
+LLM/요약 단계는 어느 엔진을 썼는지 신경 쓰지 않아도 된다.
+"""
+
+from __future__ import annotations
+
+import os
+import re
+from typing import Callable, List, Optional
+
+from gurunote.types import Segment, Transcript
+
+# 진행 상태 콜백 시그니처: (메시지: str) -> None
+ProgressFn = Callable[[str], None]
+
+
+# IT/AI 도메인 핫워드 — VibeVoice 의 customized context 로 주입할 용어 목록.
+# 정확도(특히 고유명사 + 약어)를 끌어올리는 핵심 무기.
+IT_AI_HOTWORDS: List[str] = [
+    # 모델/연구실
+    "OpenAI", "Anthropic", "DeepMind", "Google DeepMind", "Meta AI", "xAI",
+    "Mistral", "Cohere", "Hugging Face", "NVIDIA",
+    # 인물
+    "Sam Altman", "Dario Amodei", "Demis Hassabis", "Yann LeCun",
+    "Andrej Karpathy", "Ilya Sutskever", "Geoffrey Hinton", "Lex Fridman",
+    # 모델명
+    "GPT-4", "GPT-4o", "GPT-5", "Claude", "Claude Sonnet", "Claude Opus",
+    "Gemini", "Llama", "Mistral", "Mixtral", "Qwen", "DeepSeek", "o1", "o3",
+    # 기술 용어
+    "LLM", "RAG", "Fine-tuning", "Pretraining", "Transformer",
+    "Attention", "Embedding", "Tokenizer", "Inference", "Quantization",
+    "Diffusion", "Multimodal", "Agent", "Tool use", "MCP",
+    "Reinforcement Learning", "RLHF", "Chain of Thought", "Mixture of Experts",
+    "Context window", "Hallucination", "Alignment", "AGI", "ASI",
+    # 인프라
+    "CUDA", "TPU", "GPU", "H100", "A100", "PyTorch", "JAX", "TensorRT",
+]
+
+
+# =============================================================================
+# Public API
+# =============================================================================
+def transcribe(
+    audio_path: str,
+    engine: str = "auto",
+    progress: Optional[ProgressFn] = None,
+    hotwords: Optional[List[str]] = None,
+) -> Transcript:
+    """
+    오디오 파일을 화자 분리된 Transcript 로 변환한다.
+
+    Args:
+        audio_path: 로컬 오디오 파일 경로 (mp3/wav/m4a/flac …)
+        engine: "vibevoice" | "assemblyai" | "auto"
+        progress: 진행 메시지 콜백 (Streamlit 등)
+        hotwords: 도메인 핫워드. None 이면 IT_AI_HOTWORDS 기본값 사용.
+
+    Returns:
+        Transcript — 정규화된 화자 분리 스크립트
+    """
+    log = progress or (lambda _msg: None)
+    engine = (engine or "auto").lower().strip()
+    hotwords = hotwords if hotwords is not None else IT_AI_HOTWORDS
+
+    if engine == "vibevoice":
+        return _transcribe_vibevoice(audio_path, log=log, hotwords=hotwords)
+
+    if engine == "assemblyai":
+        return _transcribe_assemblyai(audio_path, log=log)
+
+    # auto: VibeVoice 우선, 실패 시 AssemblyAI 폴백
+    try:
+        log("🚀 기본 엔진 VibeVoice-ASR 로 전사를 시도합니다…")
+        return _transcribe_vibevoice(audio_path, log=log, hotwords=hotwords)
+    except Exception as exc:  # noqa: BLE001
+        log(f"⚠️ VibeVoice 사용 불가 ({exc}). AssemblyAI 로 폴백합니다…")
+        return _transcribe_assemblyai(audio_path, log=log)
+
+
+# =============================================================================
+# VibeVoice-ASR 엔진 (오픈소스, GPU 권장)
+# =============================================================================
+_VIBEVOICE_SINGLETON: dict = {}  # 모델은 한번만 로드해 캐시
+
+
+def _load_vibevoice():
+    """VibeVoice 모델 + 프로세서를 lazy-load 후 캐시."""
+    if _VIBEVOICE_SINGLETON.get("ready"):
+        return _VIBEVOICE_SINGLETON["model"], _VIBEVOICE_SINGLETON["processor"], _VIBEVOICE_SINGLETON["device"]
+
+    import torch
+    from vibevoice.modular.modeling_vibevoice_asr import (  # type: ignore
+        VibeVoiceASRForConditionalGeneration,
+    )
+    from vibevoice.processor.vibevoice_asr_processor import (  # type: ignore
+        VibeVoiceASRProcessor,
+    )
+
+    model_id = os.environ.get("VIBEVOICE_MODEL_ID", "microsoft/VibeVoice-ASR")
+
+    # 디바이스 자동 선택
+    if torch.cuda.is_available():
+        device = "cuda"
+        dtype = torch.bfloat16
+        try:
+            import flash_attn  # noqa: F401
+            attn_impl = "flash_attention_2"
+        except ImportError:
+            attn_impl = "sdpa"
+    elif getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
+        device = "mps"
+        dtype = torch.float16
+        attn_impl = "sdpa"
+    else:
+        device = "cpu"
+        dtype = torch.float32
+        attn_impl = "sdpa"
+
+    processor = VibeVoiceASRProcessor.from_pretrained(
+        model_id,
+        language_model_pretrained_name="Qwen/Qwen2.5-7B",
+    )
+    model = VibeVoiceASRForConditionalGeneration.from_pretrained(
+        model_id,
+        dtype=dtype,
+        attn_implementation=attn_impl,
+        trust_remote_code=True,
+    ).to(device)
+    model.eval()
+
+    _VIBEVOICE_SINGLETON.update(
+        {"model": model, "processor": processor, "device": device, "ready": True}
+    )
+    return model, processor, device
+
+
+def _transcribe_vibevoice(
+    audio_path: str, log: ProgressFn, hotwords: List[str]
+) -> Transcript:
+    """VibeVoice-ASR 로 전사."""
+    import torch
+
+    log("📦 VibeVoice 모델 로딩 중 (최초 1회는 수 GB 다운로드 필요)…")
+    model, processor, device = _load_vibevoice()
+    log(f"✅ 모델 로딩 완료 (device={device})")
+
+    log("🎧 오디오 인코딩 중…")
+    # 핫워드를 VibeVoice 의 `context_info` 로 주입 — 프로세서가 user prompt 의
+    # "extra info" 자리에 그대로 흘려보내 도메인 용어/고유명사 인식률을 끌어올린다.
+    context_info = _build_context_info(hotwords)
+    if context_info:
+        log(f"🧠 도메인 핫워드 {len(hotwords)} 개를 컨텍스트로 주입합니다.")
+
+    # processor 가 파일 경로 리스트를 받아 자동으로 디코딩한다.
+    inputs = processor(
+        audio=[audio_path],
+        sampling_rate=None,
+        return_tensors="pt",
+        padding=True,
+        add_generation_prompt=True,
+        context_info=context_info,
+    )
+    inputs = {
+        k: (v.to(device) if isinstance(v, torch.Tensor) else v)
+        for k, v in inputs.items()
+    }
+
+    log("🧠 VibeVoice 추론 중 (긴 영상은 수 분 소요)…")
+    with torch.no_grad():
+        output_ids = model.generate(
+            **inputs,
+            max_new_tokens=32768,
+            do_sample=False,
+            num_beams=1,
+            pad_token_id=processor.pad_id,
+            eos_token_id=processor.tokenizer.eos_token_id,
+        )
+
+    input_length = inputs["input_ids"].shape[1]
+    generated = output_ids[0, input_length:]
+    eos_pos = (generated == processor.tokenizer.eos_token_id).nonzero(as_tuple=True)[0]
+    if len(eos_pos) > 0:
+        generated = generated[: eos_pos[0] + 1]
+    raw_text = processor.decode(generated, skip_special_tokens=True)
+
+    log("🧩 결과 파싱 중…")
+    try:
+        raw_segments = processor.post_process_transcription(raw_text)
+    except Exception:  # noqa: BLE001
+        raw_segments = []
+
+    segments = _normalize_vibevoice_segments(raw_segments, raw_text)
+    log(f"✅ VibeVoice 전사 완료 — {len(segments)} 세그먼트")
+
+    return Transcript(
+        segments=segments,
+        engine="vibevoice",
+        raw={"text": raw_text, "segments": raw_segments},
+    )
+
+
+def _normalize_vibevoice_segments(raw_segments, raw_text: str) -> List[Segment]:
+    """
+    VibeVoice 의 segment dict (start_time, end_time, speaker_id, text) 를
+    공통 Segment 로 변환. 파싱 실패 시 raw_text 전체를 한 세그먼트로 폴백.
+    """
+    segments: List[Segment] = []
+    for seg in raw_segments or []:
+        try:
+            segments.append(
+                Segment(
+                    speaker=str(seg.get("speaker_id", "1")),
+                    start=_to_seconds(seg.get("start_time", 0)),
+                    end=_to_seconds(seg.get("end_time", 0)),
+                    text=str(seg.get("text", "")).strip(),
+                )
+            )
+        except Exception:  # noqa: BLE001
+            continue
+
+    if not segments and raw_text.strip():
+        segments.append(Segment(speaker="1", start=0.0, end=0.0, text=raw_text.strip()))
+    return segments
+
+
+def _build_context_info(hotwords: Optional[List[str]]) -> Optional[str]:
+    """
+    핫워드 리스트 → VibeVoice processor 의 `context_info` 문자열.
+
+    프로세서는 비어있지 않은 문자열을 user prompt 의 "extra info" 위치에 끼워
+    넣어 디코딩 시 도메인 단어 편향을 만든다. None/빈 리스트면 None 반환.
+    """
+    if not hotwords:
+        return None
+    cleaned = [w.strip() for w in hotwords if w and w.strip()]
+    if not cleaned:
+        return None
+    return "Domain hotwords (proper nouns, technical terms): " + ", ".join(cleaned)
+
+
+def _to_seconds(value) -> float:
+    """초(float) 또는 'HH:MM:SS' / 'MM:SS' / 'MM:SS.mmm' 문자열 → float."""
+    if value is None:
+        return 0.0
+    if isinstance(value, (int, float)):
+        return float(value)
+    s = str(value).strip()
+    if not s:
+        return 0.0
+    if re.fullmatch(r"\d+(\.\d+)?", s):
+        return float(s)
+    parts = s.split(":")
+    try:
+        parts = [float(p) for p in parts]
+    except ValueError:
+        return 0.0
+    if len(parts) == 3:
+        h, m, sec = parts
+        return h * 3600 + m * 60 + sec
+    if len(parts) == 2:
+        m, sec = parts
+        return m * 60 + sec
+    return parts[0]
+
+
+# =============================================================================
+# AssemblyAI 폴백 엔진
+# =============================================================================
+def _transcribe_assemblyai(audio_path: str, log: ProgressFn) -> Transcript:
+    api_key = os.environ.get("ASSEMBLYAI_API_KEY")
+    if not api_key:
+        raise RuntimeError(
+            "AssemblyAI 폴백을 쓰려면 .env 에 ASSEMBLYAI_API_KEY 를 설정해야 합니다."
+        )
+
+    import assemblyai as aai  # type: ignore
+
+    aai.settings.api_key = api_key
+    config = aai.TranscriptionConfig(speaker_labels=True)
+
+    log("☁️ AssemblyAI 에 업로드 후 화자 분리 전사 중…")
+    transcriber = aai.Transcriber()
+    result = transcriber.transcribe(audio_path, config=config)
+
+    if result.status == aai.TranscriptStatus.error:
+        raise RuntimeError(f"AssemblyAI 에러: {result.error}")
+
+    segments: List[Segment] = []
+    for utt in result.utterances or []:
+        segments.append(
+            Segment(
+                speaker=str(utt.speaker),
+                start=float(utt.start) / 1000.0,  # ms → s
+                end=float(utt.end) / 1000.0,
+                text=(utt.text or "").strip(),
+            )
+        )
+
+    log(f"✅ AssemblyAI 전사 완료 — {len(segments)} 세그먼트")
+    return Transcript(
+        segments=segments,
+        engine="assemblyai",
+        raw={"id": result.id, "status": str(result.status)},
+    )

@@ -152,6 +152,12 @@ def _transcribe_vibevoice(
     log(f"✅ 모델 로딩 완료 (device={device})")
 
     log("🎧 오디오 인코딩 중…")
+    # 핫워드를 VibeVoice 의 `context_info` 로 주입 — 프로세서가 user prompt 의
+    # "extra info" 자리에 그대로 흘려보내 도메인 용어/고유명사 인식률을 끌어올린다.
+    context_info = _build_context_info(hotwords)
+    if context_info:
+        log(f"🧠 도메인 핫워드 {len(hotwords)} 개를 컨텍스트로 주입합니다.")
+
     # processor 가 파일 경로 리스트를 받아 자동으로 디코딩한다.
     inputs = processor(
         audio=[audio_path],
@@ -159,6 +165,7 @@ def _transcribe_vibevoice(
         return_tensors="pt",
         padding=True,
         add_generation_prompt=True,
+        context_info=context_info,
     )
     inputs = {
         k: (v.to(device) if isinstance(v, torch.Tensor) else v)
@@ -221,6 +228,21 @@ def _normalize_vibevoice_segments(raw_segments, raw_text: str) -> List[Segment]:
     if not segments and raw_text.strip():
         segments.append(Segment(speaker="1", start=0.0, end=0.0, text=raw_text.strip()))
     return segments
+
+
+def _build_context_info(hotwords: Optional[List[str]]) -> Optional[str]:
+    """
+    핫워드 리스트 → VibeVoice processor 의 `context_info` 문자열.
+
+    프로세서는 비어있지 않은 문자열을 user prompt 의 "extra info" 위치에 끼워
+    넣어 디코딩 시 도메인 단어 편향을 만든다. None/빈 리스트면 None 반환.
+    """
+    if not hotwords:
+        return None
+    cleaned = [w.strip() for w in hotwords if w and w.strip()]
+    if not cleaned:
+        return None
+    return "Domain hotwords (proper nouns, technical terms): " + ", ".join(cleaned)
 
 
 def _to_seconds(value) -> float:

@@ -1,0 +1,6 @@
+streamlit>=1.32
+yt-dlp>=2024.3.10
+assemblyai>=0.26
+openai>=1.30
+anthropic>=0.25
+python-dotenv>=1.0

@@ -72,8 +72,16 @@ class LLMConfig:
     api_key: str
 
     @classmethod
-    def from_env(cls) -> "LLMConfig":
-        provider = os.environ.get("LLM_PROVIDER", "openai").lower().strip()
+    def from_env(cls, provider: Optional[str] = None) -> "LLMConfig":
+        """
+        환경변수에서 LLMConfig 를 생성한다.
+
+        provider 인자를 명시하면 그 값이 우선이고, 없으면 LLM_PROVIDER 환경변수를
+        쓴다. 이 인자 덕분에 호출자는 process-wide `os.environ` 을 건드리지
+        않고도 요청별로 provider 를 바꿀 수 있다 (Streamlit 같은 멀티 세션
+        환경에서 race condition 회피).
+        """
+        provider = (provider or os.environ.get("LLM_PROVIDER", "openai")).lower().strip()
         if provider == "anthropic":
             return cls(
                 provider="anthropic",
@@ -127,10 +135,19 @@ def _call_llm(config: LLMConfig, system: str, user: str, max_tokens: int = 4096)
 # =============================================================================
 # 청크 분할 (PRD §5 - 토큰 제한 방지)
 # =============================================================================
+# 토큰 예산 ----------------------------------------------------------------
 # 1 token ≈ 4 chars (영어 기준 보수적 추정).
-# gpt-4o context 128k 지만 안전 마진 + 응답 토큰 여유를 고려해 청크 당
-# ~6000 토큰 (약 24000 chars) 수준으로 자른다.
-DEFAULT_CHUNK_CHAR_LIMIT = 24_000
+# 한국어 번역은 보통 영어 입력보다 토큰을 1.0~1.3배 더 쓴다는 점, 그리고
+# gpt-4o / claude-3.5-sonnet 의 응답 한도(8192) 안에 안전하게 들어와야 한다는
+# 점을 같이 고려해 청크 입력을 ~12000 chars (≈ 3000 토큰) 로 잡는다.
+# 이러면 출력은 최대 ~4000 토큰 수준에서 형성되며 TRANSLATION_MAX_TOKENS=8192
+# 안에 충분히 들어와 mid-script truncation 위험이 사라진다.
+DEFAULT_CHUNK_CHAR_LIMIT = 12_000
+
+# 번역/요약 호출의 응답 토큰 상한 (gpt-4o 16384, claude-3.5-sonnet 8192 둘 다
+# 수용 가능한 안전한 값).
+TRANSLATION_MAX_TOKENS = 8192
+SUMMARY_MAX_TOKENS = 4096
 
 
 def chunk_segments(
@@ -191,7 +208,7 @@ def translate_transcript(
             config,
             system=TRANSLATION_SYSTEM_PROMPT,
             user=user_block,
-            max_tokens=4096,
+            max_tokens=TRANSLATION_MAX_TOKENS,
         )
         translated_parts.append(translated)
 
@@ -232,7 +249,7 @@ def summarize_translation(
                     system=system,
                     user="다음 부분 번역본의 핵심 인사이트와 타임라인만 요약해:\n\n"
                     + "\n\n".join(buf),
-                    max_tokens=2048,
+                    max_tokens=SUMMARY_MAX_TOKENS,
                 )
                 partials.append(partial)
                 buf = []
@@ -246,7 +263,7 @@ def summarize_translation(
                     system=system,
                     user="다음 부분 번역본의 핵심 인사이트와 타임라인만 요약해:\n\n"
                     + "\n\n".join(buf),
-                    max_tokens=2048,
+                    max_tokens=SUMMARY_MAX_TOKENS,
                 )
             )
         merged_user = (
@@ -254,7 +271,11 @@ def summarize_translation(
             "최종 요약본을 한 번 더 정리해 줘.\n\n" + "\n\n---\n\n".join(partials)
         )
         log("📝 부분 요약 통합 중…")
-        return _call_llm(config, system=system, user=merged_user, max_tokens=2048).strip()
+        return _call_llm(
+            config, system=system, user=merged_user, max_tokens=SUMMARY_MAX_TOKENS
+        ).strip()
 
     log("📝 GuruNote 요약본 생성 중…")
-    return _call_llm(config, system=system, user=translated_text, max_tokens=2048).strip()
+    return _call_llm(
+        config, system=system, user=translated_text, max_tokens=SUMMARY_MAX_TOKENS
+    ).strip()

@@ -144,8 +144,9 @@ def run_pipeline(url: str, engine: str, provider: str) -> None:
 
             # ----- Step 3: LLM 번역 -----
             st.write("🌐 **Step 3.** LLM 한국어 번역 (청크 분할)…")
-            os.environ["LLM_PROVIDER"] = provider  # 사이드바 선택을 env 로 주입
-            llm_cfg = LLMConfig.from_env()
+            # 사이드바 선택을 request-local 하게 주입 (process env 는 절대 건드리지
+            # 않음 — Streamlit 동시 세션에서 race 가 나지 않도록).
+            llm_cfg = LLMConfig.from_env(provider=provider)
             translated = translate_transcript(transcript, config=llm_cfg, progress=log)
             st.write(f"✅ 번역 완료 ({len(translated):,} chars)")
 

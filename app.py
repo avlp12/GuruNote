@@ -3,38 +3,43 @@ GuruNote 🎙️ — 글로벌 IT/AI 구루들의 인사이트
 ============================================
 
 해외 IT/AI 권위자(Guru)들의 유튜브 인터뷰/팟캐스트 링크를 입력하면
-오디오 추출 → 화자 분리 STT → 한국어 번역 → 마크다운 요약까지
-자동으로 만들어주는 Streamlit 웹 앱.
-
-이 파일은 PRD 의 **Step 1 (오디오 다운로드)** 단계 뼈대 구현이다.
-Step 2~5 (AssemblyAI STT, LLM 번역/요약, 결과 내보내기) 는
-이후 커밋에서 점진적으로 추가된다.
+오디오 추출 → **VibeVoice-ASR** 화자 분리 STT → LLM 한국어 번역 →
+GuruNote 스타일 마크다운 요약까지 단번에 만들어주는 Streamlit 웹 앱.
 
 요구사항:
     - Python 3.10+
-    - ffmpeg (yt-dlp 가 오디오 포맷 변환 시 필요한 시스템 의존성)
+    - ffmpeg (yt-dlp 의 mp3 변환)
+    - GPU (VibeVoice-ASR 7B 추론에 권장. 없으면 AssemblyAI 폴백)
     - requirements.txt 의 패키지들
+
+실행:
+    streamlit run app.py
 """
 
 from __future__ import annotations
 
 import os
 import tempfile
-from pathlib import Path
 
 import streamlit as st
-import yt_dlp
 from dotenv import load_dotenv
 
+from gurunote.audio import (
+    AudioDownloadResult,
+    cleanup_dir,
+    download_audio,
+    is_probably_youtube_url,
+)
+from gurunote.exporter import build_gurunote_markdown, sanitize_filename
+from gurunote.llm import LLMConfig, summarize_translation, translate_transcript
+from gurunote.stt import transcribe
+from gurunote.types import Transcript
+
 # -----------------------------------------------------------------------------
-# 환경변수 로드 (Step 2~ 에서 API 키 사용 대비)
+# 부팅
 # -----------------------------------------------------------------------------
 load_dotenv()
 
-
-# -----------------------------------------------------------------------------
-# 페이지 설정 & 브랜딩
-# -----------------------------------------------------------------------------
 st.set_page_config(
     page_title="GuruNote 🎙️",
     page_icon="🎙️",
@@ -43,115 +48,195 @@ st.set_page_config(
 )
 
 
+# -----------------------------------------------------------------------------
+# 헤더 & 사이드바
+# -----------------------------------------------------------------------------
 def render_header() -> None:
-    """메인 헤더 + 부제 + 구분선."""
     st.title("GuruNote 🎙️: 글로벌 IT/AI 구루들의 인사이트")
     st.caption(
         "유튜브 링크 하나로 해외 IT/AI 팟캐스트와 인터뷰를 "
-        "화자 분리된 한국어 요약본으로 변환합니다."
+        "**화자 분리된 한국어 요약본**으로 변환합니다."
     )
     st.divider()
 
 
-def render_sidebar() -> None:
-    """사이드바: 앱 소개 + 사용법 + 파이프라인 진행 상태."""
+def render_sidebar() -> dict:
+    """사이드바 — 설정값을 dict 로 반환."""
     with st.sidebar:
         st.header("✨ GuruNote 란?")
         st.markdown(
-            "- **STT + 화자 분리** (AssemblyAI)\n"
-            "- **IT/AI 전문 톤 한국어 번역** (LLM)\n"
+            "- **STT + 화자 분리** — Microsoft VibeVoice-ASR (오픈소스)\n"
+            "- **IT/AI 전문 톤 한국어 번역** — gpt-4o / claude-3.5-sonnet\n"
             "- **인사이트 / 타임라인 / 전체 스크립트** 마크다운 요약\n"
             "- 결과를 `.md` 파일로 다운로드"
         )
+        st.divider()
+
+        st.subheader("⚙️ 설정")
+        engine_label = st.selectbox(
+            "STT 엔진",
+            options=["auto", "vibevoice", "assemblyai"],
+            index=0,
+            help=(
+                "auto: VibeVoice 가 가능하면 사용, 안되면 AssemblyAI 폴백 (권장).\n"
+                "vibevoice: 항상 VibeVoice-ASR (오픈소스, GPU 권장).\n"
+                "assemblyai: 항상 AssemblyAI Cloud API."
+            ),
+        )
+
+        env_provider = os.environ.get("LLM_PROVIDER", "openai")
+        provider = st.selectbox(
+            "LLM Provider",
+            options=["openai", "anthropic"],
+            index=0 if env_provider == "openai" else 1,
+        )
+
         st.divider()
         st.subheader("📋 사용법")
         st.markdown(
             "1. 유튜브 인터뷰/팟캐스트 URL 입력\n"
             "2. **GuruNote 생성하기** 클릭\n"
-            "3. 요약본·번역본·원문 탭에서 결과 확인\n"
-            "4. 마크다운 파일 다운로드"
+            "3. 결과 탭에서 요약/번역/원문 확인\n"
+            "4. `.md` 파일 다운로드"
         )
+
         st.divider()
-        st.subheader("🛠️ 파이프라인")
-        st.markdown(
-            "- ✅ Step 1 — 오디오 추출\n"
-            "- ⏳ Step 2 — STT + 화자 분리\n"
-            "- ⏳ Step 3 — LLM 번역\n"
-            "- ⏳ Step 4 — 요약본 생성\n"
-            "- ⏳ Step 5 — 결과 내보내기"
-        )
+        st.caption("Powered by VibeVoice-ASR · yt-dlp · Streamlit")
+
+        return {"engine": engine_label, "provider": provider}
 
 
 # -----------------------------------------------------------------------------
-# Step 1: 오디오 다운로드
+# 파이프라인 실행
 # -----------------------------------------------------------------------------
-def _is_probably_youtube_url(url: str) -> bool:
-    """엄격한 검증은 아니지만, 명백한 오타/빈값을 거른다."""
-    if not url:
-        return False
-    url = url.strip().lower()
-    return url.startswith(("http://", "https://")) and (
-        "youtube.com" in url or "youtu.be" in url
+def run_pipeline(url: str, engine: str, provider: str) -> None:
+    """Step 1 → Step 5 실행 + 세션 상태 저장."""
+    if not is_probably_youtube_url(url):
+        st.error("올바른 유튜브 URL 을 입력해주세요. (예: https://www.youtube.com/watch?v=...)")
+        return
+
+    tmp_dir = tempfile.mkdtemp(prefix="gurunote_")
+
+    try:
+        with st.status("GuruNote 파이프라인 실행 중...", expanded=True) as status:
+            log = lambda msg: st.write(msg)  # noqa: E731
+
+            # ----- Step 1: 오디오 다운로드 -----
+            st.write(f"📁 작업 폴더: `{tmp_dir}`")
+            st.write("⬇️ **Step 1.** yt-dlp 로 오디오 추출 중…")
+            audio: AudioDownloadResult = download_audio(url, tmp_dir)
+            audio_size_mb = os.path.getsize(audio.audio_path) / (1024 * 1024)
+            st.write(
+                f"✅ `{audio.video_title}` ({audio_size_mb:.1f} MB, "
+                f"{int(audio.duration_sec)}s)"
+            )
+
+            # ----- Step 2: STT + 화자 분리 -----
+            st.write("🎙️ **Step 2.** 화자 분리 STT (VibeVoice-ASR) …")
+            transcript: Transcript = transcribe(
+                audio.audio_path, engine=engine, progress=log
+            )
+            st.write(
+                f"✅ {len(transcript.segments)} 세그먼트, "
+                f"{len(transcript.speakers)} 화자, "
+                f"엔진=`{transcript.engine}`"
+            )
+
+            # ----- Step 3: LLM 번역 -----
+            st.write("🌐 **Step 3.** LLM 한국어 번역 (청크 분할)…")
+            os.environ["LLM_PROVIDER"] = provider  # 사이드바 선택을 env 로 주입
+            llm_cfg = LLMConfig.from_env()
+            translated = translate_transcript(transcript, config=llm_cfg, progress=log)
+            st.write(f"✅ 번역 완료 ({len(translated):,} chars)")
+
+            # ----- Step 4: 요약본 생성 -----
+            st.write("📝 **Step 4.** GuruNote 스타일 요약본 생성…")
+            summary_md = summarize_translation(
+                translated, title=audio.video_title, config=llm_cfg, progress=log
+            )
+            st.write("✅ 요약 완료")
+
+            # ----- Step 5: 마크다운 조립 -----
+            st.write("📦 **Step 5.** 마크다운 조립…")
+            full_md = build_gurunote_markdown(
+                title=audio.video_title,
+                webpage_url=audio.webpage_url,
+                summary_md=summary_md,
+                translated_text=translated,
+                transcript=transcript,
+                uploader=audio.uploader,
+                stt_engine=transcript.engine,
+            )
+            st.write("✅ 완료")
+
+            status.update(label="GuruNote 생성 완료 🎉", state="complete", expanded=False)
+
+        # 세션 상태에 저장 → 탭 렌더링에서 사용
+        st.session_state["result"] = {
+            "audio": audio,
+            "transcript": transcript,
+            "translated": translated,
+            "summary_md": summary_md,
+            "full_md": full_md,
+        }
+    except Exception as exc:  # noqa: BLE001
+        st.error(f"파이프라인 실행 중 오류: {exc}")
+        st.exception(exc)
+    finally:
+        # PRD §5 - 작업 완료 후 임시 오디오 파일 삭제
+        cleanup_dir(tmp_dir)
+
+
+# -----------------------------------------------------------------------------
+# 결과 렌더링
+# -----------------------------------------------------------------------------
+def render_results() -> None:
+    result = st.session_state.get("result")
+    if not result:
+        return
+
+    audio: AudioDownloadResult = result["audio"]
+    transcript: Transcript = result["transcript"]
+    translated: str = result["translated"]
+    summary_md: str = result["summary_md"]
+    full_md: str = result["full_md"]
+
+    st.divider()
+    st.subheader(f"🎉 결과: {audio.video_title}")
+
+    file_name = f"GuruNote_{sanitize_filename(audio.video_title)}.md"
+    st.download_button(
+        label="📥 GuruNote 마크다운 다운로드",
+        data=full_md.encode("utf-8"),
+        file_name=file_name,
+        mime="text/markdown",
+        type="primary",
     )
 
+    tab_summary, tab_translation, tab_original = st.tabs(
+        ["📌 GuruNote 요약본", "🇰🇷 전체 번역 스크립트", "🇺🇸 영어 원문"]
+    )
 
-def download_audio(url: str, out_dir: str) -> tuple[str, str]:
-    """
-    유튜브 URL 에서 오디오만 추출해 mp3 로 저장한다.
+    with tab_summary:
+        st.markdown(summary_md)
 
-    Args:
-        url: 유튜브 영상 URL
-        out_dir: 임시 출력 디렉토리
+    with tab_translation:
+        st.markdown(translated)
 
-    Returns:
-        (audio_path, video_title)
-            - audio_path: 다운로드된 mp3 파일의 절대 경로
-            - video_title: 영상 제목 (후속 단계의 파일명/요약 헤더에 재사용)
+    with tab_original:
+        for seg in transcript.segments:
+            from gurunote.types import _format_ts
 
-    Raises:
-        yt_dlp.utils.DownloadError: 다운로드 실패 시
-        FileNotFoundError: 변환 후 mp3 파일을 찾지 못한 경우
-    """
-    ydl_opts = {
-        "format": "bestaudio/best",
-        "outtmpl": os.path.join(out_dir, "%(id)s.%(ext)s"),
-        "postprocessors": [
-            {
-                "key": "FFmpegExtractAudio",
-                "preferredcodec": "mp3",
-                "preferredquality": "192",
-            }
-        ],
-        "quiet": True,
-        "noprogress": True,
-        "no_warnings": True,
-    }
-
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=True)
-
-    video_id = info.get("id", "audio")
-    video_title = info.get("title", "Untitled")
-    audio_path = os.path.join(out_dir, f"{video_id}.mp3")
-
-    if not os.path.exists(audio_path):
-        # 일부 케이스에서 확장자가 다르게 떨어질 수 있어 fallback 으로 폴더 스캔
-        candidates = list(Path(out_dir).glob(f"{video_id}.*"))
-        if not candidates:
-            raise FileNotFoundError(
-                f"오디오 파일을 찾을 수 없습니다: {out_dir} (id={video_id})"
-            )
-        audio_path = str(candidates[0])
-
-    return audio_path, video_title
+            ts = _format_ts(seg.start)
+            st.markdown(f"**[{ts}] Speaker {seg.speaker}:** {seg.text}")
 
 
 # -----------------------------------------------------------------------------
-# 메인 UI
+# 메인
 # -----------------------------------------------------------------------------
 def main() -> None:
     render_header()
-    render_sidebar()
+    settings = render_sidebar()
 
     st.subheader("🔗 유튜브 URL 입력")
     url = st.text_input(
@@ -159,53 +244,18 @@ def main() -> None:
         placeholder="https://www.youtube.com/watch?v=...",
         label_visibility="collapsed",
     )
-    submitted = st.button("GuruNote 생성하기", type="primary", use_container_width=False)
+    submitted = st.button("GuruNote 생성하기", type="primary")
 
-    if not submitted:
-        st.info("위에 유튜브 링크를 붙여 넣고 **GuruNote 생성하기** 버튼을 눌러주세요.")
-        return
+    if submitted:
+        run_pipeline(url, engine=settings["engine"], provider=settings["provider"])
 
-    if not _is_probably_youtube_url(url):
-        st.error("올바른 유튜브 URL 을 입력해주세요. (예: https://www.youtube.com/watch?v=...)")
-        return
+    render_results()
 
-    # 임시 폴더 생성 — TODO(Step 5): 파이프라인 종료 후 폴더 정리
-    tmp_dir = tempfile.mkdtemp(prefix="gurunote_")
-
-    with st.status("오디오 추출 중...", expanded=True) as status:
-        try:
-            st.write(f"📁 임시 작업 폴더: `{tmp_dir}`")
-            st.write("⬇️ yt-dlp 로 오디오만 다운로드 중...")
-            audio_path, video_title = download_audio(url, tmp_dir)
-            audio_size_mb = os.path.getsize(audio_path) / (1024 * 1024)
-            st.write(f"✅ 다운로드 완료: **{video_title}**")
-            st.write(f"🎧 파일 경로: `{audio_path}`  ({audio_size_mb:.1f} MB)")
-            status.update(label="오디오 추출 완료", state="complete", expanded=False)
-        except Exception as exc:  # noqa: BLE001 - UI 상단 표시용
-            status.update(label="오디오 추출 실패", state="error")
-            st.error(f"오디오 다운로드 중 오류가 발생했습니다: {exc}")
-            return
-
-    st.success(f"🎉 **{video_title}** 의 오디오를 성공적으로 추출했습니다.")
-
-    # Step 2~5 placeholder ----------------------------------------------------
     st.divider()
-    st.subheader("🚧 다음 단계 (개발 예정)")
-    st.info(
-        "Step 2 (AssemblyAI 화자 분리 STT), Step 3 (LLM 번역), "
-        "Step 4 (요약본 생성), Step 5 (마크다운 다운로드 + 임시파일 정리) 는 "
-        "이후 커밋에서 추가됩니다."
+    st.caption(
+        "Powered by **Microsoft VibeVoice-ASR** · OpenAI / Anthropic · yt-dlp · Streamlit"
     )
-
-
-# -----------------------------------------------------------------------------
-# 푸터
-# -----------------------------------------------------------------------------
-def render_footer() -> None:
-    st.divider()
-    st.caption("Powered by AssemblyAI · OpenAI / Anthropic · Streamlit · yt-dlp")
 
 
 if __name__ == "__main__":
     main()
-    render_footer()

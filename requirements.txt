@@ -1,6 +1,36 @@
+# =============================================================================
+# GuruNote 의존성
+# -----------------------------------------------------------------------------
+# 시스템 의존성:
+#   - ffmpeg (yt-dlp 의 mp3 변환)
+#   - CUDA / MPS / XPU (VibeVoice-ASR 추론 시 권장, CPU 도 동작은 함)
+# =============================================================================
+
+# --- UI ---
 streamlit>=1.32
+
+# --- 오디오 다운로드 ---
 yt-dlp>=2024.3.10
+
+# --- STT (Step 2) ---
+# Primary: VibeVoice-ASR (Microsoft, MIT License)
+#   화자 분리 + 타임스탬프 + 도메인 핫워드까지 단일 패스 지원.
+#   GitHub source 설치만 가능 (PyPI 미배포).
+vibevoice @ git+https://github.com/microsoft/VibeVoice.git
+torch>=2.2
+torchaudio>=2.2
+transformers>=4.45
+accelerate>=0.30
+soundfile>=0.12
+librosa>=0.10
+numpy>=1.26
+
+# Fallback: AssemblyAI Cloud API (GPU 없는 환경용)
 assemblyai>=0.26
+
+# --- LLM (Step 3~4) ---
 openai>=1.30
 anthropic>=0.25
+
+# --- 환경 설정 ---
 python-dotenv>=1.0

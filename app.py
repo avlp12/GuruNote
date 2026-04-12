@@ -33,7 +33,7 @@ from gurunote.audio import (
 from gurunote.exporter import build_gurunote_markdown, sanitize_filename
 from gurunote.llm import LLMConfig, summarize_translation, translate_transcript
 from gurunote.stt import transcribe
-from gurunote.types import Transcript
+from gurunote.types import Transcript, _format_ts
 
 # -----------------------------------------------------------------------------
 # 부팅
@@ -226,8 +226,6 @@ def render_results() -> None:
 
     with tab_original:
         for seg in transcript.segments:
-            from gurunote.types import _format_ts
-
             ts = _format_ts(seg.start)
             st.markdown(f"**[{ts}] Speaker {seg.speaker}:** {seg.text}")
 

@@ -8,6 +8,7 @@
 
 # --- UI ---
 streamlit>=1.32
+customtkinter>=5.2
 
 # --- 오디오 다운로드 ---
 yt-dlp>=2024.3.10

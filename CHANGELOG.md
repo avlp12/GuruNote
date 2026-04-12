@@ -13,6 +13,10 @@
   처리로 UI 블로킹 없음. 탭뷰(요약/번역/원문), 실시간 로그 패널, 네이티브
   파일 저장 대화상자 제공. `pyinstaller --windowed --onefile gui.py` 로
   `.app` / `.exe` 패키징 가능.
+- **GUI 설정 다이얼로그** — 헤더의 ⚙️ 버튼으로 모달 창 오픈. OpenAI /
+  Anthropic / AssemblyAI API 키와 모델명을 앱 안에서 입력·저장. 비밀번호
+  마스킹(•) + 👁 토글, `dotenv.set_key()` 로 `.env` 에 영속 + `os.environ`
+  즉시 반영. 파이프라인 실행 전 API 키 미설정 시 설정 화면으로 안내.
 
 ### Changed
 - **README 대폭 보강** — Gemini 리뷰 반영

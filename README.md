@@ -120,13 +120,32 @@ GURUNOTE_STT_ENGINE=auto
 
 ## ▶️ 실행
 
+### 방법 A — Streamlit 웹 앱
+
 ```bash
 streamlit run app.py
 ```
 
 브라우저가 열리면 유튜브 URL 을 입력하고 **GuruNote 생성하기** 버튼을 누릅니다.
-사이드바에서 STT 엔진(`auto` / `vibevoice` / `assemblyai`)과 LLM provider
-(`openai` / `anthropic`) 를 런타임에 선택할 수 있습니다.
+
+### 방법 B — CustomTkinter 데스크톱 앱
+
+```bash
+python gui.py
+```
+
+브라우저 없이 네이티브 창으로 동일한 파이프라인을 실행합니다.
+결과를 탭(요약/번역/원문)으로 확인하고, **파일 → 저장** 대화상자로 `.md` 를 내보냅니다.
+
+```bash
+# (선택) 독립 실행 파일로 패키징
+pip install pyinstaller
+pyinstaller --windowed --onefile gui.py
+# dist/gui.app (Mac) 또는 dist/gui.exe (Windows) 생성
+```
+
+두 방식 모두 사이드바/상단에서 STT 엔진(`auto` / `vibevoice` / `assemblyai`)과
+LLM provider(`openai` / `anthropic`) 를 런타임에 선택할 수 있습니다.
 
 > **최초 실행 안내:**
 > VibeVoice-ASR 엔진을 처음 사용할 때 Hugging Face Hub 에서 모델 가중치(약
@@ -140,7 +159,8 @@ streamlit run app.py
 
 ```
 GuruNote/
-├── app.py                   # Streamlit UI — 5 단계 파이프라인 오케스트레이션
+├── app.py                   # Streamlit 웹 UI
+├── gui.py                   # CustomTkinter 데스크톱 GUI
 ├── requirements.txt
 ├── .env.example
 ├── README.md

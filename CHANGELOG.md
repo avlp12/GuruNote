@@ -7,6 +7,19 @@
 
 ## [Unreleased]
 
+### Changed
+- **README 대폭 보강** — Gemini 리뷰 반영
+  - GPU VRAM 요구사항 구체화 (최소 16GB VRAM / Apple Silicon 32GB+)
+  - OS 별 ffmpeg 설치 명령어 (Mac/Windows/Ubuntu)
+  - 60 분 초과 팟캐스트 Edge Case 처리 방식 안내 (v0.1.0 제한 및 AssemblyAI 대안)
+  - 최초 실행 시 모델 다운로드 시간(14GB) 경고
+
+### Fixed
+- **LLM Rate Limit 방어** (`llm.py`) — `_call_llm` 에 지수 백오프(2s→4s→8s→16s)
+  재시도 로직 추가, 청크 번역 사이 1초 쿨다운 삽입으로 분당 요청 제한 회피
+- **VRAM 메모리 누수 방지** (`stt.py`) — VibeVoice 추론 완료 후 GPU 텐서 삭제
+  (`del inputs, output_ids`) + `torch.cuda.empty_cache()` 호출
+
 ## [0.1.0] - 2026-04-11
 
 초판. Step 1~5 의 전체 파이프라인이 한 번의 버튼 클릭으로 동작합니다.

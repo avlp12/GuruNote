@@ -190,6 +190,11 @@ def _transcribe_vibevoice(
         generated = generated[: eos_pos[0] + 1]
     raw_text = processor.decode(generated, skip_special_tokens=True)
 
+    # 추론 완료 후 GPU 메모리 즉시 반환 — OOM 위험을 줄인다.
+    del inputs, output_ids, generated
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
     log("🧩 결과 파싱 중…")
     try:
         raw_segments = processor.post_process_transcription(raw_text)

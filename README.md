@@ -41,6 +41,7 @@ GuruNote 는 해외 IT/AI 권위자(Guru)들의 유튜브 인터뷰/팟캐스트
    │
    ▼  [Step 2] VibeVoice-ASR (or AssemblyAI) — 화자 분리 전사
    │          └ IT/AI 핫워드를 context_info 로 주입
+   │          └ ⚠️ v0.1.0: 최대 60분 단일 패스 (초과 시 아래 참고)
    │
    ▼  [Step 3] LLM 청크 분할 번역 (gpt-4o / claude-3.5-sonnet)
    │          └ 화자 라벨 + 타임스탬프 보존
@@ -53,13 +54,29 @@ GuruNote 는 해외 IT/AI 권위자(Guru)들의 유튜브 인터뷰/팟캐스트
 GuruNote_<영상제목>.md
 ```
 
+> **60분 초과 팟캐스트 (Edge Case)**
+> VibeVoice-ASR 은 최대 60분 오디오를 단일 패스로 처리합니다. Lex Fridman
+> 인터뷰처럼 2~3시간짜리 장편 영상의 경우 현재 v0.1.0 에서는 **처음 60분만
+> 전사될 수 있습니다**. 향후 오디오를 60분 단위로 분할 → STT → 병합하는
+> 자동 청킹 기능을 추가할 예정입니다. 지금은 60분 이하의 영상에서 최적의
+> 결과를 얻을 수 있으며, 긴 영상은 `GURUNOTE_STT_ENGINE=assemblyai` 로
+> AssemblyAI 를 사용하면 길이 제한 없이 처리됩니다.
+
 ---
 
 ## ⚙️ 요구사항
 
 - **Python** 3.10 이상
-- **ffmpeg** (시스템 패키지, yt-dlp 의 mp3 변환에 필요)
-- **GPU 권장** — VibeVoice-ASR 7B 추론에 CUDA / MPS / XPU 중 하나. GPU 가 없으면 `engine=auto` 가 자동으로 AssemblyAI 폴백으로 전환됩니다.
+- **ffmpeg** (오디오 추출에 필수적인 시스템 패키지)
+  - Mac: `brew install ffmpeg`
+  - Windows: `winget install ffmpeg` (또는 [공식 사이트](https://ffmpeg.org/download.html) 다운로드)
+  - Ubuntu/Debian: `sudo apt install ffmpeg`
+- **GPU (VibeVoice-ASR 구동 시)**
+  > ⚠️ VibeVoice-ASR 7B 는 bfloat16 로딩 시 **약 14GB VRAM** 을 사용합니다.
+  > **최소 16GB 이상의 VRAM** (NVIDIA: RTX 4090, A100 등) 또는
+  > **Apple Silicon 32GB 이상 통합 메모리** (M2 Pro/Max, M3 등) 를 권장합니다.
+  > VRAM 이 부족하다면 `.env` 에서 `GURUNOTE_STT_ENGINE=assemblyai` 로 설정해
+  > 클라우드 API 를 사용하세요.
 - **API Key** (최소 하나씩)
   - LLM: `OPENAI_API_KEY` **또는** `ANTHROPIC_API_KEY`
   - STT 폴백용(선택): `ASSEMBLYAI_API_KEY`
@@ -110,6 +127,12 @@ streamlit run app.py
 브라우저가 열리면 유튜브 URL 을 입력하고 **GuruNote 생성하기** 버튼을 누릅니다.
 사이드바에서 STT 엔진(`auto` / `vibevoice` / `assemblyai`)과 LLM provider
 (`openai` / `anthropic`) 를 런타임에 선택할 수 있습니다.
+
+> **최초 실행 안내:**
+> VibeVoice-ASR 엔진을 처음 사용할 때 Hugging Face Hub 에서 모델 가중치(약
+> 14GB)를 다운로드합니다. 네트워크 속도에 따라 **수 분~수십 분이 소요**될 수
+> 있으며, 터미널에 진행 상황이 표시됩니다. 이후 실행부터는 로컬 캐시를
+> 사용하므로 대기 시간이 없습니다.
 
 ---
 

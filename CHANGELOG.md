@@ -7,6 +7,13 @@
 
 ## [Unreleased]
 
+### Added
+- **CustomTkinter 데스크톱 GUI** (`gui.py`) — 브라우저 없이 네이티브 창으로
+  GuruNote 파이프라인(Step 1~5) 실행. 백그라운드 스레드 + Queue 기반 비동기
+  처리로 UI 블로킹 없음. 탭뷰(요약/번역/원문), 실시간 로그 패널, 네이티브
+  파일 저장 대화상자 제공. `pyinstaller --windowed --onefile gui.py` 로
+  `.app` / `.exe` 패키징 가능.
+
 ### Changed
 - **README 대폭 보강** — Gemini 리뷰 반영
   - GPU VRAM 요구사항 구체화 (최소 16GB VRAM / Apple Silicon 32GB+)

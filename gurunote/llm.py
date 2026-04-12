@@ -8,7 +8,9 @@ Step 3 & 4: LLM 기반 한국어 번역 + GuruNote 스타일 마크다운 요약
 
 from __future__ import annotations
 
+import logging
 import os
+import time
 from dataclasses import dataclass
 from typing import Callable, List, Optional
 
@@ -95,13 +97,52 @@ class LLMConfig:
         )
 
 
+_log = logging.getLogger(__name__)
+
+# Rate Limit 재시도 설정
+_MAX_RETRIES = 4
+_INITIAL_BACKOFF = 2.0  # 초
+
+# 청크 번역 사이 지연 — API 분당 요청 제한(RPM) 에 걸리지 않기 위한 최소 쿨다운.
+CHUNK_DELAY_SEC = 1.0
+
+
 def _call_llm(config: LLMConfig, system: str, user: str, max_tokens: int = 4096) -> str:
-    """단일 LLM 호출 — provider 에 맞춰 디스패치."""
+    """
+    단일 LLM 호출 — provider 에 맞춰 디스패치.
+
+    Rate Limit(HTTP 429 / overloaded) 발생 시 지수 백오프(2s → 4s → 8s → 16s)로
+    최대 _MAX_RETRIES 회 자동 재시도한다.
+    """
     if not config.api_key:
         raise RuntimeError(
             f"{config.provider.upper()}_API_KEY 가 .env 에 설정돼 있지 않습니다."
         )
 
+    last_exc: Exception | None = None
+    for attempt in range(_MAX_RETRIES + 1):
+        try:
+            return _call_llm_once(config, system, user, max_tokens)
+        except Exception as exc:  # noqa: BLE001
+            # Rate Limit / Overloaded 에러만 재시도, 나머지는 즉시 raise
+            err_str = str(exc).lower()
+            is_retryable = any(
+                kw in err_str
+                for kw in ("rate limit", "429", "overloaded", "too many requests")
+            )
+            if not is_retryable or attempt == _MAX_RETRIES:
+                raise
+            wait = _INITIAL_BACKOFF * (2 ** attempt)
+            _log.warning("Rate limit hit (attempt %d/%d). %.1fs 후 재시도…", attempt + 1, _MAX_RETRIES, wait)
+            last_exc = exc
+            time.sleep(wait)
+
+    # unreachable, but for type checker
+    raise last_exc  # type: ignore[misc]
+
+
+def _call_llm_once(config: LLMConfig, system: str, user: str, max_tokens: int) -> str:
+    """실제 1 회 LLM 호출."""
     if config.provider == "anthropic":
         from anthropic import Anthropic  # type: ignore
 
@@ -112,7 +153,6 @@ def _call_llm(config: LLMConfig, system: str, user: str, max_tokens: int = 4096)
             system=system,
             messages=[{"role": "user", "content": user}],
         )
-        # content 는 블록 리스트 — 모든 텍스트 블록을 이어붙임
         return "".join(
             getattr(b, "text", "") for b in msg.content if getattr(b, "type", "") == "text"
         ).strip()
@@ -202,6 +242,9 @@ def translate_transcript(
 
     translated_parts: List[str] = []
     for i, chunk in enumerate(chunks, start=1):
+        # 청크 간 쿨다운 — API Rate Limit 방지 (첫 청크는 건너뜀)
+        if i > 1:
+            time.sleep(CHUNK_DELAY_SEC)
         log(f"   ↳ 청크 {i}/{len(chunks)} 번역 중…")
         user_block = _segments_to_user_block(chunk)
         translated = _call_llm(

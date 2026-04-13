@@ -25,7 +25,7 @@
   - CustomTkinter: 📁 버튼으로 OS 네이티브 파일 대화상자, 자동 모드 감지
 
 ### Changed
-- **LLM 기본 모델 최신화** — OpenAI `gpt-4o` → `gpt-4.1`, Anthropic
+- **LLM 기본 모델 최신화** — OpenAI `gpt-4o` → `gpt-5.4`, Anthropic
   `claude-3-5-sonnet-latest` → `claude-sonnet-4-6`. 코드 기본값, `.env.example`,
   README, CHANGELOG 모두 일괄 변경. 기존 `.env` 사용자는 `OPENAI_MODEL` /
   `ANTHROPIC_MODEL` 값을 업데이트하거나 삭제하면 새 기본값이 적용됨.
@@ -60,7 +60,7 @@
   - VibeVoice 로딩 실패 시 **AssemblyAI Cloud API** 로 자동 폴백
   - 두 엔진 결과를 공통 `Transcript` 데이터클래스로 정규화
 - **Step 3 — 한국어 번역** (`gurunote/llm.py`)
-  - OpenAI (`gpt-4.1`) / Anthropic (`claude-sonnet-4-6`) 지원
+  - OpenAI (`gpt-5.4`) / Anthropic (`claude-sonnet-4-6`) 지원
   - "GuruNote 수석 에디터" 페르소나, 화자 실명 추론, 영문 병기, 구어체 정리
   - **청크 분할 번역** (`DEFAULT_CHUNK_CHAR_LIMIT=12_000`,
     `TRANSLATION_MAX_TOKENS=8192`) 으로 장편 영상 토큰 한도 초과 및 mid-script

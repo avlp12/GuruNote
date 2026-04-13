@@ -68,7 +68,7 @@ def render_sidebar() -> dict:
         st.header("✨ GuruNote 란?")
         st.markdown(
             "- **STT + 화자 분리** — Microsoft VibeVoice-ASR (오픈소스)\n"
-            "- **IT/AI 전문 톤 한국어 번역** — gpt-4.1 / claude-sonnet-4-6\n"
+            "- **IT/AI 전문 톤 한국어 번역** — gpt-5.4 / claude-sonnet-4-6\n"
             "- **인사이트 / 타임라인 / 전체 스크립트** 마크다운 요약\n"
             "- 결과를 `.md` 파일로 다운로드"
         )

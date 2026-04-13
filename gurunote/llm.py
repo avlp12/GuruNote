@@ -1,7 +1,7 @@
 """
 Step 3 & 4: LLM 기반 한국어 번역 + GuruNote 스타일 마크다운 요약.
 
-- Provider: OpenAI (gpt-4.1) 또는 Anthropic (claude-sonnet-4-6)
+- Provider: OpenAI (gpt-5.4) 또는 Anthropic (claude-sonnet-4-6)
 - 긴 영상 대응: 세그먼트를 토큰 한도에 맞춰 청크 분할 → 청크별 번역 → 병합
 - 번역 결과를 다시 요약 단계에 통째로 넣어 최종 마크다운을 만든다.
 """
@@ -92,7 +92,7 @@ class LLMConfig:
             )
         return cls(
             provider="openai",
-            model=os.environ.get("OPENAI_MODEL", "gpt-4.1"),
+            model=os.environ.get("OPENAI_MODEL", "gpt-5.4"),
             api_key=os.environ.get("OPENAI_API_KEY", ""),
         )
 
@@ -178,13 +178,13 @@ def _call_llm_once(config: LLMConfig, system: str, user: str, max_tokens: int) -
 # 토큰 예산 ----------------------------------------------------------------
 # 1 token ≈ 4 chars (영어 기준 보수적 추정).
 # 한국어 번역은 보통 영어 입력보다 토큰을 1.0~1.3배 더 쓴다는 점, 그리고
-# gpt-4.1 / claude-sonnet-4-6 의 응답 한도(8192+) 안에 안전하게 들어와야 한다는
+# gpt-5.4 / claude-sonnet-4-6 의 응답 한도(8192+) 안에 안전하게 들어와야 한다는
 # 점을 같이 고려해 청크 입력을 ~12000 chars (≈ 3000 토큰) 로 잡는다.
 # 이러면 출력은 최대 ~4000 토큰 수준에서 형성되며 TRANSLATION_MAX_TOKENS=8192
 # 안에 충분히 들어와 mid-script truncation 위험이 사라진다.
 DEFAULT_CHUNK_CHAR_LIMIT = 12_000
 
-# 번역/요약 호출의 응답 토큰 상한 (gpt-4.1 32768, claude-sonnet-4-6 16384 둘 다
+# 번역/요약 호출의 응답 토큰 상한 (gpt-5.4 / claude-sonnet-4-6 둘 다
 # 수용 가능한 안전한 값).
 TRANSLATION_MAX_TOKENS = 8192
 SUMMARY_MAX_TOKENS = 4096

@@ -25,9 +25,11 @@ import streamlit as st
 from dotenv import load_dotenv
 
 from gurunote.audio import (
+    SUPPORTED_EXTS,
     AudioDownloadResult,
     cleanup_dir,
     download_audio,
+    extract_audio_from_file,
     is_probably_youtube_url,
 )
 from gurunote.exporter import build_gurunote_markdown, sanitize_filename
@@ -109,10 +111,16 @@ def render_sidebar() -> dict:
 # -----------------------------------------------------------------------------
 # 파이프라인 실행
 # -----------------------------------------------------------------------------
-def run_pipeline(url: str, engine: str, provider: str) -> None:
+def run_pipeline(
+    engine: str,
+    provider: str,
+    *,
+    youtube_url: str = "",
+    local_file_path: str = "",
+) -> None:
     """Step 1 → Step 5 실행 + 세션 상태 저장."""
-    if not is_probably_youtube_url(url):
-        st.error("올바른 유튜브 URL 을 입력해주세요. (예: https://www.youtube.com/watch?v=...)")
+    if not youtube_url and not local_file_path:
+        st.error("유튜브 URL 또는 로컬 파일을 입력해주세요.")
         return
 
     tmp_dir = tempfile.mkdtemp(prefix="gurunote_")
@@ -121,10 +129,14 @@ def run_pipeline(url: str, engine: str, provider: str) -> None:
         with st.status("GuruNote 파이프라인 실행 중...", expanded=True) as status:
             log = lambda msg: st.write(msg)  # noqa: E731
 
-            # ----- Step 1: 오디오 다운로드 -----
+            # ----- Step 1: 오디오 준비 -----
             st.write(f"📁 작업 폴더: `{tmp_dir}`")
-            st.write("⬇️ **Step 1.** yt-dlp 로 오디오 추출 중…")
-            audio: AudioDownloadResult = download_audio(url, tmp_dir)
+            if youtube_url:
+                st.write("⬇️ **Step 1.** yt-dlp 로 오디오 추출 중…")
+                audio: AudioDownloadResult = download_audio(youtube_url, tmp_dir)
+            else:
+                st.write("🎵 **Step 1.** 로컬 파일에서 오디오 추출 중…")
+                audio = extract_audio_from_file(local_file_path, tmp_dir)
             audio_size_mb = os.path.getsize(audio.audio_path) / (1024 * 1024)
             st.write(
                 f"✅ `{audio.video_title}` ({audio_size_mb:.1f} MB, "
@@ -237,16 +249,54 @@ def main() -> None:
     render_header()
     settings = render_sidebar()
 
-    st.subheader("🔗 유튜브 URL 입력")
-    url = st.text_input(
-        "유튜브 URL",
-        placeholder="https://www.youtube.com/watch?v=...",
-        label_visibility="collapsed",
-    )
-    submitted = st.button("GuruNote 생성하기", type="primary")
+    st.subheader("🎧 오디오 소스 선택")
+    input_tab_yt, input_tab_local = st.tabs(["🔗 유튜브 URL", "📁 로컬 파일"])
 
-    if submitted:
-        run_pipeline(url, engine=settings["engine"], provider=settings["provider"])
+    with input_tab_yt:
+        url = st.text_input(
+            "유튜브 URL",
+            placeholder="https://www.youtube.com/watch?v=...",
+            label_visibility="collapsed",
+        )
+        yt_submitted = st.button(
+            "GuruNote 생성하기", type="primary", key="btn_yt"
+        )
+
+    with input_tab_local:
+        uploaded = st.file_uploader(
+            "동영상 또는 오디오 파일을 업로드하세요",
+            type=[ext.lstrip(".") for ext in sorted(SUPPORTED_EXTS)],
+            help=f"지원 형식: {', '.join(sorted(SUPPORTED_EXTS))}",
+        )
+        local_submitted = st.button(
+            "GuruNote 생성하기", type="primary", key="btn_local"
+        )
+
+    if yt_submitted:
+        if not is_probably_youtube_url(url):
+            st.error("올바른 유튜브 URL 을 입력해주세요.")
+        else:
+            run_pipeline(
+                engine=settings["engine"],
+                provider=settings["provider"],
+                youtube_url=url,
+            )
+
+    if local_submitted:
+        if not uploaded:
+            st.error("파일을 먼저 업로드해주세요.")
+        else:
+            # Streamlit UploadedFile → 임시 파일로 저장
+            tmp_upload = tempfile.mkdtemp(prefix="gurunote_upload_")
+            local_path = os.path.join(tmp_upload, uploaded.name)
+            with open(local_path, "wb") as f:
+                f.write(uploaded.getbuffer())
+            run_pipeline(
+                engine=settings["engine"],
+                provider=settings["provider"],
+                local_file_path=local_path,
+            )
+            cleanup_dir(tmp_upload)
 
     render_results()
 

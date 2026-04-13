@@ -17,6 +17,12 @@
   Anthropic / AssemblyAI API 키와 모델명을 앱 안에서 입력·저장. 비밀번호
   마스킹(•) + 👁 토글, `dotenv.set_key()` 로 `.env` 에 영속 + `os.environ`
   즉시 반영. 파이프라인 실행 전 API 키 미설정 시 설정 화면으로 안내.
+- **로컬 동영상/오디오 파일 지원** — 유튜브 URL 외에 로컬 미디어 파일
+  (mp4/mkv/avi/mov/webm + mp3/wav/flac/m4a 등 17종)을 직접 입력 소스로
+  사용 가능. `extract_audio_from_file()` 이 ffmpeg subprocess 로 mp3 변환
+  수행, ffprobe 로 정확한 길이 취득.
+  - Streamlit: 탭 UI 로 "🔗 유튜브 URL" / "📁 로컬 파일" 전환 + `st.file_uploader`
+  - CustomTkinter: 📁 버튼으로 OS 네이티브 파일 대화상자, 자동 모드 감지
 
 ### Changed
 - **README 대폭 보강** — Gemini 리뷰 반영

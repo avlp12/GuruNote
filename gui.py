@@ -28,10 +28,13 @@ import customtkinter as ctk
 from dotenv import load_dotenv, set_key
 
 from gurunote.audio import (
+    SUPPORTED_EXTS,
     AudioDownloadResult,
     cleanup_dir,
     download_audio,
+    extract_audio_from_file,
     is_probably_youtube_url,
+    is_supported_local_file,
 )
 from gurunote.exporter import build_gurunote_markdown, sanitize_filename
 from gurunote.llm import LLMConfig, summarize_translation, translate_transcript
@@ -64,8 +67,16 @@ class PipelineWorker:
     진행 메시지는 `msg_queue`로, 최종 결과/에러는 `result_queue`로 전달.
     """
 
-    def __init__(self, url: str, engine: str, provider: str):
-        self.url = url
+    def __init__(
+        self,
+        engine: str,
+        provider: str,
+        *,
+        youtube_url: str = "",
+        local_file: str = "",
+    ):
+        self.youtube_url = youtube_url
+        self.local_file = local_file
         self.engine = engine
         self.provider = provider
         self.msg_queue: queue.Queue[str] = queue.Queue()
@@ -83,8 +94,12 @@ class PipelineWorker:
         tmp_dir = tempfile.mkdtemp(prefix="gurunote_")
         try:
             # Step 1
-            self._log("⬇️ [Step 1] 오디오 추출 중…")
-            audio = download_audio(self.url, tmp_dir)
+            if self.youtube_url:
+                self._log("⬇️ [Step 1] 유튜브 오디오 추출 중…")
+                audio = download_audio(self.youtube_url, tmp_dir)
+            else:
+                self._log("🎵 [Step 1] 로컬 파일에서 오디오 추출 중…")
+                audio = extract_audio_from_file(self.local_file, tmp_dir)
             audio_size = os.path.getsize(audio.audio_path) / (1024 * 1024)
             self._log(
                 f"✅ [Step 1] {audio.video_title} ({audio_size:.1f} MB, "
@@ -348,35 +363,48 @@ class GuruNoteApp(ctk.CTk):
         ctl = ctk.CTkFrame(self)
         ctl.grid(row=1, column=0, padx=20, pady=12, sticky="ew")
 
-        # 내부 그리드: URL 입력이 가변 폭
-        ctl.grid_columnconfigure(1, weight=1)
+        # 내부 그리드: 입력 필드가 가변 폭
+        ctl.grid_columnconfigure(2, weight=1)
 
-        # URL
-        ctk.CTkLabel(ctl, text="유튜브 URL", font=ctk.CTkFont(weight="bold")).grid(
+        # 소스 라벨
+        ctk.CTkLabel(ctl, text="소스", font=ctk.CTkFont(weight="bold")).grid(
             row=0, column=0, padx=(14, 6), pady=12, sticky="w"
         )
+
+        # 📁 파일 선택 버튼
+        self._file_btn = ctk.CTkButton(
+            ctl,
+            text="📁",
+            width=38,
+            height=38,
+            command=self._on_pick_file,
+        )
+        self._file_btn.grid(row=0, column=1, padx=(0, 4), pady=12)
+
+        # URL / 파일경로 입력
+        self._local_file_path: str = ""  # 로컬 파일이 선택되면 여기 저장
         self._url_entry = ctk.CTkEntry(
             ctl,
-            placeholder_text="https://www.youtube.com/watch?v=...",
+            placeholder_text="유튜브 URL 또는 📁 버튼으로 로컬 파일 선택",
             height=38,
         )
-        self._url_entry.grid(row=0, column=1, padx=4, pady=12, sticky="ew")
+        self._url_entry.grid(row=0, column=2, padx=4, pady=12, sticky="ew")
 
         # STT 엔진
-        ctk.CTkLabel(ctl, text="STT").grid(row=0, column=2, padx=(12, 4), pady=12)
+        ctk.CTkLabel(ctl, text="STT").grid(row=0, column=3, padx=(12, 4), pady=12)
         self._stt_var = ctk.StringVar(value="auto")
         ctk.CTkOptionMenu(
             ctl, variable=self._stt_var, values=STT_OPTIONS, width=120
-        ).grid(row=0, column=3, padx=4, pady=12)
+        ).grid(row=0, column=4, padx=4, pady=12)
 
         # LLM
-        ctk.CTkLabel(ctl, text="LLM").grid(row=0, column=4, padx=(12, 4), pady=12)
+        ctk.CTkLabel(ctl, text="LLM").grid(row=0, column=5, padx=(12, 4), pady=12)
         self._llm_var = ctk.StringVar(
             value=os.environ.get("LLM_PROVIDER", "openai")
         )
         ctk.CTkOptionMenu(
             ctl, variable=self._llm_var, values=LLM_OPTIONS, width=120
-        ).grid(row=0, column=5, padx=4, pady=12)
+        ).grid(row=0, column=6, padx=4, pady=12)
 
         # 실행 버튼
         self._run_btn = ctk.CTkButton(
@@ -387,7 +415,7 @@ class GuruNoteApp(ctk.CTk):
             width=170,
             command=self._on_run,
         )
-        self._run_btn.grid(row=0, column=6, padx=(12, 14), pady=12)
+        self._run_btn.grid(row=0, column=7, padx=(12, 14), pady=12)
 
     def _build_result_area(self) -> None:
         """결과 영역: 왼쪽 = 진행 로그, 오른쪽 = 결과 탭."""
@@ -479,6 +507,25 @@ class GuruNoteApp(ctk.CTk):
     def _on_settings(self) -> None:
         SettingsDialog(self)
 
+    def _on_pick_file(self) -> None:
+        """네이티브 파일 대화상자로 로컬 동영상/오디오 파일을 선택한다."""
+        ext_list = sorted(SUPPORTED_EXTS)
+        filetypes = [
+            ("미디어 파일", " ".join(f"*{e}" for e in ext_list)),
+            ("All Files", "*.*"),
+        ]
+        path = filedialog.askopenfilename(
+            title="오디오/동영상 파일 선택",
+            filetypes=filetypes,
+        )
+        if not path:
+            return
+
+        self._local_file_path = path
+        # 엔트리에 파일명 표시 (전체 경로 대신 이름만)
+        self._url_entry.delete(0, "end")
+        self._url_entry.insert(0, f"📁 {Path(path).name}")
+
     def _check_api_keys(self) -> bool:
         """LLM API 키가 설정돼 있는지 확인. 없으면 설정 다이얼로그 안내."""
         provider = self._llm_var.get()
@@ -498,11 +545,17 @@ class GuruNoteApp(ctk.CTk):
         return False
 
     def _on_run(self) -> None:
-        url = self._url_entry.get().strip()
-        if not is_probably_youtube_url(url):
+        entry_text = self._url_entry.get().strip()
+        has_local = bool(self._local_file_path and is_supported_local_file(self._local_file_path))
+        has_url = is_probably_youtube_url(entry_text)
+
+        # 로컬 파일이 선택돼 있고 엔트리에 📁 마커가 남아있으면 → 로컬 모드
+        use_local = has_local and entry_text.startswith("📁")
+
+        if not use_local and not has_url:
             messagebox.showwarning(
-                "올바른 URL 을 입력해주세요",
-                "YouTube URL 형식이 아닙니다.\n예: https://www.youtube.com/watch?v=...",
+                "소스를 입력해주세요",
+                "유튜브 URL 을 입력하거나, 📁 버튼으로 로컬 파일을 선택해주세요.",
             )
             return
 
@@ -517,11 +570,18 @@ class GuruNoteApp(ctk.CTk):
         self._title_label.configure(text="파이프라인 실행 중…")
 
         # 워커 시작
-        self._worker = PipelineWorker(
-            url=url,
-            engine=self._stt_var.get(),
-            provider=self._llm_var.get(),
-        )
+        if use_local:
+            self._worker = PipelineWorker(
+                engine=self._stt_var.get(),
+                provider=self._llm_var.get(),
+                local_file=self._local_file_path,
+            )
+        else:
+            self._worker = PipelineWorker(
+                engine=self._stt_var.get(),
+                provider=self._llm_var.get(),
+                youtube_url=entry_text,
+            )
         self._worker.start()
         self._poll_worker()
 

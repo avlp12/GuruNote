@@ -25,7 +25,7 @@ from tkinter import filedialog, messagebox
 from typing import Optional
 
 import customtkinter as ctk
-from dotenv import load_dotenv
+from dotenv import load_dotenv, set_key
 
 from gurunote.audio import (
     AudioDownloadResult,
@@ -152,6 +152,142 @@ class PipelineWorker:
 
 
 # =============================================================================
+# 설정 다이얼로그 (API 키 관리)
+# =============================================================================
+# .env 파일 경로 — 프로젝트 루트 기준
+_ENV_PATH = str(Path(__file__).resolve().parent / ".env")
+
+# 설정 필드 정의: (환경변수명, 라벨, 마스킹 여부)
+_SETTINGS_FIELDS = [
+    ("OPENAI_API_KEY", "OpenAI API Key", True),
+    ("OPENAI_MODEL", "OpenAI 모델", False),
+    ("ANTHROPIC_API_KEY", "Anthropic API Key", True),
+    ("ANTHROPIC_MODEL", "Anthropic 모델", False),
+    ("ASSEMBLYAI_API_KEY", "AssemblyAI API Key (폴백용)", True),
+    ("VIBEVOICE_MODEL_ID", "VibeVoice 모델 ID", False),
+    ("HUGGINGFACE_TOKEN", "HuggingFace 토큰 (선택)", True),
+]
+
+
+class SettingsDialog(ctk.CTkToplevel):
+    """API 키와 모델 설정을 입력/저장하는 모달 다이얼로그."""
+
+    def __init__(self, parent: ctk.CTk) -> None:
+        super().__init__(parent)
+        self.title("⚙️ GuruNote 설정")
+        self.geometry("520x480")
+        self.resizable(False, False)
+        self.transient(parent)
+        self.grab_set()
+
+        self._entries: dict[str, ctk.CTkEntry] = {}
+        self._show_vars: dict[str, bool] = {}
+
+        self._build_ui()
+        self.after(100, self.focus_force)
+
+    def _build_ui(self) -> None:
+        # 스크롤 가능한 프레임
+        container = ctk.CTkScrollableFrame(self)
+        container.pack(fill="both", expand=True, padx=16, pady=(16, 8))
+        container.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(
+            container,
+            text="API 키 및 모델 설정",
+            font=ctk.CTkFont(size=16, weight="bold"),
+        ).grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 12))
+
+        ctk.CTkLabel(
+            container,
+            text="저장 시 .env 파일에 기록되며, 앱 재시작 없이 즉시 반영됩니다.",
+            font=ctk.CTkFont(size=11),
+            text_color="gray55",
+        ).grid(row=1, column=0, columnspan=3, sticky="w", pady=(0, 12))
+
+        for idx, (env_key, label, is_secret) in enumerate(_SETTINGS_FIELDS, start=2):
+            ctk.CTkLabel(
+                container, text=label, font=ctk.CTkFont(size=13)
+            ).grid(row=idx, column=0, sticky="w", padx=(0, 10), pady=6)
+
+            current_val = os.environ.get(env_key, "")
+            entry = ctk.CTkEntry(
+                container,
+                width=300,
+                show="•" if is_secret and current_val else "",
+                placeholder_text="미설정" if is_secret else "",
+            )
+            if current_val:
+                entry.insert(0, current_val)
+            entry.grid(row=idx, column=1, sticky="ew", pady=6)
+            self._entries[env_key] = entry
+            self._show_vars[env_key] = False
+
+            if is_secret:
+                toggle_btn = ctk.CTkButton(
+                    container,
+                    text="👁",
+                    width=36,
+                    height=28,
+                    command=lambda k=env_key: self._toggle_show(k),
+                )
+                toggle_btn.grid(row=idx, column=2, padx=(4, 0), pady=6)
+
+        # 하단 버튼 바
+        btn_frame = ctk.CTkFrame(self, fg_color="transparent")
+        btn_frame.pack(fill="x", padx=16, pady=(4, 16))
+
+        ctk.CTkButton(
+            btn_frame, text="취소", width=80, fg_color="gray40", command=self.destroy
+        ).pack(side="right", padx=(8, 0))
+
+        ctk.CTkButton(
+            btn_frame,
+            text="💾 저장",
+            width=120,
+            font=ctk.CTkFont(weight="bold"),
+            command=self._on_save,
+        ).pack(side="right")
+
+    def _toggle_show(self, env_key: str) -> None:
+        self._show_vars[env_key] = not self._show_vars[env_key]
+        entry = self._entries[env_key]
+        entry.configure(show="" if self._show_vars[env_key] else "•")
+
+    def _on_save(self) -> None:
+        # .env 파일이 없으면 생성
+        env_path = Path(_ENV_PATH)
+        if not env_path.exists():
+            env_path.write_text("# GuruNote 설정 (자동 생성)\n", encoding="utf-8")
+
+        changed = 0
+        for env_key, _label, _is_secret in _SETTINGS_FIELDS:
+            new_val = self._entries[env_key].get().strip()
+            old_val = os.environ.get(env_key, "")
+
+            if new_val != old_val:
+                # os.environ 즉시 반영
+                if new_val:
+                    os.environ[env_key] = new_val
+                elif env_key in os.environ:
+                    del os.environ[env_key]
+
+                # .env 파일에 영속
+                if new_val:
+                    set_key(_ENV_PATH, env_key, new_val)
+                else:
+                    # 빈 값이면 .env 에서 제거 대신 빈 문자열로 설정
+                    set_key(_ENV_PATH, env_key, "")
+                changed += 1
+
+        if changed:
+            messagebox.showinfo("설정 저장", f"{changed} 개 항목이 저장되었습니다.")
+        else:
+            messagebox.showinfo("설정 저장", "변경된 항목이 없습니다.")
+        self.destroy()
+
+
+# =============================================================================
 # 메인 애플리케이션
 # =============================================================================
 class GuruNoteApp(ctk.CTk):
@@ -190,12 +326,23 @@ class GuruNoteApp(ctk.CTk):
             font=ctk.CTkFont(size=22, weight="bold"),
         ).grid(row=0, column=0, sticky="w")
 
+        # ⚙️ 설정 버튼 (헤더 우측)
+        ctk.CTkButton(
+            header,
+            text="⚙️ 설정",
+            width=80,
+            height=32,
+            fg_color="gray30",
+            hover_color="gray40",
+            command=self._on_settings,
+        ).grid(row=0, column=1, sticky="e")
+
         ctk.CTkLabel(
             header,
             text="유튜브 링크 하나로 해외 IT/AI 팟캐스트를 화자 분리된 한국어 요약본으로",
             font=ctk.CTkFont(size=13),
             text_color="gray60",
-        ).grid(row=1, column=0, sticky="w", pady=(2, 0))
+        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(2, 0))
 
     def _build_controls(self) -> None:
         ctl = ctk.CTkFrame(self)
@@ -329,6 +476,27 @@ class GuruNoteApp(ctk.CTk):
     # -------------------------------------------------------------------------
     # 이벤트 핸들러
     # -------------------------------------------------------------------------
+    def _on_settings(self) -> None:
+        SettingsDialog(self)
+
+    def _check_api_keys(self) -> bool:
+        """LLM API 키가 설정돼 있는지 확인. 없으면 설정 다이얼로그 안내."""
+        provider = self._llm_var.get()
+        key_name = (
+            "ANTHROPIC_API_KEY" if provider == "anthropic" else "OPENAI_API_KEY"
+        )
+        if os.environ.get(key_name):
+            return True
+
+        open_settings = messagebox.askyesno(
+            "API 키 미설정",
+            f"{key_name} 가 설정되어 있지 않습니다.\n"
+            "설정 화면을 열어 API 키를 입력하시겠습니까?",
+        )
+        if open_settings:
+            SettingsDialog(self)
+        return False
+
     def _on_run(self) -> None:
         url = self._url_entry.get().strip()
         if not is_probably_youtube_url(url):
@@ -336,6 +504,9 @@ class GuruNoteApp(ctk.CTk):
                 "올바른 URL 을 입력해주세요",
                 "YouTube URL 형식이 아닙니다.\n예: https://www.youtube.com/watch?v=...",
             )
+            return
+
+        if not self._check_api_keys():
             return
 
         # UI 잠금

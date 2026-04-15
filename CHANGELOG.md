@@ -8,6 +8,16 @@
 ## [Unreleased]
 
 ### Added
+- **로컬 LLM(OpenAI-compatible) 지원 강화** (`gurunote/llm.py`)
+  - `LLM_PROVIDER=openai_compatible` 추가
+  - `OPENAI_BASE_URL` 지원으로 로컬/사설 OpenAI-compatible 엔드포인트 사용 가능
+  - Temperature / 번역·요약 Max Tokens 환경변수(`LLM_TEMPERATURE`,
+    `LLM_TRANSLATION_MAX_TOKENS`, `LLM_SUMMARY_MAX_TOKENS`) 반영
+- **앱 내 Settings UX 확장**
+  - Streamlit: 별도 `⚙️ Settings` 탭 추가 (`app.py`)
+  - Desktop GUI: 설정 다이얼로그에 LLM Provider, Base URL, 고급 옵션,
+    연결 테스트 버튼 추가 (`gui.py`)
+  - 저장 시 `.env` 자동 백업 + 즉시 적용 (`gurunote/settings.py`)
 - **CustomTkinter 데스크톱 GUI** (`gui.py`) — 브라우저 없이 네이티브 창으로
   GuruNote 파이프라인(Step 1~5) 실행. 백그라운드 스레드 + Queue 기반 비동기
   처리로 UI 블로킹 없음. 탭뷰(요약/번역/원문), 실시간 로그 패널, 네이티브

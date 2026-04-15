@@ -113,6 +113,9 @@ cp .env.example .env
 ```env
 LLM_PROVIDER=openai
 OPENAI_API_KEY=sk-...
+# 로컬 OpenAI-compatible 서버 (선택)
+# 예: oMLX / vLLM / Ollama / LM Studio / llama.cpp server
+OPENAI_BASE_URL=http://127.0.0.1:8000/v1
 # STT 엔진은 기본값 auto 로 두면 VibeVoice → AssemblyAI 순서로 시도
 GURUNOTE_STT_ENGINE=auto
 ```
@@ -131,6 +134,10 @@ streamlit run app.py
 
 브라우저가 열리면 유튜브 URL 을 입력하고 **GuruNote 생성하기** 버튼을 누릅니다.
 
+> Streamlit 앱에는 **⚙️ Settings 탭**이 포함되어 있어 `.env` 수동 편집 없이
+> LLM Provider(`openai` / `openai_compatible` / `anthropic`), API Key,
+> Base URL, 모델명, Temperature, Max Tokens 저장/연결 테스트가 가능합니다.
+
 ### 방법 B — CustomTkinter 데스크톱 앱
 
 ```bash
@@ -139,6 +146,8 @@ python gui.py
 
 브라우저 없이 네이티브 창으로 동일한 파이프라인을 실행합니다.
 결과를 탭(요약/번역/원문)으로 확인하고, **파일 → 저장** 대화상자로 `.md` 를 내보냅니다.
+상단 **⚙️ 설정**에서 동일하게 LLM Provider / Base URL / 모델 / 토큰 설정과
+연결 테스트를 수행할 수 있습니다.
 
 ```bash
 # (선택) 독립 실행 파일로 패키징
@@ -221,7 +230,7 @@ python scripts/release_rehearsal_check.py --tag v0.1.1 --local-tools
 - 통과 시 바로 실행할 태그 푸시 명령을 출력합니다.
 
 두 방식 모두 사이드바/상단에서 STT 엔진(`auto` / `vibevoice` / `assemblyai`)과
-LLM provider(`openai` / `anthropic`) 를 런타임에 선택할 수 있습니다.
+LLM provider(`openai` / `openai_compatible` / `anthropic`) 를 런타임에 선택할 수 있습니다.
 
 > **최초 실행 안내:**
 > VibeVoice-ASR 엔진을 처음 사용할 때 Hugging Face Hub 에서 모델 가중치(약

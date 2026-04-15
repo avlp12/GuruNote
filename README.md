@@ -28,6 +28,8 @@ GuruNote 는 해외 IT/AI 권위자(Guru)들의 유튜브 인터뷰/팟캐스트
   - ⏱️ 타임라인별 주요 내용 요약
   - 📝 전체 스크립트 번역본 + 🇺🇸 영어 원문
 - 📥 **`.md` 파일 다운로드** (`GuruNote_<영상제목>.md`)
+- 🗂️ **작업 이력 조회** — 앱 내 History에서 성공/실패 상태, 결과물/보고서 열람 가능
+- 💾 **결과 마크다운 자동 저장(기본값)** — 수동 저장 없이도 실행 결과가 `history/`에 누적 보관
 - 🧹 **임시 파일 자동 정리**
 
 ---
@@ -61,6 +63,13 @@ GuruNote_<영상제목>.md
 > 자동 청킹 기능을 추가할 예정입니다. 지금은 60분 이하의 영상에서 최적의
 > 결과를 얻을 수 있으며, 긴 영상은 `GURUNOTE_STT_ENGINE=assemblyai` 로
 > AssemblyAI 를 사용하면 길이 제한 없이 처리됩니다.
+>
+> ✅ **현재 앱 동작 보완**: `STT 엔진=auto` 인 경우 60분 초과 오디오는
+> AssemblyAI 로 자동 라우팅해, 기본 설정에서도 긴 영상 누락을 줄입니다.
+>
+> ✅ **CPU-only 안전장치**: `auto` 모드에서 GPU/MPS가 없으면 VibeVoice CPU 추론
+> 장시간 대기를 피하기 위해 AssemblyAI로 자동 전환합니다.
+> (`vibevoice` 강제 사용 시 `VIBEVOICE_ALLOW_CPU=1`로 명시 허용 가능)
 
 ---
 
@@ -110,6 +119,9 @@ cp .env.example .env
 ```env
 LLM_PROVIDER=openai
 OPENAI_API_KEY=sk-...
+# 로컬 OpenAI-compatible 서버 (선택)
+# 예: oMLX / vLLM / Ollama / LM Studio / llama.cpp server
+OPENAI_BASE_URL=http://127.0.0.1:8000/v1
 # STT 엔진은 기본값 auto 로 두면 VibeVoice → AssemblyAI 순서로 시도
 GURUNOTE_STT_ENGINE=auto
 ```
@@ -127,6 +139,14 @@ streamlit run app.py
 ```
 
 브라우저가 열리면 유튜브 URL 을 입력하고 **GuruNote 생성하기** 버튼을 누릅니다.
+실행 중에는 단계별 로그와 함께 **퍼센트 진행률 바**가 표시됩니다.
+완료/실패 여부와 관계없이 단계별 **작업 보고서 Markdown**이 저장되며 다운로드할 수 있습니다.
+또한 결과 마크다운은 기본적으로 `history/` 아래에 자동 저장되고, **🗂️ History 탭**에서
+성공/실패 상태와 함께 다시 열람/다운로드할 수 있습니다.
+
+> Streamlit 앱에는 **⚙️ Settings 탭**이 포함되어 있어 `.env` 수동 편집 없이
+> LLM Provider(`openai` / `openai_compatible` / `anthropic`), API Key,
+> Base URL, 모델명, Temperature, Max Tokens 저장/연결 테스트가 가능합니다.
 
 ### 방법 B — CustomTkinter 데스크톱 앱
 
@@ -136,6 +156,13 @@ python gui.py
 
 브라우저 없이 네이티브 창으로 동일한 파이프라인을 실행합니다.
 결과를 탭(요약/번역/원문)으로 확인하고, **파일 → 저장** 대화상자로 `.md` 를 내보냅니다.
+동시에 결과 마크다운은 기본적으로 `history/`에 자동 저장되며, 상단 **🗂️ 이력**에서
+성공/실패 상태와 함께 이전 작업을 열람할 수 있습니다.
+상단 **⚙️ 설정**에서 동일하게 LLM Provider / Base URL / 모델 / 토큰 설정과
+연결 테스트를 수행할 수 있습니다.
+실행 중에는 좌측 로그 패널에서 **진행률(%)**을 확인할 수 있으며, `⏹ 중지` 버튼으로
+현재 작업을 안전한 지점에서 중단할 수 있습니다.
+중간 실패/중단 시에도 작업 보고서가 남아 어떤 단계까지 진행됐는지 확인 가능합니다.
 
 ```bash
 # (선택) 독립 실행 파일로 패키징
@@ -144,8 +171,96 @@ pyinstaller --windowed --onefile gui.py
 # dist/gui.app (Mac) 또는 dist/gui.exe (Windows) 생성
 ```
 
+### 방법 C — 설치 패키지까지 자동 생성 (권장, 배포용)
+
+반복적인 패키징 명령을 줄이기 위해 `scripts/package_desktop.py` 를 제공합니다.
+
+```bash
+# 공통 사전 준비
+pip install pyinstaller
+```
+
+#### Windows
+
+```bash
+# 1) 단일 실행 파일(.exe)
+python scripts/package_desktop.py --target windows
+
+# 2) 설치형 exe까지 생성 (Inno Setup 필요)
+python scripts/package_desktop.py --target windows --formats installer
+```
+
+- 출력:
+  - `dist/GuruNote.exe` (단일 파일 실행형)
+  - `dist/GuruNote-Installer.exe` (설치형, `--formats installer` 사용 시)
+- 설치형 exe를 만들려면 [Inno Setup](https://jrsoftware.org/isdl.php) 의
+  `ISCC.exe` 가 필요합니다.
+
+#### macOS
+
+```bash
+# 1) .app 번들
+python scripts/package_desktop.py --target macos
+
+# 2) DMG 생성 (create-dmg 필요)
+python scripts/package_desktop.py --target macos --formats dmg
+
+# 3) PKG 생성 (macOS 기본 pkgbuild 사용)
+python scripts/package_desktop.py --target macos --formats pkg
+```
+
+- 출력:
+  - `dist/GuruNote.app`
+  - `dist/GuruNote.dmg` (`--formats dmg`)
+  - `dist/GuruNote.pkg` (`--formats pkg`)
+- DMG를 만들려면 `brew install create-dmg` 가 필요합니다.
+
+### GitHub Actions 릴리스 자동화
+
+저장소에는 태그 푸시 시 데스크톱 패키지를 자동 빌드/업로드하는 워크플로우가
+포함되어 있습니다.
+
+- 워크플로우 파일: `.github/workflows/release-desktop.yml`
+- 트리거:
+  - `git push origin v0.1.1` 같은 `v*` 태그 푸시
+  - 수동 실행 (`workflow_dispatch`)
+- 결과:
+  - Windows: `GuruNote.exe`, `GuruNote-Installer.exe`
+  - macOS: `GuruNote.dmg`, `GuruNote.pkg` (그리고 빌드 산출물 `GuruNote.app`)
+- 태그 이벤트에서는 위 파일을 GitHub Release assets 로 자동 첨부
+
+### 업데이트 (재설치 없이)
+
+소스 설치 사용자는 아래 명령으로 삭제/재설치 없이 업데이트할 수 있습니다.
+
+```bash
+# 업데이트 가능 상태 확인
+python scripts/update_gurunote.py --check
+
+# 코드 pull + 의존성 업그레이드
+python scripts/update_gurunote.py --update
+```
+
+- Streamlit `⚙️ Settings` 탭과 Desktop GUI `⚙️ 설정`에도 **업데이트 버튼**이 있어
+  앱 안에서 동일한 업데이트를 실행할 수 있습니다.
+
+### 태그 릴리스 리허설 체크 (실패 시 즉시 원인 출력)
+
+태그 푸시 전에 아래 스크립트로 릴리스 준비 상태를 점검할 수 있습니다.
+
+```bash
+# 기본: 태그 형식 + 필수 파일 + 워크플로우 핵심 항목 + 패키징 스크립트 스모크 테스트
+python scripts/release_rehearsal_check.py --tag v0.1.1
+
+# 선택: 현재 PC의 로컬 도구(pyinstaller/create-dmg/iscc 등)까지 검사
+python scripts/release_rehearsal_check.py --tag v0.1.1 --local-tools
+```
+
+- 실패 시 `❌`와 함께 원인을 즉시 출력하고 종료 코드 1로 종료합니다.
+- 통과 시 바로 실행할 태그 푸시 명령을 출력합니다.
+
 두 방식 모두 사이드바/상단에서 STT 엔진(`auto` / `vibevoice` / `assemblyai`)과
-LLM provider(`openai` / `anthropic`) 를 런타임에 선택할 수 있습니다.
+LLM provider(`openai` / `openai_compatible` / `anthropic`) 를 런타임에 선택할 수 있습니다.
 
 > **최초 실행 안내:**
 > VibeVoice-ASR 엔진을 처음 사용할 때 Hugging Face Hub 에서 모델 가중치(약

@@ -69,9 +69,13 @@ SUMMARY_SYSTEM_PROMPT = """\
 # =============================================================================
 @dataclass
 class LLMConfig:
-    provider: str            # "openai" | "anthropic"
+    provider: str            # "openai" | "openai_compatible" | "anthropic"
     model: str
     api_key: str
+    base_url: str = ""
+    temperature: float = 0.2
+    translation_max_tokens: int = 8192
+    summary_max_tokens: int = 4096
 
     @classmethod
     def from_env(cls, provider: Optional[str] = None) -> "LLMConfig":
@@ -84,17 +88,52 @@ class LLMConfig:
         환경에서 race condition 회피).
         """
         provider = (provider or os.environ.get("LLM_PROVIDER", "openai")).lower().strip()
+        temp = _float_env("LLM_TEMPERATURE", 0.2)
+        translation_max_tokens = _int_env("LLM_TRANSLATION_MAX_TOKENS", 8192)
+        summary_max_tokens = _int_env("LLM_SUMMARY_MAX_TOKENS", 4096)
         if provider == "anthropic":
             return cls(
                 provider="anthropic",
                 model=os.environ.get("ANTHROPIC_MODEL", "claude-3-5-sonnet-latest"),
                 api_key=os.environ.get("ANTHROPIC_API_KEY", ""),
+                temperature=temp,
+                translation_max_tokens=translation_max_tokens,
+                summary_max_tokens=summary_max_tokens,
+            )
+        if provider == "openai_compatible":
+            return cls(
+                provider="openai_compatible",
+                model=os.environ.get("OPENAI_MODEL", "gpt-4o"),
+                api_key=os.environ.get("OPENAI_API_KEY", "local"),
+                base_url=os.environ.get("OPENAI_BASE_URL", ""),
+                temperature=temp,
+                translation_max_tokens=translation_max_tokens,
+                summary_max_tokens=summary_max_tokens,
             )
         return cls(
             provider="openai",
             model=os.environ.get("OPENAI_MODEL", "gpt-4o"),
             api_key=os.environ.get("OPENAI_API_KEY", ""),
+            base_url=os.environ.get("OPENAI_BASE_URL", ""),
+            temperature=temp,
+            translation_max_tokens=translation_max_tokens,
+            summary_max_tokens=summary_max_tokens,
         )
+
+
+def _int_env(key: str, default: int) -> int:
+    try:
+        val = int(os.environ.get(key, "").strip())
+        return val if val > 0 else default
+    except Exception:  # noqa: BLE001
+        return default
+
+
+def _float_env(key: str, default: float) -> float:
+    try:
+        return float(os.environ.get(key, "").strip())
+    except Exception:  # noqa: BLE001
+        return default
 
 
 _log = logging.getLogger(__name__)
@@ -114,7 +153,7 @@ def _call_llm(config: LLMConfig, system: str, user: str, max_tokens: int = 4096)
     Rate Limit(HTTP 429 / overloaded) 발생 시 지수 백오프(2s → 4s → 8s → 16s)로
     최대 _MAX_RETRIES 회 자동 재시도한다.
     """
-    if not config.api_key:
+    if config.provider in {"openai", "anthropic"} and not config.api_key:
         raise RuntimeError(
             f"{config.provider.upper()}_API_KEY 가 .env 에 설정돼 있지 않습니다."
         )
@@ -150,6 +189,7 @@ def _call_llm_once(config: LLMConfig, system: str, user: str, max_tokens: int) -
         msg = client.messages.create(
             model=config.model,
             max_tokens=max_tokens,
+            temperature=config.temperature,
             system=system,
             messages=[{"role": "user", "content": user}],
         )
@@ -160,10 +200,14 @@ def _call_llm_once(config: LLMConfig, system: str, user: str, max_tokens: int) -
     # default: openai
     from openai import OpenAI  # type: ignore
 
-    client = OpenAI(api_key=config.api_key)
+    openai_kwargs: dict = {"api_key": (config.api_key or "local")}
+    if config.base_url:
+        openai_kwargs["base_url"] = config.base_url
+    client = OpenAI(**openai_kwargs)
     resp = client.chat.completions.create(
         model=config.model,
         max_tokens=max_tokens,
+        temperature=config.temperature,
         messages=[
             {"role": "system", "content": system},
             {"role": "user", "content": user},
@@ -251,7 +295,7 @@ def translate_transcript(
             config,
             system=TRANSLATION_SYSTEM_PROMPT,
             user=user_block,
-            max_tokens=TRANSLATION_MAX_TOKENS,
+            max_tokens=config.translation_max_tokens or TRANSLATION_MAX_TOKENS,
         )
         translated_parts.append(translated)
 
@@ -292,7 +336,7 @@ def summarize_translation(
                     system=system,
                     user="다음 부분 번역본의 핵심 인사이트와 타임라인만 요약해:\n\n"
                     + "\n\n".join(buf),
-                    max_tokens=SUMMARY_MAX_TOKENS,
+                    max_tokens=config.summary_max_tokens or SUMMARY_MAX_TOKENS,
                 )
                 partials.append(partial)
                 buf = []
@@ -306,7 +350,7 @@ def summarize_translation(
                     system=system,
                     user="다음 부분 번역본의 핵심 인사이트와 타임라인만 요약해:\n\n"
                     + "\n\n".join(buf),
-                    max_tokens=SUMMARY_MAX_TOKENS,
+                    max_tokens=config.summary_max_tokens or SUMMARY_MAX_TOKENS,
                 )
             )
         merged_user = (
@@ -315,10 +359,30 @@ def summarize_translation(
         )
         log("📝 부분 요약 통합 중…")
         return _call_llm(
-            config, system=system, user=merged_user, max_tokens=SUMMARY_MAX_TOKENS
+            config,
+            system=system,
+            user=merged_user,
+            max_tokens=config.summary_max_tokens or SUMMARY_MAX_TOKENS,
         ).strip()
 
     log("📝 GuruNote 요약본 생성 중…")
     return _call_llm(
-        config, system=system, user=translated_text, max_tokens=SUMMARY_MAX_TOKENS
+        config,
+        system=system,
+        user=translated_text,
+        max_tokens=config.summary_max_tokens or SUMMARY_MAX_TOKENS,
     ).strip()
+
+
+def test_connection(config: Optional[LLMConfig] = None) -> str:
+    """현재 설정으로 LLM API 연결을 테스트한다."""
+    cfg = config or LLMConfig.from_env()
+    text = _call_llm(
+        cfg,
+        system="You are a connection tester. Reply only with: OK",
+        user="ping",
+        max_tokens=16,
+    )
+    if not text.strip():
+        raise RuntimeError("LLM 응답이 비어 있습니다.")
+    return text.strip()

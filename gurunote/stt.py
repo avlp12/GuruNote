@@ -69,19 +69,67 @@ def transcribe(
     engine = (engine or "auto").lower().strip()
     hotwords = hotwords if hotwords is not None else IT_AI_HOTWORDS
 
+    # auto 모드에서 CPU-only 환경의 VibeVoice 장시간 지연을 회피한다.
+    if engine == "auto" and not _has_hardware_acceleration():
+        log("⚠️ GPU/MPS 가 없어 VibeVoice CPU 추론이 매우 느릴 수 있습니다. AssemblyAI 를 사용합니다.")
+        result = _transcribe_assemblyai(audio_path, log=log)
+        _assert_transcript_not_empty(result)
+        return result
+
     if engine == "vibevoice":
-        return _transcribe_vibevoice(audio_path, log=log, hotwords=hotwords)
+        if not _has_hardware_acceleration() and os.environ.get("VIBEVOICE_ALLOW_CPU", "0") != "1":
+            raise RuntimeError(
+                "VibeVoice CPU 추론은 매우 느릴 수 있어 기본적으로 차단됩니다. "
+                "환경변수 `VIBEVOICE_ALLOW_CPU=1` 로 명시적으로 허용하거나, "
+                "STT 엔진을 `assemblyai`/`auto`로 사용하세요."
+            )
+        result = _transcribe_vibevoice(audio_path, log=log, hotwords=hotwords)
+        _assert_transcript_not_empty(result)
+        return result
 
     if engine == "assemblyai":
-        return _transcribe_assemblyai(audio_path, log=log)
+        result = _transcribe_assemblyai(audio_path, log=log)
+        _assert_transcript_not_empty(result)
+        return result
 
     # auto: VibeVoice 우선, 실패 시 AssemblyAI 폴백
     try:
         log("🚀 기본 엔진 VibeVoice-ASR 로 전사를 시도합니다…")
-        return _transcribe_vibevoice(audio_path, log=log, hotwords=hotwords)
+        result = _transcribe_vibevoice(audio_path, log=log, hotwords=hotwords)
+        _assert_transcript_not_empty(result)
+        return result
     except Exception as exc:  # noqa: BLE001
         log(f"⚠️ VibeVoice 사용 불가 ({exc}). AssemblyAI 로 폴백합니다…")
-        return _transcribe_assemblyai(audio_path, log=log)
+        result = _transcribe_assemblyai(audio_path, log=log)
+        _assert_transcript_not_empty(result)
+        return result
+
+
+def _assert_transcript_not_empty(transcript: Transcript) -> None:
+    """빈 전사 결과를 조기에 차단해 후속 LLM 단계의 무의미한 호출을 막는다."""
+    if not transcript.segments:
+        raise RuntimeError(
+            "전사 결과가 비어 있습니다. 오디오 품질/형식 또는 STT 엔진 설정을 확인해주세요."
+        )
+    has_text = any((seg.text or "").strip() for seg in transcript.segments)
+    if not has_text:
+        raise RuntimeError(
+            "전사 텍스트가 비어 있습니다. 다른 STT 엔진(예: AssemblyAI)으로 다시 시도해주세요."
+        )
+
+
+def _has_hardware_acceleration() -> bool:
+    """VibeVoice 가 현실적인 속도로 동작 가능한 가속 장치(cuda/mps) 유무."""
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            return True
+        if getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
+            return True
+    except Exception:  # noqa: BLE001
+        return False
+    return False
 
 
 # =============================================================================

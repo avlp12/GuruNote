@@ -61,6 +61,9 @@ GuruNote_<영상제목>.md
 > 자동 청킹 기능을 추가할 예정입니다. 지금은 60분 이하의 영상에서 최적의
 > 결과를 얻을 수 있으며, 긴 영상은 `GURUNOTE_STT_ENGINE=assemblyai` 로
 > AssemblyAI 를 사용하면 길이 제한 없이 처리됩니다.
+>
+> ✅ **현재 앱 동작 보완**: `STT 엔진=auto` 인 경우 60분 초과 오디오는
+> AssemblyAI 로 자동 라우팅해, 기본 설정에서도 긴 영상 누락을 줄입니다.
 
 ---
 
@@ -143,6 +146,79 @@ pip install pyinstaller
 pyinstaller --windowed --onefile gui.py
 # dist/gui.app (Mac) 또는 dist/gui.exe (Windows) 생성
 ```
+
+### 방법 C — 설치 패키지까지 자동 생성 (권장, 배포용)
+
+반복적인 패키징 명령을 줄이기 위해 `scripts/package_desktop.py` 를 제공합니다.
+
+```bash
+# 공통 사전 준비
+pip install pyinstaller
+```
+
+#### Windows
+
+```bash
+# 1) 단일 실행 파일(.exe)
+python scripts/package_desktop.py --target windows
+
+# 2) 설치형 exe까지 생성 (Inno Setup 필요)
+python scripts/package_desktop.py --target windows --formats installer
+```
+
+- 출력:
+  - `dist/GuruNote.exe` (단일 파일 실행형)
+  - `dist/GuruNote-Installer.exe` (설치형, `--formats installer` 사용 시)
+- 설치형 exe를 만들려면 [Inno Setup](https://jrsoftware.org/isdl.php) 의
+  `ISCC.exe` 가 필요합니다.
+
+#### macOS
+
+```bash
+# 1) .app 번들
+python scripts/package_desktop.py --target macos
+
+# 2) DMG 생성 (create-dmg 필요)
+python scripts/package_desktop.py --target macos --formats dmg
+
+# 3) PKG 생성 (macOS 기본 pkgbuild 사용)
+python scripts/package_desktop.py --target macos --formats pkg
+```
+
+- 출력:
+  - `dist/GuruNote.app`
+  - `dist/GuruNote.dmg` (`--formats dmg`)
+  - `dist/GuruNote.pkg` (`--formats pkg`)
+- DMG를 만들려면 `brew install create-dmg` 가 필요합니다.
+
+### GitHub Actions 릴리스 자동화
+
+저장소에는 태그 푸시 시 데스크톱 패키지를 자동 빌드/업로드하는 워크플로우가
+포함되어 있습니다.
+
+- 워크플로우 파일: `.github/workflows/release-desktop.yml`
+- 트리거:
+  - `git push origin v0.1.1` 같은 `v*` 태그 푸시
+  - 수동 실행 (`workflow_dispatch`)
+- 결과:
+  - Windows: `GuruNote.exe`, `GuruNote-Installer.exe`
+  - macOS: `GuruNote.dmg`, `GuruNote.pkg` (그리고 빌드 산출물 `GuruNote.app`)
+  - 태그 이벤트에서는 위 파일을 GitHub Release assets 로 자동 첨부
+
+### 태그 릴리스 리허설 체크 (실패 시 즉시 원인 출력)
+
+태그 푸시 전에 아래 스크립트로 릴리스 준비 상태를 점검할 수 있습니다.
+
+```bash
+# 기본: 태그 형식 + 필수 파일 + 워크플로우 핵심 항목 + 패키징 스크립트 스모크 테스트
+python scripts/release_rehearsal_check.py --tag v0.1.1
+
+# 선택: 현재 PC의 로컬 도구(pyinstaller/create-dmg/iscc 등)까지 검사
+python scripts/release_rehearsal_check.py --tag v0.1.1 --local-tools
+```
+
+- 실패 시 `❌`와 함께 원인을 즉시 출력하고 종료 코드 1로 종료합니다.
+- 통과 시 바로 실행할 태그 푸시 명령을 출력합니다.
 
 두 방식 모두 사이드바/상단에서 STT 엔진(`auto` / `vibevoice` / `assemblyai`)과
 LLM provider(`openai` / `anthropic`) 를 런타임에 선택할 수 있습니다.

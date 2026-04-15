@@ -105,12 +105,21 @@ class PipelineWorker:
                 f"✅ [Step 1] {audio.video_title} ({audio_size:.1f} MB, "
                 f"{int(audio.duration_sec)}s)"
             )
+            effective_engine = self.engine
+            if audio.duration_sec > 3600 and self.engine == "auto":
+                effective_engine = "assemblyai"
+                self._log("ℹ️ 60분 초과 오디오는 auto 모드에서 AssemblyAI 로 자동 전환합니다.")
+            elif audio.duration_sec > 3600 and self.engine == "vibevoice":
+                self._log(
+                    "⚠️ VibeVoice 단일 패스는 최대 60분 처리에 최적화되어 있어 "
+                    "긴 영상은 일부만 전사될 수 있습니다."
+                )
 
             # Step 2
             self._log("🎙️ [Step 2] 화자 분리 STT 중…")
             transcript = transcribe(
                 audio.audio_path,
-                engine=self.engine,
+                engine=effective_engine,
                 progress=self._log,
             )
             self._log(

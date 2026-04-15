@@ -613,19 +613,34 @@ class GuruNoteApp(ctk.CTk):
         self._url_entry.insert(0, f"📁 {Path(path).name}")
 
     def _check_api_keys(self) -> bool:
-        """LLM API 키가 설정돼 있는지 확인. 없으면 설정 다이얼로그 안내."""
-        provider = self._llm_var.get()
-        key_name = (
-            "ANTHROPIC_API_KEY" if provider == "anthropic" else "OPENAI_API_KEY"
-        )
-        if os.environ.get(key_name):
-            return True
+        """LLM 호출 준비가 됐는지 확인. 없으면 설정 다이얼로그 안내.
 
-        open_settings = messagebox.askyesno(
-            "API 키 미설정",
-            f"{key_name} 가 설정되어 있지 않습니다.\n"
-            "설정 화면을 열어 API 키를 입력하시겠습니까?",
-        )
+        - openai        : OPENAI_API_KEY 필수
+        - anthropic     : ANTHROPIC_API_KEY 필수
+        - openai_compatible : OPENAI_BASE_URL 이 있으면 키는 선택 (로컬 LLM 등)
+        """
+        provider = self._llm_var.get()
+
+        if provider == "openai_compatible":
+            # 로컬/사설 OpenAI-compatible 엔드포인트는 키 대신 base_url 이 필수.
+            if os.environ.get("OPENAI_BASE_URL"):
+                return True
+            missing = "OPENAI_BASE_URL"
+            msg = (
+                f"{missing} 가 설정되어 있지 않습니다.\n"
+                "로컬/사설 OpenAI-compatible 서버(vLLM, Ollama, LM Studio 등)의 "
+                "엔드포인트 URL을 설정 화면에서 입력해주세요."
+            )
+        else:
+            key_name = (
+                "ANTHROPIC_API_KEY" if provider == "anthropic" else "OPENAI_API_KEY"
+            )
+            if os.environ.get(key_name):
+                return True
+            missing = key_name
+            msg = f"{missing} 가 설정되어 있지 않습니다.\n설정 화면을 열어 API 키를 입력하시겠습니까?"
+
+        open_settings = messagebox.askyesno("설정 미완료", msg)
         if open_settings:
             SettingsDialog(self)
         return False

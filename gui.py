@@ -118,6 +118,16 @@ class PipelineWorker:
                 f"✅ [Step 1] {audio.video_title} ({audio_size:.1f} MB, "
                 f"{int(audio.duration_sec)}s)"
             )
+            if audio.upload_date:
+                self._log(f"📅 게시일: {audio.upload_date}")
+            if audio.chapters:
+                self._log(f"⏱️ 공식 챕터 {len(audio.chapters)}개 감지")
+            if audio.subtitles_text:
+                self._log(
+                    f"💬 기존 자막 감지 ({len(audio.subtitles_text):,} chars) — "
+                    "화자 이름/챕터 참고에 활용"
+                )
+            video_ctx = audio.to_context_dict()
             self._set_progress(0.18)
             effective_engine = self.engine
             if audio.duration_sec > 3600 and self.engine == "auto":
@@ -146,7 +156,8 @@ class PipelineWorker:
             self._log("🌐 [Step 3] LLM 한국어 번역 중…")
             llm_cfg = LLMConfig.from_env(provider=self.provider)
             translated = translate_transcript(
-                transcript, config=llm_cfg, progress=self._log
+                transcript, config=llm_cfg, progress=self._log,
+                video_context=video_ctx,
             )
             self._log(f"✅ [Step 3] 번역 완료 ({len(translated):,} chars)")
             self._set_progress(0.78)
@@ -158,6 +169,7 @@ class PipelineWorker:
                 title=audio.video_title,
                 config=llm_cfg,
                 progress=self._log,
+                video_context=video_ctx,
             )
             self._log("✅ [Step 4] 요약 완료")
             self._set_progress(0.90)
@@ -172,6 +184,9 @@ class PipelineWorker:
                 transcript=transcript,
                 uploader=audio.uploader,
                 stt_engine=transcript.engine,
+                upload_date=audio.upload_date,
+                chapters=audio.chapters,
+                subtitles_source=audio.subtitles_source,
             )
             self._log("🎉 GuruNote 생성 완료!")
             self._set_progress(1.0)

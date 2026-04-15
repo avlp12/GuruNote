@@ -18,6 +18,12 @@
   - Desktop GUI: 설정 다이얼로그에 LLM Provider, Base URL, 고급 옵션,
     연결 테스트 버튼 추가 (`gui.py`)
   - 저장 시 `.env` 자동 백업 + 즉시 적용 (`gurunote/settings.py`)
+- **실행 진행률 UX 개선** (`app.py`, `gui.py`)
+  - Streamlit 파이프라인 단계별 퍼센트 진행률 바 추가
+  - Desktop GUI에 진행률 바(%) 및 `⏹ 중지` 버튼 추가
+- **업데이트 UX 추가** (`gurunote/updater.py`, `scripts/update_gurunote.py`, `app.py`, `gui.py`)
+  - 재설치 없이 `git pull + requirements 업그레이드`를 수행하는 업데이트 유틸 추가
+  - Streamlit/GUI 설정 화면에 업데이트 확인·실행 버튼 추가
 - **CustomTkinter 데스크톱 GUI** (`gui.py`) — 브라우저 없이 네이티브 창으로
   GuruNote 파이프라인(Step 1~5) 실행. 백그라운드 스레드 + Queue 기반 비동기
   처리로 UI 블로킹 없음. 탭뷰(요약/번역/원문), 실시간 로그 패널, 네이티브

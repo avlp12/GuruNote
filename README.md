@@ -133,6 +133,11 @@ streamlit run app.py
 ```
 
 브라우저가 열리면 유튜브 URL 을 입력하고 **GuruNote 생성하기** 버튼을 누릅니다.
+실행 중에는 단계별 로그와 함께 **퍼센트 진행률 바**가 표시됩니다.
+
+> Streamlit 앱에는 **⚙️ Settings 탭**이 포함되어 있어 `.env` 수동 편집 없이
+> LLM Provider(`openai` / `openai_compatible` / `anthropic`), API Key,
+> Base URL, 모델명, Temperature, Max Tokens 저장/연결 테스트가 가능합니다.
 
 > Streamlit 앱에는 **⚙️ Settings 탭**이 포함되어 있어 `.env` 수동 편집 없이
 > LLM Provider(`openai` / `openai_compatible` / `anthropic`), API Key,
@@ -148,6 +153,8 @@ python gui.py
 결과를 탭(요약/번역/원문)으로 확인하고, **파일 → 저장** 대화상자로 `.md` 를 내보냅니다.
 상단 **⚙️ 설정**에서 동일하게 LLM Provider / Base URL / 모델 / 토큰 설정과
 연결 테스트를 수행할 수 있습니다.
+실행 중에는 좌측 로그 패널에서 **진행률(%)**을 확인할 수 있으며, `⏹ 중지` 버튼으로
+현재 작업을 안전한 지점에서 중단할 수 있습니다.
 
 ```bash
 # (선택) 독립 실행 파일로 패키징
@@ -212,7 +219,22 @@ python scripts/package_desktop.py --target macos --formats pkg
 - 결과:
   - Windows: `GuruNote.exe`, `GuruNote-Installer.exe`
   - macOS: `GuruNote.dmg`, `GuruNote.pkg` (그리고 빌드 산출물 `GuruNote.app`)
-  - 태그 이벤트에서는 위 파일을 GitHub Release assets 로 자동 첨부
+- 태그 이벤트에서는 위 파일을 GitHub Release assets 로 자동 첨부
+
+### 업데이트 (재설치 없이)
+
+소스 설치 사용자는 아래 명령으로 삭제/재설치 없이 업데이트할 수 있습니다.
+
+```bash
+# 업데이트 가능 상태 확인
+python scripts/update_gurunote.py --check
+
+# 코드 pull + 의존성 업그레이드
+python scripts/update_gurunote.py --update
+```
+
+- Streamlit `⚙️ Settings` 탭과 Desktop GUI `⚙️ 설정`에도 **업데이트 버튼**이 있어
+  앱 안에서 동일한 업데이트를 실행할 수 있습니다.
 
 ### 태그 릴리스 리허설 체크 (실패 시 즉시 원인 출력)
 

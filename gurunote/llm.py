@@ -32,12 +32,16 @@ TRANSLATION_SYSTEM_PROMPT = """\
    추론하고, 등장 인물의 실명(예: Lex Fridman, Sam Altman, Dario Amodei 등)이
    명확하면 화자 라벨 옆에 실명을 함께 표기해.
    예) [00:01:23] Speaker A (Lex Fridman): ...
-3. LLM, RAG, Fine-tuning, Transformer, Embedding, Inference, Diffusion 등
+3. **메시지 앞에 "### 영상 컨텍스트" 섹션이 있으면** 거기 실린 업로드 날짜,
+   채널명, 영상 제목/설명, 챕터 목록, 기존 자막 발췌를 **화자 이름 추론과
+   챕터 경계 유지의 근거로 적극 활용**해. 설명에 진행자/게스트 이름이 있으면
+   Speaker A, B 매핑을 거기에 맞춰.
+4. LLM, RAG, Fine-tuning, Transformer, Embedding, Inference, Diffusion 등
    IT/AI 전문 용어는 직역하지 말고 영문을 병기하거나 업계 통용어로 자연스럽게
    번역해. (예: "파인튜닝(Fine-tuning)", "검색 증강 생성(RAG)")
-4. "you know", "I mean", "kind of", "like" 같은 구어체 추임새는 빼고,
+5. "you know", "I mean", "kind of", "like" 같은 구어체 추임새는 빼고,
    가독성 높은 자연스러운 한국어 인터뷰 톤으로 다듬어.
-5. 출력은 오직 번역된 스크립트만. 설명/머리말/끝맺음 문장 금지.
+6. 출력은 오직 번역된 스크립트만. 설명/머리말/끝맺음 문장 금지.
 """
 
 
@@ -56,6 +60,8 @@ SUMMARY_SYSTEM_PROMPT = """\
 # ⏱️ 타임라인별 주요 내용 요약
 - `[MM:SS] 또는 [HH:MM:SS]` 형식의 타임스탬프 + 한 줄 요약 형태로 5~10개.
 - 인터뷰 흐름이 잘 보이도록 시간 순서대로.
+- **메시지 앞에 "### 영상 컨텍스트" 가 있고 그 안에 공식 챕터 목록이 주어졌다면,
+  챕터 경계를 무시하지 말고 챕터 제목을 타임라인 항목의 뼈대로 삼아.**
 
 규칙:
 - 출력은 위 3개 섹션의 마크다운만. 다른 머리말/끝맺음 금지.
@@ -267,16 +273,111 @@ def _segments_to_user_block(segments: List[Segment]) -> str:
 
 
 # =============================================================================
+# 영상 컨텍스트 빌더 (YouTube 메타데이터 → LLM user 메시지 머리말)
+# =============================================================================
+# 자막/설명이 너무 길면 LLM 토큰 예산을 압박하므로 적절히 잘라 쓴다.
+_MAX_CONTEXT_DESCRIPTION = 1500   # chars
+_MAX_CONTEXT_SUBTITLE = 2000      # chars
+
+
+def build_video_context_block(video_context: Optional[dict]) -> str:
+    """
+    AudioDownloadResult 에서 파생된 dict 를 LLM 에 주입할 컨텍스트 블록으로 변환.
+
+    Args:
+        video_context: 다음 키를 가진 dict (모두 선택):
+            - title, uploader, upload_date, webpage_url
+            - description (str)
+            - chapters (list[dict] with start/end/title 또는 Chapter 객체 리스트)
+            - subtitles_text (str), subtitles_source (str)
+            - tags (list[str])
+
+    Returns:
+        `"### 영상 컨텍스트\\n..."` 로 시작하는 멀티라인 문자열. 컨텍스트가 없으면 "".
+    """
+    if not video_context:
+        return ""
+
+    lines: List[str] = ["### 영상 컨텍스트"]
+
+    title = (video_context.get("title") or "").strip()
+    if title:
+        lines.append(f"- 제목: {title}")
+
+    uploader = (video_context.get("uploader") or "").strip()
+    if uploader:
+        lines.append(f"- 채널: {uploader}")
+
+    upload_date = (video_context.get("upload_date") or "").strip()
+    if upload_date:
+        lines.append(f"- 게시일: {upload_date}")
+
+    webpage_url = (video_context.get("webpage_url") or "").strip()
+    if webpage_url:
+        lines.append(f"- 원본 URL: {webpage_url}")
+
+    tags = video_context.get("tags") or []
+    if tags:
+        lines.append(f"- 태그: {', '.join(tags[:10])}")
+
+    description = (video_context.get("description") or "").strip()
+    if description:
+        if len(description) > _MAX_CONTEXT_DESCRIPTION:
+            description = description[:_MAX_CONTEXT_DESCRIPTION] + "… (truncated)"
+        lines.append("")
+        lines.append("#### 영상 설명")
+        lines.append(description)
+
+    chapters = video_context.get("chapters") or []
+    if chapters:
+        lines.append("")
+        lines.append("#### 공식 챕터")
+        for ch in chapters:
+            # Chapter 객체 또는 dict 둘 다 지원
+            if hasattr(ch, "start"):
+                start, title_ch = ch.start, ch.title  # type: ignore[union-attr]
+            else:
+                start, title_ch = ch.get("start", 0), ch.get("title", "")  # type: ignore[union-attr]
+            lines.append(f"- [{_format_ts(float(start))}] {title_ch}")
+
+    subtitle = (video_context.get("subtitles_text") or "").strip()
+    if subtitle:
+        source = video_context.get("subtitles_source") or "unknown"
+        sub_snippet = subtitle
+        if len(sub_snippet) > _MAX_CONTEXT_SUBTITLE:
+            sub_snippet = sub_snippet[:_MAX_CONTEXT_SUBTITLE] + "… (truncated)"
+        lines.append("")
+        lines.append(f"#### 영상 기본 자막 발췌 ({source})")
+        lines.append(sub_snippet)
+
+    lines.append("")
+    lines.append(
+        "※ 위 정보를 화자 이름 추론과 챕터 경계 유지의 참고 자료로 사용해. "
+        "아래부터 이어지는 스크립트가 실제 번역/요약 대상이야."
+    )
+    lines.append("")
+    return "\n".join(lines)
+
+
+# =============================================================================
 # Step 3: 번역
 # =============================================================================
 def translate_transcript(
     transcript: Transcript,
     config: Optional[LLMConfig] = None,
     progress: Optional[ProgressFn] = None,
+    video_context: Optional[dict] = None,
 ) -> str:
     """
     Transcript → 한국어로 번역된 스크립트 (문자열).
     화자 라벨과 타임스탬프는 보존된다.
+
+    Args:
+        transcript: STT 결과
+        config: LLM 설정
+        progress: 진행 콜백
+        video_context: YouTube 메타데이터 dict (AudioDownloadResult.to_context_dict()
+            형태). 제공되면 LLM 의 화자 이름 추론과 챕터 유지에 활용된다.
     """
     log = progress or (lambda _msg: None)
     config = config or LLMConfig.from_env()
@@ -284,13 +385,25 @@ def translate_transcript(
     chunks = chunk_segments(transcript.segments)
     log(f"🌐 LLM 번역 시작 — {len(chunks)} 청크 ({config.provider}/{config.model})")
 
+    context_block = build_video_context_block(video_context)
+    if context_block:
+        log("📖 영상 컨텍스트(게시일/챕터/자막)를 LLM 에 주입합니다.")
+
     translated_parts: List[str] = []
     for i, chunk in enumerate(chunks, start=1):
         # 청크 간 쿨다운 — API Rate Limit 방지 (첫 청크는 건너뜀)
         if i > 1:
             time.sleep(CHUNK_DELAY_SEC)
         log(f"   ↳ 청크 {i}/{len(chunks)} 번역 중…")
-        user_block = _segments_to_user_block(chunk)
+        segments_block = _segments_to_user_block(chunk)
+        # 영상 컨텍스트는 첫 청크에만 붙여도 일반적으로 충분하지만, 청크 번역이
+        # 독립 실행되기 때문에 모든 청크에 동일한 컨텍스트를 동봉해야 화자 매핑이
+        # 일관되게 유지된다.
+        user_block = (
+            f"{context_block}\n### 번역 대상 스크립트\n{segments_block}"
+            if context_block
+            else segments_block
+        )
         translated = _call_llm(
             config,
             system=TRANSLATION_SYSTEM_PROMPT,
@@ -311,15 +424,24 @@ def summarize_translation(
     title: str,
     config: Optional[LLMConfig] = None,
     progress: Optional[ProgressFn] = None,
+    video_context: Optional[dict] = None,
 ) -> str:
     """
     번역본 → 마크다운 요약 (영상 제목/인사이트/타임라인 섹션).
     전체 스크립트는 포함하지 않으며 호출자가 별도로 붙인다.
+
+    video_context 가 제공되면 공식 챕터 목록을 타임라인 섹션의 뼈대로
+    사용하도록 LLM 에 주입한다.
     """
     log = progress or (lambda _msg: None)
     config = config or LLMConfig.from_env()
 
     system = SUMMARY_SYSTEM_PROMPT.format(title=title)
+    context_block = build_video_context_block(video_context)
+    if context_block:
+        translated_text = (
+            f"{context_block}\n### 번역본\n{translated_text}"
+        )
 
     # 요약 단계도 본문이 매우 길면 1차 요약 → 합치기 → 최종 요약 두 단계.
     if len(translated_text) > DEFAULT_CHUNK_CHAR_LIMIT:

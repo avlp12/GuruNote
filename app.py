@@ -33,7 +33,8 @@ from gurunote.audio import (
     is_probably_youtube_url,
 )
 from gurunote.exporter import build_gurunote_markdown, sanitize_filename
-from gurunote.llm import LLMConfig, summarize_translation, translate_transcript
+from gurunote.llm import LLMConfig, summarize_translation, test_connection, translate_transcript
+from gurunote.settings import save_settings
 from gurunote.stt import transcribe
 from gurunote.types import Transcript, _format_ts
 
@@ -89,8 +90,8 @@ def render_sidebar() -> dict:
         env_provider = os.environ.get("LLM_PROVIDER", "openai")
         provider = st.selectbox(
             "LLM Provider",
-            options=["openai", "anthropic"],
-            index=0 if env_provider == "openai" else 1,
+            options=["openai", "openai_compatible", "anthropic"],
+            index=0 if env_provider == "openai" else (2 if env_provider == "anthropic" else 1),
         )
 
         st.divider()
@@ -106,6 +107,91 @@ def render_sidebar() -> dict:
         st.caption("Powered by VibeVoice-ASR · yt-dlp · Streamlit")
 
         return {"engine": engine_label, "provider": provider}
+
+
+def render_settings_tab(default_provider: str) -> None:
+    st.subheader("⚙️ Settings")
+    st.caption("`.env` 를 직접 열지 않아도 이 탭에서 LLM 설정을 저장/테스트할 수 있습니다.")
+
+    with st.form("settings_form"):
+        provider = st.selectbox(
+            "LLM Provider",
+            options=["openai", "openai_compatible", "anthropic"],
+            index=0 if default_provider == "openai" else (2 if default_provider == "anthropic" else 1),
+            help="openai_compatible: oMLX / vLLM / Ollama / LM Studio / llama.cpp 서버 등",
+        )
+        openai_key = st.text_input(
+            "OpenAI API Key",
+            value=os.environ.get("OPENAI_API_KEY", ""),
+            type="password",
+        )
+        openai_base_url = st.text_input(
+            "OpenAI Base URL (Local/Compatible)",
+            value=os.environ.get("OPENAI_BASE_URL", ""),
+            disabled=provider == "anthropic",
+            placeholder="예: http://127.0.0.1:8000/v1",
+        )
+        openai_model = st.text_input(
+            "OpenAI/Compatible Model",
+            value=os.environ.get("OPENAI_MODEL", "gpt-4o"),
+        )
+        anthropic_key = st.text_input(
+            "Anthropic API Key",
+            value=os.environ.get("ANTHROPIC_API_KEY", ""),
+            type="password",
+        )
+        anthropic_model = st.text_input(
+            "Anthropic Model",
+            value=os.environ.get("ANTHROPIC_MODEL", "claude-3-5-sonnet-latest"),
+        )
+        c1, c2, _ = st.columns([1, 1, 2])
+        temperature = c1.number_input(
+            "Temperature", min_value=0.0, max_value=2.0, step=0.1,
+            value=float(os.environ.get("LLM_TEMPERATURE", "0.2") or 0.2),
+        )
+        tr_max = c2.number_input(
+            "번역 Max Tokens", min_value=256, max_value=32768, step=256,
+            value=int(os.environ.get("LLM_TRANSLATION_MAX_TOKENS", "8192") or 8192),
+        )
+        sum_max = st.number_input(
+            "요약 Max Tokens", min_value=128, max_value=16384, step=128,
+            value=int(os.environ.get("LLM_SUMMARY_MAX_TOKENS", "4096") or 4096),
+        )
+
+        save = st.form_submit_button("💾 Save Settings", type="primary")
+        test = st.form_submit_button("🧪 Test Connection")
+
+    settings_payload = {
+        "LLM_PROVIDER": provider,
+        "OPENAI_API_KEY": openai_key,
+        "OPENAI_BASE_URL": openai_base_url,
+        "OPENAI_MODEL": openai_model,
+        "ANTHROPIC_API_KEY": anthropic_key,
+        "ANTHROPIC_MODEL": anthropic_model,
+        "LLM_TEMPERATURE": str(temperature),
+        "LLM_TRANSLATION_MAX_TOKENS": str(int(tr_max)),
+        "LLM_SUMMARY_MAX_TOKENS": str(int(sum_max)),
+    }
+
+    if save:
+        changed, backup = save_settings(settings_payload, create_backup=True)
+        st.success(
+            f"설정 저장 완료 (변경 {changed}개)"
+            + (f" · 백업: `{backup.name}`" if backup else "")
+        )
+
+    if test:
+        try:
+            # 저장하지 않아도 현재 폼 값으로 즉시 테스트
+            tmp_cfg = LLMConfig.from_env(provider=provider)
+            tmp_cfg.api_key = (openai_key if provider != "anthropic" else anthropic_key).strip()
+            tmp_cfg.base_url = openai_base_url.strip()
+            tmp_cfg.model = openai_model.strip() if provider != "anthropic" else anthropic_model.strip()
+            tmp_cfg.temperature = float(temperature)
+            resp = test_connection(tmp_cfg)
+            st.success(f"연결 성공: {resp}")
+        except Exception as exc:  # noqa: BLE001
+            st.error(f"연결 실패: {exc}")
 
 
 # -----------------------------------------------------------------------------
@@ -142,11 +228,22 @@ def run_pipeline(
                 f"✅ `{audio.video_title}` ({audio_size_mb:.1f} MB, "
                 f"{int(audio.duration_sec)}s)"
             )
+            effective_engine = engine
+            if audio.duration_sec > 3600 and engine == "auto":
+                effective_engine = "assemblyai"
+                st.info(
+                    "ℹ️ 60분 초과 오디오는 `auto` 모드에서 AssemblyAI 로 자동 전환합니다."
+                )
+            elif audio.duration_sec > 3600 and engine == "vibevoice":
+                st.warning(
+                    "⚠️ 현재 VibeVoice 단일 패스는 최대 60분 처리에 최적화되어 있어, "
+                    "긴 영상은 일부만 전사될 수 있습니다."
+                )
 
             # ----- Step 2: STT + 화자 분리 -----
             st.write("🎙️ **Step 2.** 화자 분리 STT (VibeVoice-ASR) …")
             transcript: Transcript = transcribe(
-                audio.audio_path, engine=engine, progress=log
+                audio.audio_path, engine=effective_engine, progress=log
             )
             st.write(
                 f"✅ {len(transcript.segments)} 세그먼트, "
@@ -248,57 +345,62 @@ def render_results() -> None:
 def main() -> None:
     render_header()
     settings = render_sidebar()
+    tab_run, tab_settings = st.tabs(["🎧 GuruNote 생성", "⚙️ Settings"])
 
-    st.subheader("🎧 오디오 소스 선택")
-    input_tab_yt, input_tab_local = st.tabs(["🔗 유튜브 URL", "📁 로컬 파일"])
+    with tab_run:
+        st.subheader("🎧 오디오 소스 선택")
+        input_tab_yt, input_tab_local = st.tabs(["🔗 유튜브 URL", "📁 로컬 파일"])
 
-    with input_tab_yt:
-        url = st.text_input(
-            "유튜브 URL",
-            placeholder="https://www.youtube.com/watch?v=...",
-            label_visibility="collapsed",
-        )
-        yt_submitted = st.button(
-            "GuruNote 생성하기", type="primary", key="btn_yt"
-        )
-
-    with input_tab_local:
-        uploaded = st.file_uploader(
-            "동영상 또는 오디오 파일을 업로드하세요",
-            type=[ext.lstrip(".") for ext in sorted(SUPPORTED_EXTS)],
-            help=f"지원 형식: {', '.join(sorted(SUPPORTED_EXTS))}",
-        )
-        local_submitted = st.button(
-            "GuruNote 생성하기", type="primary", key="btn_local"
-        )
-
-    if yt_submitted:
-        if not is_probably_youtube_url(url):
-            st.error("올바른 유튜브 URL 을 입력해주세요.")
-        else:
-            run_pipeline(
-                engine=settings["engine"],
-                provider=settings["provider"],
-                youtube_url=url,
+        with input_tab_yt:
+            url = st.text_input(
+                "유튜브 URL",
+                placeholder="https://www.youtube.com/watch?v=...",
+                label_visibility="collapsed",
+            )
+            yt_submitted = st.button(
+                "GuruNote 생성하기", type="primary", key="btn_yt"
             )
 
-    if local_submitted:
-        if not uploaded:
-            st.error("파일을 먼저 업로드해주세요.")
-        else:
-            # Streamlit UploadedFile → 임시 파일로 저장
-            tmp_upload = tempfile.mkdtemp(prefix="gurunote_upload_")
-            local_path = os.path.join(tmp_upload, uploaded.name)
-            with open(local_path, "wb") as f:
-                f.write(uploaded.getbuffer())
-            run_pipeline(
-                engine=settings["engine"],
-                provider=settings["provider"],
-                local_file_path=local_path,
+        with input_tab_local:
+            uploaded = st.file_uploader(
+                "동영상 또는 오디오 파일을 업로드하세요",
+                type=[ext.lstrip(".") for ext in sorted(SUPPORTED_EXTS)],
+                help=f"지원 형식: {', '.join(sorted(SUPPORTED_EXTS))}",
             )
-            cleanup_dir(tmp_upload)
+            local_submitted = st.button(
+                "GuruNote 생성하기", type="primary", key="btn_local"
+            )
 
-    render_results()
+        if yt_submitted:
+            if not is_probably_youtube_url(url):
+                st.error("올바른 유튜브 URL 을 입력해주세요.")
+            else:
+                run_pipeline(
+                    engine=settings["engine"],
+                    provider=settings["provider"],
+                    youtube_url=url,
+                )
+
+        if local_submitted:
+            if not uploaded:
+                st.error("파일을 먼저 업로드해주세요.")
+            else:
+                # Streamlit UploadedFile → 임시 파일로 저장
+                tmp_upload = tempfile.mkdtemp(prefix="gurunote_upload_")
+                local_path = os.path.join(tmp_upload, uploaded.name)
+                with open(local_path, "wb") as f:
+                    f.write(uploaded.getbuffer())
+                run_pipeline(
+                    engine=settings["engine"],
+                    provider=settings["provider"],
+                    local_file_path=local_path,
+                )
+                cleanup_dir(tmp_upload)
+
+        render_results()
+
+    with tab_settings:
+        render_settings_tab(settings["provider"])
 
     st.divider()
     st.caption(

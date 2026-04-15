@@ -8,6 +8,22 @@
 ## [Unreleased]
 
 ### Added
+- **로컬 LLM(OpenAI-compatible) 지원 강화** (`gurunote/llm.py`)
+  - `LLM_PROVIDER=openai_compatible` 추가
+  - `OPENAI_BASE_URL` 지원으로 로컬/사설 OpenAI-compatible 엔드포인트 사용 가능
+  - Temperature / 번역·요약 Max Tokens 환경변수(`LLM_TEMPERATURE`,
+    `LLM_TRANSLATION_MAX_TOKENS`, `LLM_SUMMARY_MAX_TOKENS`) 반영
+- **앱 내 Settings UX 확장**
+  - Streamlit: 별도 `⚙️ Settings` 탭 추가 (`app.py`)
+  - Desktop GUI: 설정 다이얼로그에 LLM Provider, Base URL, 고급 옵션,
+    연결 테스트 버튼 추가 (`gui.py`)
+  - 저장 시 `.env` 자동 백업 + 즉시 적용 (`gurunote/settings.py`)
+- **실행 진행률 UX 개선** (`app.py`, `gui.py`)
+  - Streamlit 파이프라인 단계별 퍼센트 진행률 바 추가
+  - Desktop GUI에 진행률 바(%) 및 `⏹ 중지` 버튼 추가
+- **업데이트 UX 추가** (`gurunote/updater.py`, `scripts/update_gurunote.py`, `app.py`, `gui.py`)
+  - 재설치 없이 `git pull + requirements 업그레이드`를 수행하는 업데이트 유틸 추가
+  - Streamlit/GUI 설정 화면에 업데이트 확인·실행 버튼 추가
 - **CustomTkinter 데스크톱 GUI** (`gui.py`) — 브라우저 없이 네이티브 창으로
   GuruNote 파이프라인(Step 1~5) 실행. 백그라운드 스레드 + Queue 기반 비동기
   처리로 UI 블로킹 없음. 탭뷰(요약/번역/원문), 실시간 로그 패널, 네이티브
@@ -23,6 +39,18 @@
   수행, ffprobe 로 정확한 길이 취득.
   - Streamlit: 탭 UI 로 "🔗 유튜브 URL" / "📁 로컬 파일" 전환 + `st.file_uploader`
   - CustomTkinter: 📁 버튼으로 OS 네이티브 파일 대화상자, 자동 모드 감지
+- **데스크톱 배포 패키징 스크립트** (`scripts/package_desktop.py`)
+  - Windows: `dist/GuruNote.exe` (단일 실행 파일) 생성 자동화
+  - Windows(선택): Inno Setup(ISCC) 감지 시 `dist/GuruNote-Installer.exe` 생성
+  - macOS: `dist/GuruNote.app` 생성 + 옵션으로 `dist/GuruNote.dmg` /
+    `dist/GuruNote.pkg` 생성 자동화
+- **GitHub Actions 릴리스 워크플로우** (`.github/workflows/release-desktop.yml`)
+  - `v*` 태그 푸시 시 Windows/macOS 패키지를 CI에서 자동 빌드
+  - 생성물(`.exe`, 설치형 `.exe`, `.dmg`, `.pkg`)을 GitHub Release assets로 자동 업로드
+- **태그 릴리스 리허설 체크 스크립트** (`scripts/release_rehearsal_check.py`)
+  - 태그 형식, 워크플로우 핵심 항목, 필수 파일, 패키징 스크립트 스모크 테스트를
+    릴리스 전 자동 점검
+  - 실패 시 즉시 원인 출력 + 종료 코드 1 반환 (fail-fast)
 
 ### Changed
 - **README 대폭 보강** — Gemini 리뷰 반영
@@ -30,12 +58,20 @@
   - OS 별 ffmpeg 설치 명령어 (Mac/Windows/Ubuntu)
   - 60 분 초과 팟캐스트 Edge Case 처리 방식 안내 (v0.1.0 제한 및 AssemblyAI 대안)
   - 최초 실행 시 모델 다운로드 시간(14GB) 경고
+  - Windows 설치형 exe / macOS dmg·pkg 배포 워크플로우 추가
+  - 태그 기반 GitHub Actions 릴리스 자동화 안내 추가
+  - 태그 릴리스 리허설 체크 스크립트 사용법 추가
+- **긴 영상 STT 라우팅 보강** (`app.py`, `gui.py`) — 입력 오디오가 60분을
+  넘고 STT 엔진이 `auto` 인 경우 AssemblyAI 로 자동 전환해 장편 콘텐츠의
+  전사 누락 가능성을 기본 설정에서 완화.
 
 ### Fixed
 - **LLM Rate Limit 방어** (`llm.py`) — `_call_llm` 에 지수 백오프(2s→4s→8s→16s)
   재시도 로직 추가, 청크 번역 사이 1초 쿨다운 삽입으로 분당 요청 제한 회피
 - **VRAM 메모리 누수 방지** (`stt.py`) — VibeVoice 추론 완료 후 GPU 텐서 삭제
   (`del inputs, output_ids`) + `torch.cuda.empty_cache()` 호출
+- **빈 전사 결과 조기 차단** (`stt.py`) — 세그먼트/텍스트가 비어 있으면 즉시
+  예외를 발생시켜 후속 LLM 호출 낭비와 품질 저하를 방지.
 
 ## [0.1.0] - 2026-04-11
 

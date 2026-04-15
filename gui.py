@@ -25,7 +25,7 @@ from tkinter import filedialog, messagebox
 from typing import Optional
 
 import customtkinter as ctk
-from dotenv import load_dotenv, set_key
+from dotenv import load_dotenv
 
 from gurunote.audio import (
     SUPPORTED_EXTS,
@@ -37,9 +37,11 @@ from gurunote.audio import (
     is_supported_local_file,
 )
 from gurunote.exporter import build_gurunote_markdown, sanitize_filename
-from gurunote.llm import LLMConfig, summarize_translation, translate_transcript
+from gurunote.llm import LLMConfig, summarize_translation, test_connection, translate_transcript
+from gurunote.settings import save_settings
 from gurunote.stt import transcribe
 from gurunote.types import Transcript, _format_ts
+from gurunote.updater import check_updates, update_project
 
 # 환경변수 로드
 load_dotenv()
@@ -55,7 +57,7 @@ WINDOW_WIDTH = 1100
 WINDOW_HEIGHT = 780
 
 STT_OPTIONS = ["auto", "vibevoice", "assemblyai"]
-LLM_OPTIONS = ["openai", "anthropic"]
+LLM_OPTIONS = ["openai", "openai_compatible", "anthropic"]
 
 
 # =============================================================================
@@ -80,11 +82,21 @@ class PipelineWorker:
         self.engine = engine
         self.provider = provider
         self.msg_queue: queue.Queue[str] = queue.Queue()
+        self.progress_queue: queue.Queue[float] = queue.Queue()
         self.result_queue: queue.Queue[dict] = queue.Queue()
         self._thread: Optional[threading.Thread] = None
+        self._stop_event = threading.Event()
 
     def _log(self, msg: str) -> None:
+        if self._stop_event.is_set():
+            raise RuntimeError("사용자가 작업 중지를 요청했습니다.")
         self.msg_queue.put(msg)
+
+    def _set_progress(self, pct: float) -> None:
+        self.progress_queue.put(max(0.0, min(1.0, pct)))
+
+    def request_stop(self) -> None:
+        self._stop_event.set()
 
     def start(self) -> None:
         self._thread = threading.Thread(target=self._run, daemon=True)
@@ -93,6 +105,7 @@ class PipelineWorker:
     def _run(self) -> None:
         tmp_dir = tempfile.mkdtemp(prefix="gurunote_")
         try:
+            self._set_progress(0.02)
             # Step 1
             if self.youtube_url:
                 self._log("⬇️ [Step 1] 유튜브 오디오 추출 중…")
@@ -105,18 +118,29 @@ class PipelineWorker:
                 f"✅ [Step 1] {audio.video_title} ({audio_size:.1f} MB, "
                 f"{int(audio.duration_sec)}s)"
             )
+            self._set_progress(0.18)
+            effective_engine = self.engine
+            if audio.duration_sec > 3600 and self.engine == "auto":
+                effective_engine = "assemblyai"
+                self._log("ℹ️ 60분 초과 오디오는 auto 모드에서 AssemblyAI 로 자동 전환합니다.")
+            elif audio.duration_sec > 3600 and self.engine == "vibevoice":
+                self._log(
+                    "⚠️ VibeVoice 단일 패스는 최대 60분 처리에 최적화되어 있어 "
+                    "긴 영상은 일부만 전사될 수 있습니다."
+                )
 
             # Step 2
             self._log("🎙️ [Step 2] 화자 분리 STT 중…")
             transcript = transcribe(
                 audio.audio_path,
-                engine=self.engine,
+                engine=effective_engine,
                 progress=self._log,
             )
             self._log(
                 f"✅ [Step 2] {len(transcript.segments)} 세그먼트, "
                 f"{len(transcript.speakers)} 화자, 엔진={transcript.engine}"
             )
+            self._set_progress(0.55)
 
             # Step 3
             self._log("🌐 [Step 3] LLM 한국어 번역 중…")
@@ -125,6 +149,7 @@ class PipelineWorker:
                 transcript, config=llm_cfg, progress=self._log
             )
             self._log(f"✅ [Step 3] 번역 완료 ({len(translated):,} chars)")
+            self._set_progress(0.78)
 
             # Step 4
             self._log("📝 [Step 4] GuruNote 요약본 생성 중…")
@@ -135,6 +160,7 @@ class PipelineWorker:
                 progress=self._log,
             )
             self._log("✅ [Step 4] 요약 완료")
+            self._set_progress(0.90)
 
             # Step 5
             self._log("📦 [Step 5] 마크다운 조립 중…")
@@ -148,6 +174,7 @@ class PipelineWorker:
                 stt_engine=transcript.engine,
             )
             self._log("🎉 GuruNote 생성 완료!")
+            self._set_progress(1.0)
 
             self.result_queue.put(
                 {
@@ -160,7 +187,7 @@ class PipelineWorker:
                 }
             )
         except Exception as exc:
-            self._log(f"❌ 오류: {exc}")
+            self.msg_queue.put(f"❌ 오류: {exc}")
             self.result_queue.put({"ok": False, "error": str(exc)})
         finally:
             cleanup_dir(tmp_dir)
@@ -169,15 +196,17 @@ class PipelineWorker:
 # =============================================================================
 # 설정 다이얼로그 (API 키 관리)
 # =============================================================================
-# .env 파일 경로 — 프로젝트 루트 기준
-_ENV_PATH = str(Path(__file__).resolve().parent / ".env")
-
 # 설정 필드 정의: (환경변수명, 라벨, 마스킹 여부)
 _SETTINGS_FIELDS = [
+    ("LLM_PROVIDER", "LLM Provider (openai/openai_compatible/anthropic)", False),
     ("OPENAI_API_KEY", "OpenAI API Key", True),
+    ("OPENAI_BASE_URL", "OpenAI Base URL (Local/Compatible)", False),
     ("OPENAI_MODEL", "OpenAI 모델", False),
     ("ANTHROPIC_API_KEY", "Anthropic API Key", True),
     ("ANTHROPIC_MODEL", "Anthropic 모델", False),
+    ("LLM_TEMPERATURE", "LLM Temperature", False),
+    ("LLM_TRANSLATION_MAX_TOKENS", "번역 Max Tokens", False),
+    ("LLM_SUMMARY_MAX_TOKENS", "요약 Max Tokens", False),
     ("ASSEMBLYAI_API_KEY", "AssemblyAI API Key (폴백용)", True),
     ("VIBEVOICE_MODEL_ID", "VibeVoice 모델 ID", False),
     ("HUGGINGFACE_TOKEN", "HuggingFace 토큰 (선택)", True),
@@ -190,7 +219,7 @@ class SettingsDialog(ctk.CTkToplevel):
     def __init__(self, parent: ctk.CTk) -> None:
         super().__init__(parent)
         self.title("⚙️ GuruNote 설정")
-        self.geometry("520x480")
+        self.geometry("620x560")
         self.resizable(False, False)
         self.transient(parent)
         self.grab_set()
@@ -263,6 +292,22 @@ class SettingsDialog(ctk.CTkToplevel):
             font=ctk.CTkFont(weight="bold"),
             command=self._on_save,
         ).pack(side="right")
+        ctk.CTkButton(
+            btn_frame,
+            text="🧪 연결 테스트",
+            width=120,
+            fg_color="gray30",
+            hover_color="gray40",
+            command=self._on_test_connection,
+        ).pack(side="left")
+        ctk.CTkButton(
+            btn_frame,
+            text="🔄 업데이트",
+            width=120,
+            fg_color="gray30",
+            hover_color="gray40",
+            command=self._on_update,
+        ).pack(side="left", padx=(8, 0))
 
     def _toggle_show(self, env_key: str) -> None:
         self._show_vars[env_key] = not self._show_vars[env_key]
@@ -270,36 +315,54 @@ class SettingsDialog(ctk.CTkToplevel):
         entry.configure(show="" if self._show_vars[env_key] else "•")
 
     def _on_save(self) -> None:
-        # .env 파일이 없으면 생성
-        env_path = Path(_ENV_PATH)
-        if not env_path.exists():
-            env_path.write_text("# GuruNote 설정 (자동 생성)\n", encoding="utf-8")
-
-        changed = 0
-        for env_key, _label, _is_secret in _SETTINGS_FIELDS:
-            new_val = self._entries[env_key].get().strip()
-            old_val = os.environ.get(env_key, "")
-
-            if new_val != old_val:
-                # os.environ 즉시 반영
-                if new_val:
-                    os.environ[env_key] = new_val
-                elif env_key in os.environ:
-                    del os.environ[env_key]
-
-                # .env 파일에 영속
-                if new_val:
-                    set_key(_ENV_PATH, env_key, new_val)
-                else:
-                    # 빈 값이면 .env 에서 제거 대신 빈 문자열로 설정
-                    set_key(_ENV_PATH, env_key, "")
-                changed += 1
+        payload = {
+            key: self._entries[key].get().strip()
+            for key, _label, _is_secret in _SETTINGS_FIELDS
+        }
+        changed, backup = save_settings(payload, create_backup=True)
 
         if changed:
-            messagebox.showinfo("설정 저장", f"{changed} 개 항목이 저장되었습니다.")
+            backup_name = backup.name if backup else "-"
+            messagebox.showinfo(
+                "설정 저장",
+                f"{changed} 개 항목이 저장되었습니다.\n백업: {backup_name}",
+            )
         else:
             messagebox.showinfo("설정 저장", "변경된 항목이 없습니다.")
         self.destroy()
+
+    def _on_test_connection(self) -> None:
+        provider = self._entries["LLM_PROVIDER"].get().strip() or "openai"
+        cfg = LLMConfig.from_env(provider=provider)
+        if provider == "anthropic":
+            cfg.api_key = self._entries["ANTHROPIC_API_KEY"].get().strip()
+            cfg.model = self._entries["ANTHROPIC_MODEL"].get().strip() or cfg.model
+        else:
+            cfg.api_key = self._entries["OPENAI_API_KEY"].get().strip()
+            cfg.base_url = self._entries["OPENAI_BASE_URL"].get().strip()
+            cfg.model = self._entries["OPENAI_MODEL"].get().strip() or cfg.model
+        try:
+            cfg.temperature = float(self._entries["LLM_TEMPERATURE"].get().strip() or "0.2")
+            resp = test_connection(cfg)
+            messagebox.showinfo("연결 테스트", f"성공: {resp}")
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror("연결 테스트 실패", str(exc))
+
+    def _on_update(self) -> None:
+        try:
+            logs: list[str] = []
+            status = check_updates(logs.append)
+            ok = messagebox.askyesno(
+                "업데이트 확인",
+                f"{status}\n\n업데이트를 실행할까요? (git pull + pip upgrade)",
+            )
+            if not ok:
+                return
+            logs = []
+            update_project(logs.append, upgrade_deps=True)
+            messagebox.showinfo("업데이트 완료", "업데이트가 완료되었습니다.\n앱을 재시작해주세요.")
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror("업데이트 실패", str(exc))
 
 
 # =============================================================================
@@ -417,6 +480,18 @@ class GuruNoteApp(ctk.CTk):
         )
         self._run_btn.grid(row=0, column=7, padx=(12, 14), pady=12)
 
+        self._stop_btn = ctk.CTkButton(
+            ctl,
+            text="⏹ 중지",
+            height=38,
+            width=90,
+            state="disabled",
+            fg_color="gray35",
+            hover_color="gray45",
+            command=self._on_stop,
+        )
+        self._stop_btn.grid(row=0, column=8, padx=(0, 14), pady=12)
+
     def _build_result_area(self) -> None:
         """결과 영역: 왼쪽 = 진행 로그, 오른쪽 = 결과 탭."""
         container = ctk.CTkFrame(self, fg_color="transparent")
@@ -428,7 +503,7 @@ class GuruNoteApp(ctk.CTk):
         # ---- 진행 로그 (왼쪽) ----
         log_frame = ctk.CTkFrame(container)
         log_frame.grid(row=0, column=0, padx=(0, 8), sticky="nsew")
-        log_frame.grid_rowconfigure(1, weight=1)
+        log_frame.grid_rowconfigure(2, weight=1)
         log_frame.grid_columnconfigure(0, weight=1)
 
         ctk.CTkLabel(
@@ -437,10 +512,21 @@ class GuruNoteApp(ctk.CTk):
             font=ctk.CTkFont(size=13, weight="bold"),
         ).grid(row=0, column=0, padx=12, pady=(10, 4), sticky="w")
 
+        prog_wrap = ctk.CTkFrame(log_frame, fg_color="transparent")
+        prog_wrap.grid(row=1, column=0, padx=10, pady=(0, 6), sticky="ew")
+        prog_wrap.grid_columnconfigure(0, weight=1)
+        self._progress = ctk.CTkProgressBar(prog_wrap)
+        self._progress.grid(row=0, column=0, sticky="ew")
+        self._progress.set(0)
+        self._progress_label = ctk.CTkLabel(
+            prog_wrap, text="진행률 0%", font=ctk.CTkFont(size=11), text_color="gray60"
+        )
+        self._progress_label.grid(row=1, column=0, sticky="w", pady=(3, 0))
+
         self._log_text = ctk.CTkTextbox(
             log_frame, font=ctk.CTkFont(size=12), state="disabled", wrap="word"
         )
-        self._log_text.grid(row=1, column=0, padx=8, pady=(0, 8), sticky="nsew")
+        self._log_text.grid(row=2, column=0, padx=8, pady=(0, 8), sticky="nsew")
 
         # ---- 결과 탭 (오른쪽) ----
         tab_frame = ctk.CTkFrame(container)
@@ -564,10 +650,12 @@ class GuruNoteApp(ctk.CTk):
 
         # UI 잠금
         self._run_btn.configure(state="disabled", text="처리 중…")
+        self._stop_btn.configure(state="normal")
         self._save_btn.configure(state="disabled")
         self._clear_log()
         self._clear_results()
         self._title_label.configure(text="파이프라인 실행 중…")
+        self._set_progress(0.01)
 
         # 워커 시작
         if use_local:
@@ -598,6 +686,13 @@ class GuruNoteApp(ctk.CTk):
             except queue.Empty:
                 break
 
+        while True:
+            try:
+                pct = self._worker.progress_queue.get_nowait()
+                self._set_progress(pct)
+            except queue.Empty:
+                break
+
         # 결과 확인
         try:
             result = self._worker.result_queue.get_nowait()
@@ -611,6 +706,7 @@ class GuruNoteApp(ctk.CTk):
 
     def _on_pipeline_done(self, result: dict) -> None:
         self._run_btn.configure(state="normal", text="GuruNote 생성하기")
+        self._stop_btn.configure(state="disabled")
 
         if not result.get("ok"):
             self._title_label.configure(text="❌ 오류 발생")
@@ -637,6 +733,14 @@ class GuruNoteApp(ctk.CTk):
 
         # 요약 탭으로 포커스
         self._tabview.set("📌 요약본")
+        self._set_progress(1.0)
+
+    def _on_stop(self) -> None:
+        if self._worker is None:
+            return
+        self._worker.request_stop()
+        self._stop_btn.configure(state="disabled")
+        self._append_log("⏹ 사용자가 작업 중지를 요청했습니다. 안전한 지점에서 중단합니다…")
 
     def _on_save(self) -> None:
         if not self._result:
@@ -672,6 +776,10 @@ class GuruNoteApp(ctk.CTk):
         self._log_text.configure(state="normal")
         self._log_text.delete("1.0", "end")
         self._log_text.configure(state="disabled")
+
+    def _set_progress(self, pct: float) -> None:
+        self._progress.set(max(0.0, min(1.0, pct)))
+        self._progress_label.configure(text=f"진행률 {int(pct * 100)}%")
 
     @staticmethod
     def _set_text(textbox: ctk.CTkTextbox, content: str) -> None:

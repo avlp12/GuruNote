@@ -25,7 +25,7 @@ from tkinter import filedialog, messagebox
 from typing import Optional
 
 import customtkinter as ctk
-from dotenv import load_dotenv, set_key
+from dotenv import load_dotenv
 
 from gurunote.audio import (
     SUPPORTED_EXTS,
@@ -37,7 +37,8 @@ from gurunote.audio import (
     is_supported_local_file,
 )
 from gurunote.exporter import build_gurunote_markdown, sanitize_filename
-from gurunote.llm import LLMConfig, summarize_translation, translate_transcript
+from gurunote.llm import LLMConfig, summarize_translation, test_connection, translate_transcript
+from gurunote.settings import save_settings
 from gurunote.stt import transcribe
 from gurunote.types import Transcript, _format_ts
 
@@ -55,7 +56,7 @@ WINDOW_WIDTH = 1100
 WINDOW_HEIGHT = 780
 
 STT_OPTIONS = ["auto", "vibevoice", "assemblyai"]
-LLM_OPTIONS = ["openai", "anthropic"]
+LLM_OPTIONS = ["openai", "openai_compatible", "anthropic"]
 
 
 # =============================================================================
@@ -178,15 +179,17 @@ class PipelineWorker:
 # =============================================================================
 # 설정 다이얼로그 (API 키 관리)
 # =============================================================================
-# .env 파일 경로 — 프로젝트 루트 기준
-_ENV_PATH = str(Path(__file__).resolve().parent / ".env")
-
 # 설정 필드 정의: (환경변수명, 라벨, 마스킹 여부)
 _SETTINGS_FIELDS = [
+    ("LLM_PROVIDER", "LLM Provider (openai/openai_compatible/anthropic)", False),
     ("OPENAI_API_KEY", "OpenAI API Key", True),
+    ("OPENAI_BASE_URL", "OpenAI Base URL (Local/Compatible)", False),
     ("OPENAI_MODEL", "OpenAI 모델", False),
     ("ANTHROPIC_API_KEY", "Anthropic API Key", True),
     ("ANTHROPIC_MODEL", "Anthropic 모델", False),
+    ("LLM_TEMPERATURE", "LLM Temperature", False),
+    ("LLM_TRANSLATION_MAX_TOKENS", "번역 Max Tokens", False),
+    ("LLM_SUMMARY_MAX_TOKENS", "요약 Max Tokens", False),
     ("ASSEMBLYAI_API_KEY", "AssemblyAI API Key (폴백용)", True),
     ("VIBEVOICE_MODEL_ID", "VibeVoice 모델 ID", False),
     ("HUGGINGFACE_TOKEN", "HuggingFace 토큰 (선택)", True),
@@ -199,7 +202,7 @@ class SettingsDialog(ctk.CTkToplevel):
     def __init__(self, parent: ctk.CTk) -> None:
         super().__init__(parent)
         self.title("⚙️ GuruNote 설정")
-        self.geometry("520x480")
+        self.geometry("620x560")
         self.resizable(False, False)
         self.transient(parent)
         self.grab_set()
@@ -272,6 +275,14 @@ class SettingsDialog(ctk.CTkToplevel):
             font=ctk.CTkFont(weight="bold"),
             command=self._on_save,
         ).pack(side="right")
+        ctk.CTkButton(
+            btn_frame,
+            text="🧪 연결 테스트",
+            width=120,
+            fg_color="gray30",
+            hover_color="gray40",
+            command=self._on_test_connection,
+        ).pack(side="left")
 
     def _toggle_show(self, env_key: str) -> None:
         self._show_vars[env_key] = not self._show_vars[env_key]
@@ -279,36 +290,38 @@ class SettingsDialog(ctk.CTkToplevel):
         entry.configure(show="" if self._show_vars[env_key] else "•")
 
     def _on_save(self) -> None:
-        # .env 파일이 없으면 생성
-        env_path = Path(_ENV_PATH)
-        if not env_path.exists():
-            env_path.write_text("# GuruNote 설정 (자동 생성)\n", encoding="utf-8")
-
-        changed = 0
-        for env_key, _label, _is_secret in _SETTINGS_FIELDS:
-            new_val = self._entries[env_key].get().strip()
-            old_val = os.environ.get(env_key, "")
-
-            if new_val != old_val:
-                # os.environ 즉시 반영
-                if new_val:
-                    os.environ[env_key] = new_val
-                elif env_key in os.environ:
-                    del os.environ[env_key]
-
-                # .env 파일에 영속
-                if new_val:
-                    set_key(_ENV_PATH, env_key, new_val)
-                else:
-                    # 빈 값이면 .env 에서 제거 대신 빈 문자열로 설정
-                    set_key(_ENV_PATH, env_key, "")
-                changed += 1
+        payload = {
+            key: self._entries[key].get().strip()
+            for key, _label, _is_secret in _SETTINGS_FIELDS
+        }
+        changed, backup = save_settings(payload, create_backup=True)
 
         if changed:
-            messagebox.showinfo("설정 저장", f"{changed} 개 항목이 저장되었습니다.")
+            backup_name = backup.name if backup else "-"
+            messagebox.showinfo(
+                "설정 저장",
+                f"{changed} 개 항목이 저장되었습니다.\n백업: {backup_name}",
+            )
         else:
             messagebox.showinfo("설정 저장", "변경된 항목이 없습니다.")
         self.destroy()
+
+    def _on_test_connection(self) -> None:
+        provider = self._entries["LLM_PROVIDER"].get().strip() or "openai"
+        cfg = LLMConfig.from_env(provider=provider)
+        if provider == "anthropic":
+            cfg.api_key = self._entries["ANTHROPIC_API_KEY"].get().strip()
+            cfg.model = self._entries["ANTHROPIC_MODEL"].get().strip() or cfg.model
+        else:
+            cfg.api_key = self._entries["OPENAI_API_KEY"].get().strip()
+            cfg.base_url = self._entries["OPENAI_BASE_URL"].get().strip()
+            cfg.model = self._entries["OPENAI_MODEL"].get().strip() or cfg.model
+        try:
+            cfg.temperature = float(self._entries["LLM_TEMPERATURE"].get().strip() or "0.2")
+            resp = test_connection(cfg)
+            messagebox.showinfo("연결 테스트", f"성공: {resp}")
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror("연결 테스트 실패", str(exc))
 
 
 # =============================================================================

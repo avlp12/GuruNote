@@ -9,11 +9,12 @@ Step 1: 오디오 소스 → 로컬 mp3 오디오 파일.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 import yt_dlp
 
@@ -21,6 +22,21 @@ import yt_dlp
 AUDIO_EXTS = {".mp3", ".wav", ".flac", ".m4a", ".aac", ".ogg", ".wma", ".opus"}
 VIDEO_EXTS = {".mp4", ".mkv", ".avi", ".mov", ".webm", ".wmv", ".flv", ".ts", ".m4v"}
 SUPPORTED_EXTS = AUDIO_EXTS | VIDEO_EXTS
+
+# yt-dlp 로 받아볼 자막 언어 우선순위
+SUBTITLE_LANGS = ["en", "en-US", "en-GB", "ko"]
+
+
+@dataclass
+class Chapter:
+    """유튜브 영상의 챕터 (설명 타임스탬프 또는 YouTube 공식 챕터)."""
+
+    start: float          # 초
+    end: float            # 초
+    title: str
+
+    def to_dict(self) -> dict:
+        return {"start": self.start, "end": self.end, "title": self.title}
 
 
 @dataclass
@@ -31,6 +47,33 @@ class AudioDownloadResult:
     duration_sec: float
     uploader: Optional[str]
     webpage_url: str
+    # YouTube 전용 메타데이터 (로컬 파일은 모두 기본값)
+    upload_date: Optional[str] = None        # "YYYY-MM-DD" 형식
+    description: str = ""                     # 영상 설명
+    chapters: List[Chapter] = field(default_factory=list)
+    subtitles_text: str = ""                  # 공식/자동 자막 (VTT → 평문)
+    subtitles_source: str = ""                # "manual" | "auto" | ""
+    tags: List[str] = field(default_factory=list)
+
+    @property
+    def is_youtube(self) -> bool:
+        return self.webpage_url.startswith(("http://", "https://")) and (
+            "youtube.com" in self.webpage_url or "youtu.be" in self.webpage_url
+        )
+
+    def to_context_dict(self) -> dict:
+        """LLM 에 주입할 영상 컨텍스트 dict. 로컬 파일이면 자동으로 빈 값이 많아진다."""
+        return {
+            "title": self.video_title,
+            "uploader": self.uploader,
+            "upload_date": self.upload_date,
+            "webpage_url": self.webpage_url if self.is_youtube else "",
+            "description": self.description,
+            "chapters": [c.to_dict() for c in self.chapters],
+            "subtitles_text": self.subtitles_text,
+            "subtitles_source": self.subtitles_source,
+            "tags": list(self.tags),
+        }
 
 
 def is_probably_youtube_url(url: str) -> bool:
@@ -44,7 +87,14 @@ def is_probably_youtube_url(url: str) -> bool:
 
 def download_audio(url: str, out_dir: str) -> AudioDownloadResult:
     """
-    유튜브 URL 에서 오디오만 추출해 mp3 로 저장한다.
+    유튜브 URL 에서 오디오 + 메타데이터 + 자막을 가져온다.
+
+    오디오 외에도 LLM 번역/요약 품질을 높이는 부가 정보를 함께 수집한다:
+      - 영상 게시일 (upload_date)
+      - 설명 텍스트 (description)
+      - 챕터 (YouTube 공식 챕터 또는 설명 타임스탬프 파싱)
+      - 기존 자막 (수동 → 자동 순서로 영어, 없으면 한국어)
+      - 태그
 
     Args:
         url: 유튜브 영상 URL
@@ -71,6 +121,11 @@ def download_audio(url: str, out_dir: str) -> AudioDownloadResult:
         "quiet": True,
         "noprogress": True,
         "no_warnings": True,
+        # 자막 다운로드 (수동 + 자동, VTT 포맷)
+        "writesubtitles": True,
+        "writeautomaticsub": True,
+        "subtitleslangs": SUBTITLE_LANGS,
+        "subtitlesformat": "vtt",
     }
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -81,11 +136,26 @@ def download_audio(url: str, out_dir: str) -> AudioDownloadResult:
     duration_sec = float(info.get("duration") or 0.0)
     uploader = info.get("uploader") or info.get("channel")
     webpage_url = info.get("webpage_url") or url
+    description = info.get("description") or ""
+    tags = info.get("tags") or []
+
+    # 게시일 YYYYMMDD → YYYY-MM-DD
+    raw_date = info.get("upload_date") or ""
+    upload_date = _format_upload_date(raw_date)
+
+    # 챕터: yt-dlp 가 파싱해주는 경우 우선, 없으면 설명에서 추정
+    chapters = _extract_chapters(info, duration_sec)
+
+    # 자막: 우선순위대로 파일을 찾아 평문 변환
+    subtitles_text, subtitles_source = _load_best_subtitle(out_dir, video_id)
 
     audio_path = os.path.join(out_dir, f"{video_id}.mp3")
     if not os.path.exists(audio_path):
         # FFmpeg 변환이 어떤 이유로 다른 확장자를 남겼다면 폴더에서 찾는다.
-        candidates = sorted(Path(out_dir).glob(f"{video_id}.*"))
+        candidates = sorted(
+            p for p in Path(out_dir).glob(f"{video_id}.*")
+            if p.suffix.lower() in AUDIO_EXTS
+        )
         if not candidates:
             raise FileNotFoundError(
                 f"오디오 파일을 찾을 수 없습니다: {out_dir} (id={video_id})"
@@ -99,7 +169,154 @@ def download_audio(url: str, out_dir: str) -> AudioDownloadResult:
         duration_sec=duration_sec,
         uploader=uploader,
         webpage_url=webpage_url,
+        upload_date=upload_date,
+        description=description,
+        chapters=chapters,
+        subtitles_text=subtitles_text,
+        subtitles_source=subtitles_source,
+        tags=list(tags),
     )
+
+
+# =============================================================================
+# YouTube 메타데이터 보조 함수
+# =============================================================================
+def _format_upload_date(raw: str) -> Optional[str]:
+    """yt-dlp 의 'YYYYMMDD' → ISO 'YYYY-MM-DD'. 실패 시 None."""
+    raw = (raw or "").strip()
+    if len(raw) == 8 and raw.isdigit():
+        return f"{raw[0:4]}-{raw[4:6]}-{raw[6:8]}"
+    return None
+
+
+# 챕터 타임스탬프 라인: "00:00 Intro" / "1:02:03 - Deep dive" / "[12:34] Section"
+_CHAPTER_LINE_RE = re.compile(
+    r"^[\s\-\*\[\(•●·▪︎]*"             # 선행 장식 문자
+    r"(\d{1,2}(?::\d{2}){1,2})"        # 타임스탬프 (M:SS 또는 H:MM:SS)
+    r"[\s\-\]\):]+"                     # 구분자
+    r"(.+?)"                            # 챕터 제목
+    r"\s*$",
+    re.MULTILINE,
+)
+
+
+def _extract_chapters(info: dict, duration_sec: float) -> List[Chapter]:
+    """
+    yt-dlp 가 제공한 chapters 필드를 우선 사용하고,
+    없으면 영상 설명(description) 에서 타임스탬프 라인을 파싱한다.
+    """
+    raw_chapters = info.get("chapters") or []
+    chapters: List[Chapter] = []
+
+    if raw_chapters:
+        for ch in raw_chapters:
+            try:
+                chapters.append(
+                    Chapter(
+                        start=float(ch.get("start_time", 0) or 0),
+                        end=float(ch.get("end_time", 0) or 0),
+                        title=str(ch.get("title", "")).strip(),
+                    )
+                )
+            except Exception:  # noqa: BLE001
+                continue
+        if chapters:
+            return chapters
+
+    # Fallback: 설명에서 추정
+    description = info.get("description") or ""
+    candidates: List[Chapter] = []
+    for match in _CHAPTER_LINE_RE.finditer(description):
+        ts_str, title = match.group(1), match.group(2).strip()
+        seconds = _ts_to_seconds(ts_str)
+        if seconds is None:
+            continue
+        # 타이틀이 너무 짧거나 URL 만 있는 라인은 건너뜀
+        if len(title) < 2 or title.startswith(("http://", "https://")):
+            continue
+        candidates.append(Chapter(start=seconds, end=0.0, title=title))
+
+    if len(candidates) < 2:
+        return []
+
+    # 타임스탬프 기준 오름차순 정렬 후, 다음 챕터의 start 를 현재 end 로 설정
+    candidates.sort(key=lambda c: c.start)
+    for i, ch in enumerate(candidates):
+        if i + 1 < len(candidates):
+            ch.end = candidates[i + 1].start
+        else:
+            ch.end = duration_sec or ch.start
+
+    return candidates
+
+
+def _ts_to_seconds(ts: str) -> Optional[float]:
+    """M:SS 또는 H:MM:SS → 초."""
+    parts = ts.split(":")
+    try:
+        nums = [int(p) for p in parts]
+    except ValueError:
+        return None
+    if len(nums) == 2:
+        m, s = nums
+        return m * 60 + s
+    if len(nums) == 3:
+        h, m, s = nums
+        return h * 3600 + m * 60 + s
+    return None
+
+
+def _load_best_subtitle(out_dir: str, video_id: str) -> tuple[str, str]:
+    """
+    yt-dlp 가 다운로드한 자막 파일 중 가장 적합한 것을 선택해 평문으로 반환.
+
+    - 수동(공식) 자막 > 자동 자막
+    - SUBTITLE_LANGS 우선순위대로 탐색
+    - 파일명 규칙: `{video_id}.{lang}.vtt` (자동) 또는 `{video_id}.{lang}.vtt` (수동)
+      yt-dlp 는 둘을 파일명으로 구분하지 않으므로 존재하는 모든 vtt 를 후보로 한다.
+
+    Returns:
+        (subtitles_text, source) — source 는 "manual" | "auto" | ""
+    """
+    out = Path(out_dir)
+    candidates = [
+        out / f"{video_id}.{lang}.vtt" for lang in SUBTITLE_LANGS
+    ]
+    for p in candidates:
+        if p.exists() and p.stat().st_size > 0:
+            text = _vtt_to_plaintext(p.read_text(encoding="utf-8", errors="ignore"))
+            if text.strip():
+                # yt-dlp 는 manual 과 auto 를 파일명으로 구분하지 않아 "unknown" 으로 반환
+                return text, "auto_or_manual"
+    return "", ""
+
+
+def _vtt_to_plaintext(vtt: str) -> str:
+    """WebVTT 포맷에서 타임스탬프/헤더를 걷어내고 평문만 남긴다."""
+    lines = vtt.splitlines()
+    out: List[str] = []
+    seen: set[str] = set()  # 자동 자막은 같은 문장이 중복되는 경향이 있어 중복 제거
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("WEBVTT") or stripped.startswith("NOTE"):
+            continue
+        # 타임스탬프 라인
+        if "-->" in stripped:
+            continue
+        # 큐 번호
+        if stripped.isdigit():
+            continue
+        # 인라인 태그 제거: <c>, <00:00:00.000>, </c>, &nbsp; 등
+        text = re.sub(r"<[^>]+>", "", stripped)
+        text = re.sub(r"&[a-z]+;", " ", text)
+        text = text.strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        out.append(text)
+    return "\n".join(out)
 
 
 def is_supported_local_file(path: str) -> bool:

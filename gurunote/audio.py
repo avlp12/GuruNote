@@ -26,6 +26,10 @@ SUPPORTED_EXTS = AUDIO_EXTS | VIDEO_EXTS
 # yt-dlp 로 받아볼 자막 언어 우선순위
 SUBTITLE_LANGS = ["en", "en-US", "en-GB", "ko"]
 
+# yt-dlp 가 선택한 포맷이 vtt 가 아닐 수 있어 여러 확장자를 모두 탐색한다.
+# `_parse_subtitle_file()` 이 VTT 와 SRT 를 모두 처리.
+SUBTITLE_EXTS = [".vtt", ".srt", ".ttml", ".srv3", ".json3", ".sub"]
+
 
 @dataclass
 class Chapter:
@@ -89,7 +93,13 @@ def download_audio(url: str, out_dir: str) -> AudioDownloadResult:
     """
     유튜브 URL 에서 오디오 + 메타데이터 + 자막을 가져온다.
 
-    오디오 외에도 LLM 번역/요약 품질을 높이는 부가 정보를 함께 수집한다:
+    신뢰성 설계:
+      - **오디오 다운로드는 필수** — 1차 호출에서 실패 시 그대로 예외 전파
+      - **자막 다운로드는 best-effort** — 2차 별도 호출에서 실패 시 로그만 남기고
+        계속 진행. 자막 엔드포인트의 간헐적 HTTP 403/429 등이 오디오 파이프라인
+        전체를 무너뜨리지 않도록 격리.
+
+    함께 수집하는 부가 정보:
       - 영상 게시일 (upload_date)
       - 설명 텍스트 (description)
       - 챕터 (YouTube 공식 챕터 또는 설명 타임스탬프 파싱)
@@ -104,11 +114,12 @@ def download_audio(url: str, out_dir: str) -> AudioDownloadResult:
         AudioDownloadResult — 파일 경로 + 메타데이터
 
     Raises:
-        yt_dlp.utils.DownloadError, FileNotFoundError
+        yt_dlp.utils.DownloadError, FileNotFoundError — **오디오 단계에서만**
     """
     os.makedirs(out_dir, exist_ok=True)
 
-    ydl_opts = {
+    # --- 1차: 오디오 다운로드 (실패 시 예외 전파) ---
+    ydl_opts_audio = {
         "format": "bestaudio/best",
         "outtmpl": os.path.join(out_dir, "%(id)s.%(ext)s"),
         "postprocessors": [
@@ -121,14 +132,9 @@ def download_audio(url: str, out_dir: str) -> AudioDownloadResult:
         "quiet": True,
         "noprogress": True,
         "no_warnings": True,
-        # 자막 다운로드 (수동 + 자동, VTT 포맷)
-        "writesubtitles": True,
-        "writeautomaticsub": True,
-        "subtitleslangs": SUBTITLE_LANGS,
-        "subtitlesformat": "vtt",
     }
 
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+    with yt_dlp.YoutubeDL(ydl_opts_audio) as ydl:
         info = ydl.extract_info(url, download=True)
 
     video_id = info.get("id", "audio")
@@ -145,6 +151,9 @@ def download_audio(url: str, out_dir: str) -> AudioDownloadResult:
 
     # 챕터: yt-dlp 가 파싱해주는 경우 우선, 없으면 설명에서 추정
     chapters = _extract_chapters(info, duration_sec)
+
+    # --- 2차: 자막 다운로드 (best-effort, 모든 예외 swallow) ---
+    _try_download_subtitles(url, out_dir)
 
     # 자막: 우선순위대로 파일을 찾아 평문 변환
     subtitles_text, subtitles_source = _load_best_subtitle(out_dir, video_id)
@@ -266,29 +275,87 @@ def _ts_to_seconds(ts: str) -> Optional[float]:
     return None
 
 
+def _try_download_subtitles(url: str, out_dir: str) -> None:
+    """
+    자막을 best-effort 로 다운로드한다. 모든 예외는 swallow — 자막 엔드포인트의
+    간헐적 HTTP 403/429 가 오디오 파이프라인을 중단시키지 않도록 격리한다.
+
+    `skip_download=True` 로 오디오 재다운로드를 막고, `ignoreerrors=True` 로
+    개별 언어/포맷 실패를 전체 호출 실패로 격상시키지 않는다.
+    """
+    ydl_opts_subs = {
+        "outtmpl": os.path.join(out_dir, "%(id)s.%(ext)s"),
+        "quiet": True,
+        "noprogress": True,
+        "no_warnings": True,
+        "skip_download": True,              # 오디오는 이미 받았음
+        "writesubtitles": True,             # 수동 자막
+        "writeautomaticsub": True,          # 자동 자막
+        "subtitleslangs": SUBTITLE_LANGS,
+        "subtitlesformat": "vtt/srt/best",  # 우선 vtt, 없으면 srt 등으로 fallback
+        "ignoreerrors": True,               # 자막 실패가 호출 실패가 되지 않게
+    }
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts_subs) as ydl:
+            ydl.extract_info(url, download=True)
+    except Exception:  # noqa: BLE001 — 자막은 optional 이므로 모든 예외 무시
+        return
+
+
 def _load_best_subtitle(out_dir: str, video_id: str) -> tuple[str, str]:
     """
     yt-dlp 가 다운로드한 자막 파일 중 가장 적합한 것을 선택해 평문으로 반환.
 
-    - 수동(공식) 자막 > 자동 자막
     - SUBTITLE_LANGS 우선순위대로 탐색
-    - 파일명 규칙: `{video_id}.{lang}.vtt` (자동) 또는 `{video_id}.{lang}.vtt` (수동)
-      yt-dlp 는 둘을 파일명으로 구분하지 않으므로 존재하는 모든 vtt 를 후보로 한다.
+    - SUBTITLE_EXTS 의 여러 확장자(vtt/srt/ttml/…)를 모두 시도
+    - yt-dlp 는 수동/자동 자막을 파일명으로 구분하지 않으므로 `"auto_or_manual"`
+      소스로만 표기.
 
     Returns:
-        (subtitles_text, source) — source 는 "manual" | "auto" | ""
+        (subtitles_text, source) — source 는 "auto_or_manual" | ""
     """
     out = Path(out_dir)
-    candidates = [
-        out / f"{video_id}.{lang}.vtt" for lang in SUBTITLE_LANGS
-    ]
-    for p in candidates:
-        if p.exists() and p.stat().st_size > 0:
-            text = _vtt_to_plaintext(p.read_text(encoding="utf-8", errors="ignore"))
-            if text.strip():
-                # yt-dlp 는 manual 과 auto 를 파일명으로 구분하지 않아 "unknown" 으로 반환
-                return text, "auto_or_manual"
+    for lang in SUBTITLE_LANGS:
+        for ext in SUBTITLE_EXTS:
+            p = out / f"{video_id}.{lang}{ext}"
+            if p.exists() and p.stat().st_size > 0:
+                text = _parse_subtitle_file(p)
+                if text.strip():
+                    return text, "auto_or_manual"
     return "", ""
+
+
+def _parse_subtitle_file(path: Path) -> str:
+    """VTT / SRT 를 평문으로 변환. 알 수 없는 포맷은 best-effort 텍스트 추출."""
+    raw = path.read_text(encoding="utf-8", errors="ignore")
+    ext = path.suffix.lower()
+    if ext == ".srt":
+        return _srt_to_plaintext(raw)
+    if ext == ".vtt":
+        return _vtt_to_plaintext(raw)
+    # ttml/srv3/json3 등은 태그 제거로 대략적인 평문만 추출 (정확도 낮아도
+    # LLM 컨텍스트로는 충분).
+    stripped = re.sub(r"<[^>]+>", " ", raw)
+    stripped = re.sub(r"\s+", " ", stripped).strip()
+    return stripped
+
+
+def _srt_to_plaintext(srt: str) -> str:
+    """SRT 포맷에서 타임스탬프/번호/태그를 걷어내고 평문만 남긴다."""
+    lines = srt.splitlines()
+    out: List[str] = []
+    seen: set[str] = set()
+    for line in lines:
+        s = line.strip()
+        if not s or s.isdigit() or "-->" in s:
+            continue
+        t = re.sub(r"<[^>]+>", "", s)
+        t = re.sub(r"&[a-z]+;", " ", t).strip()
+        if not t or t in seen:
+            continue
+        seen.add(t)
+        out.append(t)
+    return "\n".join(out)
 
 
 def _vtt_to_plaintext(vtt: str) -> str:

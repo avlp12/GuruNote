@@ -268,6 +268,19 @@ def run_pipeline(
                     "긴 영상은 일부만 전사될 수 있습니다."
                 )
 
+            # 유튜브 메타데이터 로그 (로컬 파일에는 대부분 비어있음)
+            if audio.upload_date:
+                st.write(f"📅 게시일: `{audio.upload_date}`")
+            if audio.chapters:
+                st.write(f"⏱️ 공식 챕터 {len(audio.chapters)} 개 감지")
+            if audio.subtitles_text:
+                st.write(
+                    f"💬 기존 자막 감지 ({len(audio.subtitles_text):,} chars) — "
+                    "화자 이름 추론과 챕터 유지에 활용됩니다."
+                )
+
+            video_ctx = audio.to_context_dict()
+
             # ----- Step 2: STT + 화자 분리 -----
             set_progress(25, "Step 2 STT 진행 중")
             st.write("🎙️ **Step 2.** 화자 분리 STT (VibeVoice-ASR) …")
@@ -287,7 +300,9 @@ def run_pipeline(
             # 사이드바 선택을 request-local 하게 주입 (process env 는 절대 건드리지
             # 않음 — Streamlit 동시 세션에서 race 가 나지 않도록).
             llm_cfg = LLMConfig.from_env(provider=provider)
-            translated = translate_transcript(transcript, config=llm_cfg, progress=log)
+            translated = translate_transcript(
+                transcript, config=llm_cfg, progress=log, video_context=video_ctx
+            )
             st.write(f"✅ 번역 완료 ({len(translated):,} chars)")
             set_progress(82, "Step 3 완료")
 
@@ -295,7 +310,11 @@ def run_pipeline(
             set_progress(86, "Step 4 요약 진행 중")
             st.write("📝 **Step 4.** GuruNote 스타일 요약본 생성…")
             summary_md = summarize_translation(
-                translated, title=audio.video_title, config=llm_cfg, progress=log
+                translated,
+                title=audio.video_title,
+                config=llm_cfg,
+                progress=log,
+                video_context=video_ctx,
             )
             st.write("✅ 요약 완료")
             set_progress(94, "Step 4 완료")
@@ -311,6 +330,9 @@ def run_pipeline(
                 transcript=transcript,
                 uploader=audio.uploader,
                 stt_engine=transcript.engine,
+                upload_date=audio.upload_date,
+                chapters=audio.chapters,
+                subtitles_source=audio.subtitles_source,
             )
             st.write("✅ 완료")
             set_progress(100, "모든 단계 완료")

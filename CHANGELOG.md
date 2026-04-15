@@ -8,6 +8,19 @@
 ## [Unreleased]
 
 ### Added
+- **유튜브 메타데이터 컨텍스트 주입** (`gurunote/audio.py`, `llm.py`, `exporter.py`)
+  - `yt-dlp` 호출 시 수동/자동 자막(VTT)까지 함께 다운로드
+  - `AudioDownloadResult` 에 `upload_date`, `description`, `chapters`,
+    `subtitles_text`, `subtitles_source`, `tags` 필드 추가
+  - 설명에 챕터가 없어도 `"MM:SS 제목"` 패턴을 정규식으로 파싱해 자동 추출
+  - 새 헬퍼 `build_video_context_block()` 가 영상 제목/채널/게시일/챕터/
+    자막 발췌를 `"### 영상 컨텍스트"` 블록으로 조립해 LLM user 메시지에 주입
+  - 번역/요약 시스템 프롬프트가 컨텍스트를 활용하도록 규칙 추가
+    (화자 이름 추론, 공식 챕터를 타임라인 뼈대로 사용)
+  - `build_gurunote_markdown()` 이 게시일을 헤더에, 챕터를 새 `⏱️ 원본
+    영상 챕터` 섹션으로 렌더링
+  - Streamlit / CustomTkinter UI 가 게시일·챕터·자막 감지 결과를 진행
+    로그에 표시
 - **로컬 LLM(OpenAI-compatible) 지원 강화** (`gurunote/llm.py`)
   - `LLM_PROVIDER=openai_compatible` 추가
   - `OPENAI_BASE_URL` 지원으로 로컬/사설 OpenAI-compatible 엔드포인트 사용 가능

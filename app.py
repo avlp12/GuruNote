@@ -37,6 +37,7 @@ from gurunote.llm import LLMConfig, summarize_translation, test_connection, tran
 from gurunote.settings import save_settings
 from gurunote.stt import transcribe
 from gurunote.types import Transcript, _format_ts
+from gurunote.updater import check_updates, update_project
 
 # -----------------------------------------------------------------------------
 # 부팅
@@ -193,6 +194,27 @@ def render_settings_tab(default_provider: str) -> None:
         except Exception as exc:  # noqa: BLE001
             st.error(f"연결 실패: {exc}")
 
+    st.divider()
+    st.markdown("#### 🔄 업데이트")
+    u1, u2 = st.columns(2)
+    if u1.button("업데이트 상태 확인", use_container_width=True):
+        try:
+            lines: list[str] = []
+            status = check_updates(lines.append)
+            st.code("\n".join(lines + [status]) if lines else status, language="bash")
+        except Exception as exc:  # noqa: BLE001
+            st.error(f"업데이트 확인 실패: {exc}")
+    if u2.button("업데이트 실행", use_container_width=True):
+        try:
+            lines: list[str] = []
+            with st.status("업데이트 실행 중...", expanded=True):
+                update_project(lines.append, upgrade_deps=True)
+                for line in lines:
+                    st.write(line)
+            st.success("업데이트 완료. 앱을 재실행하면 최신 버전이 반영됩니다.")
+        except Exception as exc:  # noqa: BLE001
+            st.error(f"업데이트 실패: {exc}")
+
 
 # -----------------------------------------------------------------------------
 # 파이프라인 실행
@@ -213,9 +235,14 @@ def run_pipeline(
 
     try:
         with st.status("GuruNote 파이프라인 실행 중...", expanded=True) as status:
+            progress_bar = st.progress(0, text="진행률 0%")
+            def set_progress(pct: int, label: str) -> None:
+                progress_bar.progress(max(0, min(100, pct)), text=f"{label} ({pct}%)")
+
             log = lambda msg: st.write(msg)  # noqa: E731
 
             # ----- Step 1: 오디오 준비 -----
+            set_progress(5, "Step 1 오디오 준비 중")
             st.write(f"📁 작업 폴더: `{tmp_dir}`")
             if youtube_url:
                 st.write("⬇️ **Step 1.** yt-dlp 로 오디오 추출 중…")
@@ -228,6 +255,7 @@ def run_pipeline(
                 f"✅ `{audio.video_title}` ({audio_size_mb:.1f} MB, "
                 f"{int(audio.duration_sec)}s)"
             )
+            set_progress(20, "Step 1 완료")
             effective_engine = engine
             if audio.duration_sec > 3600 and engine == "auto":
                 effective_engine = "assemblyai"
@@ -241,6 +269,7 @@ def run_pipeline(
                 )
 
             # ----- Step 2: STT + 화자 분리 -----
+            set_progress(25, "Step 2 STT 진행 중")
             st.write("🎙️ **Step 2.** 화자 분리 STT (VibeVoice-ASR) …")
             transcript: Transcript = transcribe(
                 audio.audio_path, engine=effective_engine, progress=log
@@ -250,23 +279,29 @@ def run_pipeline(
                 f"{len(transcript.speakers)} 화자, "
                 f"엔진=`{transcript.engine}`"
             )
+            set_progress(55, "Step 2 완료")
 
             # ----- Step 3: LLM 번역 -----
+            set_progress(60, "Step 3 번역 진행 중")
             st.write("🌐 **Step 3.** LLM 한국어 번역 (청크 분할)…")
             # 사이드바 선택을 request-local 하게 주입 (process env 는 절대 건드리지
             # 않음 — Streamlit 동시 세션에서 race 가 나지 않도록).
             llm_cfg = LLMConfig.from_env(provider=provider)
             translated = translate_transcript(transcript, config=llm_cfg, progress=log)
             st.write(f"✅ 번역 완료 ({len(translated):,} chars)")
+            set_progress(82, "Step 3 완료")
 
             # ----- Step 4: 요약본 생성 -----
+            set_progress(86, "Step 4 요약 진행 중")
             st.write("📝 **Step 4.** GuruNote 스타일 요약본 생성…")
             summary_md = summarize_translation(
                 translated, title=audio.video_title, config=llm_cfg, progress=log
             )
             st.write("✅ 요약 완료")
+            set_progress(94, "Step 4 완료")
 
             # ----- Step 5: 마크다운 조립 -----
+            set_progress(96, "Step 5 마크다운 조립 중")
             st.write("📦 **Step 5.** 마크다운 조립…")
             full_md = build_gurunote_markdown(
                 title=audio.video_title,
@@ -278,6 +313,7 @@ def run_pipeline(
                 stt_engine=transcript.engine,
             )
             st.write("✅ 완료")
+            set_progress(100, "모든 단계 완료")
 
             status.update(label="GuruNote 생성 완료 🎉", state="complete", expanded=False)
 

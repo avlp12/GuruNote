@@ -70,18 +70,39 @@ def transcribe(
     hotwords = hotwords if hotwords is not None else IT_AI_HOTWORDS
 
     if engine == "vibevoice":
-        return _transcribe_vibevoice(audio_path, log=log, hotwords=hotwords)
+        result = _transcribe_vibevoice(audio_path, log=log, hotwords=hotwords)
+        _assert_transcript_not_empty(result)
+        return result
 
     if engine == "assemblyai":
-        return _transcribe_assemblyai(audio_path, log=log)
+        result = _transcribe_assemblyai(audio_path, log=log)
+        _assert_transcript_not_empty(result)
+        return result
 
     # auto: VibeVoice 우선, 실패 시 AssemblyAI 폴백
     try:
         log("🚀 기본 엔진 VibeVoice-ASR 로 전사를 시도합니다…")
-        return _transcribe_vibevoice(audio_path, log=log, hotwords=hotwords)
+        result = _transcribe_vibevoice(audio_path, log=log, hotwords=hotwords)
+        _assert_transcript_not_empty(result)
+        return result
     except Exception as exc:  # noqa: BLE001
         log(f"⚠️ VibeVoice 사용 불가 ({exc}). AssemblyAI 로 폴백합니다…")
-        return _transcribe_assemblyai(audio_path, log=log)
+        result = _transcribe_assemblyai(audio_path, log=log)
+        _assert_transcript_not_empty(result)
+        return result
+
+
+def _assert_transcript_not_empty(transcript: Transcript) -> None:
+    """빈 전사 결과를 조기에 차단해 후속 LLM 단계의 무의미한 호출을 막는다."""
+    if not transcript.segments:
+        raise RuntimeError(
+            "전사 결과가 비어 있습니다. 오디오 품질/형식 또는 STT 엔진 설정을 확인해주세요."
+        )
+    has_text = any((seg.text or "").strip() for seg in transcript.segments)
+    if not has_text:
+        raise RuntimeError(
+            "전사 텍스트가 비어 있습니다. 다른 STT 엔진(예: AssemblyAI)으로 다시 시도해주세요."
+        )
 
 
 # =============================================================================

@@ -139,6 +139,10 @@ streamlit run app.py
 > LLM Provider(`openai` / `openai_compatible` / `anthropic`), API Key,
 > Base URL, 모델명, Temperature, Max Tokens 저장/연결 테스트가 가능합니다.
 
+> Streamlit 앱에는 **⚙️ Settings 탭**이 포함되어 있어 `.env` 수동 편집 없이
+> LLM Provider(`openai` / `openai_compatible` / `anthropic`), API Key,
+> Base URL, 모델명, Temperature, Max Tokens 저장/연결 테스트가 가능합니다.
+
 ### 방법 B — CustomTkinter 데스크톱 앱
 
 ```bash

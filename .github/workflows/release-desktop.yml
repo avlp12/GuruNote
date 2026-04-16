@@ -1,5 +1,18 @@
 name: Release Desktop Packages
 
+# 데스크톱 배포 패키지 빌드.
+#
+# 설계상 트레이드오프:
+#   - 번들 패키지(.exe / .app / .dmg / .pkg)에는 UI + 클라우드 STT(AssemblyAI) 만 포함.
+#   - 로컬 GPU STT 엔진(WhisperX / mlx-whisper / pyannote)은 ~2-3GB 의 native binary 와
+#     CUDA/Metal toolchain 의존성이 있어 PyInstaller --onefile 에 묶으면 비현실적이고,
+#     CUDA torch 는 GPU 러너가 필요해 GitHub Actions 에서 빌드도 어렵다.
+#   - 로컬 GPU STT 가 필요한 사용자는 README 의 "🚀 설치" 섹션을 따라 소스에서
+#     `bash setup.sh` (또는 `setup.bat`) 후 `python gui.py` 로 실행해야 한다.
+#
+# 따라서 이 workflow 는 공통 의존성(requirements.txt) 만 설치하고 STT 엔진 패키지는
+# 의도적으로 제외한다. requirements.txt 가 변경되면 별도 손질 없이 자동으로 동기화된다.
+
 on:
   push:
     tags:
@@ -11,7 +24,7 @@ permissions:
 
 jobs:
   build-windows:
-    name: Build Windows packages
+    name: Build Windows packages (NVIDIA / Cloud)
     runs-on: windows-latest
 
     steps:
@@ -27,7 +40,9 @@ jobs:
         shell: bash
         run: |
           python -m pip install --upgrade pip
-          pip install pyinstaller streamlit customtkinter yt-dlp assemblyai openai anthropic python-dotenv
+          pip install pyinstaller
+          # 공통 의존성만 설치 — 로컬 STT 엔진은 사용자가 setup.bat 로 추가 설치
+          pip install -r requirements.txt
 
       - name: Install Inno Setup (for installer exe)
         shell: powershell
@@ -38,17 +53,24 @@ jobs:
         run: |
           python scripts/package_desktop.py --target windows --formats installer
 
+      - name: Stage Windows artifacts with platform suffix
+        shell: bash
+        run: |
+          mkdir -p staging
+          cp dist/GuruNote.exe staging/GuruNote-Windows.exe
+          cp dist/GuruNote-Installer.exe staging/GuruNote-Windows-Installer.exe
+
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
         with:
           name: gurunote-windows
           path: |
-            dist/GuruNote.exe
-            dist/GuruNote-Installer.exe
+            staging/GuruNote-Windows.exe
+            staging/GuruNote-Windows-Installer.exe
           if-no-files-found: error
 
   build-macos:
-    name: Build macOS packages
+    name: Build macOS packages (Apple Silicon / Cloud)
     runs-on: macos-latest
 
     steps:
@@ -63,7 +85,9 @@ jobs:
       - name: Install packaging dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pyinstaller streamlit customtkinter yt-dlp assemblyai openai anthropic python-dotenv
+          pip install pyinstaller
+          # 공통 의존성만 설치 — 로컬 STT 엔진(MLX/pyannote)은 사용자가 setup.sh 로 추가 설치
+          pip install -r requirements.txt
 
       - name: Install create-dmg
         run: brew install create-dmg
@@ -72,14 +96,19 @@ jobs:
         run: |
           python scripts/package_desktop.py --target macos --formats dmg pkg
 
+      - name: Stage macOS artifacts with platform suffix
+        run: |
+          mkdir -p staging
+          cp dist/GuruNote.dmg staging/GuruNote-macOS.dmg
+          cp dist/GuruNote.pkg staging/GuruNote-macOS.pkg
+
       - name: Upload macOS artifacts
         uses: actions/upload-artifact@v4
         with:
           name: gurunote-macos
           path: |
-            dist/GuruNote.app
-            dist/GuruNote.dmg
-            dist/GuruNote.pkg
+            staging/GuruNote-macOS.dmg
+            staging/GuruNote-macOS.pkg
           if-no-files-found: error
 
   release:
@@ -101,7 +130,19 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            release-assets/gurunote-windows/GuruNote.exe
-            release-assets/gurunote-windows/GuruNote-Installer.exe
-            release-assets/gurunote-macos/GuruNote.dmg
-            release-assets/gurunote-macos/GuruNote.pkg
+            release-assets/gurunote-windows/GuruNote-Windows.exe
+            release-assets/gurunote-windows/GuruNote-Windows-Installer.exe
+            release-assets/gurunote-macos/GuruNote-macOS.dmg
+            release-assets/gurunote-macos/GuruNote-macOS.pkg
+          body: |
+            ## 데스크톱 패키지 안내
+
+            **번들 패키지에는 UI + 클라우드 STT(AssemblyAI) 만 포함됩니다.**
+            로컬 GPU STT(WhisperX / MLX) 가 필요하면 [README 의 설치 가이드](https://github.com/avlp12/GuruNote#-설치) 를 따라 소스에서 실행하세요.
+
+            ### 다운로드
+
+            | 플랫폼 | 파일 |
+            |---|---|
+            | Windows (NVIDIA / Cloud) | `GuruNote-Windows.exe` (단일 실행) · `GuruNote-Windows-Installer.exe` (설치형) |
+            | macOS (Apple Silicon / Cloud) | `GuruNote-macOS.dmg` · `GuruNote-macOS.pkg` |

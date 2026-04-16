@@ -7,6 +7,19 @@
 
 ## [Unreleased]
 
+### Changed
+- **데스크톱 배포 패키지 OS별 분리 + CI 의존성 정합성 수정**
+  (`.github/workflows/release-desktop.yml`, `scripts/package_desktop.py`,
+  `README.md`) — Release 아티팩트 이름에 플랫폼 suffix 추가
+  (`GuruNote-Windows.exe`, `GuruNote-Windows-Installer.exe`,
+  `GuruNote-macOS.dmg`, `GuruNote-macOS.pkg`). CI 의 hardcoded pip 리스트를
+  `pip install -r requirements.txt` 로 교체해 v0.5.0 추가된 `google-genai`
+  누락 문제 해결 (Gemini 선택 시 ImportError 방지). README 에 "데스크톱 패키지
+  vs 소스 실행" 비교 표 추가 — 번들 패키지는 UI + 클라우드 STT(AssemblyAI)
+  전용, 로컬 GPU STT(WhisperX/MLX) 가 필요하면 소스 실행 안내. Release 본문에도
+  동일한 안내가 자동 추가됨. 번들 미포함 사유(native binary 크기, CUDA 러너
+  부재, PyInstaller venv 폐쇄성) 를 `package_desktop.py` docstring 에 명시.
+
 ### Fixed
 - **업데이트 다이얼로그 NameError** (`gui.py`) — `SettingsDialog._on_update` 가
   import 되지 않은 `check_updates(...)` 를 호출해 NameError 발생. 다른 위치

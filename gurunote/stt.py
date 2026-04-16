@@ -162,6 +162,52 @@ def _has_nvidia_gpu() -> bool:
     return shutil.which("nvidia-smi") is not None
 
 
+# PyTorch CUDA 최신 안정 버전 (2026-04 기준)
+_TORCH_CUDA_INDEX = "https://download.pytorch.org/whl/cu128"
+
+
+def ensure_cuda_torch(log: Optional[ProgressFn] = None) -> bool:
+    """
+    NVIDIA GPU 가 있는데 PyTorch 가 CPU 버전이면 CUDA 버전을 자동 설치.
+    GPU 가 없으면 아무것도 하지 않음 (CPU torch 유지).
+
+    Returns:
+        True 면 CUDA 사용 가능, False 면 CPU 모드.
+    """
+    _log = log or (lambda _: None)
+    import torch
+
+    # 이미 CUDA 사용 가능
+    if torch.cuda.is_available():
+        return True
+
+    # GPU 자체가 없으면 CPU 모드로 정상
+    if not _has_nvidia_gpu():
+        return False
+
+    # GPU 있지만 torch 가 CPU 버전 → CUDA 버전 자동 설치
+    _log(f"NVIDIA GPU 감지됨, PyTorch CUDA 버전 설치 중 ({_TORCH_CUDA_INDEX})...")
+    import subprocess
+    import sys
+
+    try:
+        result = subprocess.run(
+            [
+                sys.executable, "-m", "pip", "install",
+                "torch", "--index-url", _TORCH_CUDA_INDEX,
+                "--force-reinstall", "--no-deps",
+            ],
+            capture_output=True, text=True, timeout=600,
+        )
+        if result.returncode == 0:
+            _log("PyTorch CUDA 설치 완료. 앱을 재시작하면 GPU 가 활성화됩니다.")
+            return False  # 재시작 필요하므로 이번 세션은 CPU
+        _log(f"PyTorch CUDA 설치 실패: {result.stderr[:200]}")
+    except Exception as exc:  # noqa: BLE001
+        _log(f"PyTorch CUDA 설치 실패: {exc}")
+    return False
+
+
 def _ensure_model_local(model_name: str, log: ProgressFn) -> str:
     """
     WhisperX 모델을 symlink 없이 로컬 디렉토리에 다운로드.
@@ -212,7 +258,13 @@ def _transcribe_whisperx(
 
     import whisperx  # type: ignore
 
-    # 디바이스 자동 감지 + CUDA PyTorch 미설치 경고
+    # 디바이스 자동 감지 — GPU 있는데 CPU torch 면 자동 설치 시도
+    if not torch.cuda.is_available():
+        ensure_cuda_torch(log)
+        # 설치 직후에는 재시작 필요하므로 이번 세션은 CPU
+        import importlib
+        importlib.reload(torch)  # 재로드 시도
+
     if torch.cuda.is_available():
         device = "cuda"
         compute_type = "float16"

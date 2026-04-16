@@ -722,7 +722,10 @@ class GuruNoteApp(ctk.CTk):
         of.grid(row=2, column=0, columnspan=2, padx=16, pady=(0, 14), sticky="ew")
         of.grid_columnconfigure(4, weight=1)
         ctk.CTkLabel(of, text="STT", text_color=C_TEXT_DIM, font=ctk.CTkFont(size=12)).grid(row=0, column=0, padx=(0, 6))
-        self._stt_var = ctk.StringVar(value=os.environ.get("GURUNOTE_STT_ENGINE", "auto"))
+        _env_stt = os.environ.get("GURUNOTE_STT_ENGINE", "auto").lower().strip()
+        if _env_stt not in STT_OPTIONS:
+            _env_stt = "auto"  # vibevoice 등 삭제된 엔진이 남아있으면 auto 폴백
+        self._stt_var = ctk.StringVar(value=_env_stt)
         ctk.CTkOptionMenu(of, variable=self._stt_var, values=STT_OPTIONS, width=130, height=32,
                           corner_radius=8, fg_color=C_SURFACE_HI, button_color=C_BORDER).grid(row=0, column=1, padx=(0, 16))
         ctk.CTkLabel(of, text="LLM", text_color=C_TEXT_DIM, font=ctk.CTkFont(size=12)).grid(row=0, column=2, padx=(0, 6))

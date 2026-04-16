@@ -1,11 +1,14 @@
 """
 Step 2: 음성 인식 + 화자 분리 (Speaker Diarization).
 
-기본 엔진은 **WhisperX** (Distil-Whisper + pyannote 화자 분리).
-청크 분할 처리로 VRAM 사용량이 일정하고 (~6GB), 소비자 GPU 에서 안정 동작.
-GPU 미가용 시 **AssemblyAI Cloud API** 로 자동 폴백.
+엔진 선택 우선순위 (`auto` 모드):
+  1. NVIDIA GPU (CUDA) → **WhisperX** (Distil-Whisper + pyannote).
+     청크 분할 처리로 VRAM ~6GB 에서 안정 동작.
+  2. Apple Silicon (M1~M4) → **MLX Whisper** (`gurunote.stt_mlx`).
+     Metal/MPS 가속, pyannote 화자 분리도 MPS 에서 실행.
+  3. 위 둘 다 안 되면 → **AssemblyAI Cloud API** 로 폴백.
 
-두 엔진 모두 결과를 `gurunote.types.Transcript` 형태로 정규화해 반환하므로
+세 엔진 모두 결과를 `gurunote.types.Transcript` 형태로 정규화해 반환하므로
 LLM/요약 단계는 어느 엔진을 썼는지 신경 쓰지 않아도 된다.
 """
 
@@ -62,7 +65,7 @@ def transcribe(
 
     Args:
         audio_path: 로컬 오디오 파일 경로
-        engine: "whisperx" | "assemblyai" | "auto"
+        engine: "whisperx" | "mlx" | "assemblyai" | "auto"
         progress: 진행 메시지 콜백
         hotwords: 도메인 핫워드. None 이면 IT_AI_HOTWORDS 기본값 사용.
         stop_event: 중지 이벤트 (GUI 의 threading.Event)
@@ -79,33 +82,68 @@ def transcribe(
         _assert_transcript_not_empty(result)
         return result
 
+    if engine == "mlx":
+        from gurunote.stt_mlx import transcribe_mlx
+        result = transcribe_mlx(audio_path, log=log, hotwords=hotwords)
+        _assert_transcript_not_empty(result)
+        return result
+
     if engine == "assemblyai":
         result = _transcribe_assemblyai(audio_path, log=log)
         _assert_transcript_not_empty(result)
         return result
 
-    # auto: GPU + CUDA → WhisperX, 아니면 AssemblyAI 직행
+    # auto 라우팅: CUDA WhisperX → Apple Silicon MLX → AssemblyAI
     if _check_cuda_ready():
         try:
-            log("[auto] GPU 감지 — WhisperX 로 전사를 시도합니다.")
+            log("[auto] NVIDIA GPU 감지 — WhisperX 로 전사를 시도합니다.")
             result = _transcribe_whisperx(audio_path, log=log, hotwords=hotwords)
             _assert_transcript_not_empty(result)
             return result
         except Exception as exc:  # noqa: BLE001
-            log(f"WhisperX 실패 ({exc}). AssemblyAI 로 폴백합니다.")
+            log(f"WhisperX 실패 ({exc}). 다음 엔진으로 폴백합니다.")
+    elif _is_mlx_ready():
+        try:
+            log("[auto] Apple Silicon 감지 — MLX Whisper 로 전사를 시도합니다.")
+            from gurunote.stt_mlx import transcribe_mlx
+            result = transcribe_mlx(audio_path, log=log, hotwords=hotwords)
+            _assert_transcript_not_empty(result)
+            return result
+        except Exception as exc:  # noqa: BLE001
+            log(f"MLX Whisper 실패 ({exc}). AssemblyAI 로 폴백합니다.")
     else:
-        hint = ""
-        if _has_nvidia_gpu():
-            hint = (
-                " (CUDA PyTorch 미설치.\n"
-                "  터미널: pip install torch --index-url "
-                "https://download.pytorch.org/whl/cu128)"
-            )
-        log(f"[auto] GPU 미사용{hint} — AssemblyAI Cloud API 로 직행합니다.")
+        hint = _auto_fallback_hint()
+        log(f"[auto] 로컬 GPU STT 미사용{hint} — AssemblyAI Cloud API 로 직행합니다.")
 
     result = _transcribe_assemblyai(audio_path, log=log)
     _assert_transcript_not_empty(result)
     return result
+
+
+def _is_mlx_ready() -> bool:
+    """Apple Silicon + mlx-whisper 패키지 설치 확인."""
+    try:
+        from gurunote.stt_mlx import is_mlx_ready
+        return is_mlx_ready()
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _auto_fallback_hint() -> str:
+    """auto 라우팅이 AssemblyAI 로 떨어질 때 사용자 안내 문구."""
+    if _has_nvidia_gpu():
+        return (
+            " (CUDA PyTorch 미설치.\n"
+            "  터미널: pip install torch --index-url "
+            "https://download.pytorch.org/whl/cu128)"
+        )
+    import platform
+    if platform.system() == "Darwin" and platform.machine() == "arm64":
+        return (
+            " (Apple Silicon 감지됐으나 mlx-whisper 미설치.\n"
+            "  터미널: pip install -r requirements-mac.txt)"
+        )
+    return ""
 
 
 def _assert_transcript_not_empty(transcript: Transcript) -> None:

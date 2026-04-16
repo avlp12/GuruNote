@@ -31,9 +31,11 @@ $ streamlit run app.py             # 웹 앱 실행
 git clone https://github.com/avlp12/GuruNote.git && cd GuruNote
 python -m venv .venv && source .venv/bin/activate
 
-pip install -r requirements.txt
-# NVIDIA GPU 가 있으면 첫 실행 시 CUDA PyTorch 를 자동 설치합니다.
-# GPU 없어도 CPU 모드로 동작합니다.
+bash setup.sh        # macOS / Linux  (Windows 는 setup.bat)
+# 자동 감지 + 설치:
+#   - NVIDIA GPU (Linux/Windows) → CUDA PyTorch + WhisperX
+#   - Apple Silicon Mac (M1~M4)  → MLX Whisper + pyannote (Metal/MPS GPU 가속)
+#   - 그 외                       → AssemblyAI Cloud API 만 사용 가능
 
 # 2. API 키 설정 (OpenAI / Anthropic / Google Gemini 중 하나)
 cp .env.example .env
@@ -345,7 +347,7 @@ GuruNote/
 | 데스크톱 UI | [CustomTkinter](https://github.com/TomSchimansky/CustomTkinter) (사이드바 + 카드 레이아웃) |
 | 웹 UI | [Streamlit](https://streamlit.io/) |
 | 오디오 추출 | [yt-dlp](https://github.com/yt-dlp/yt-dlp) · ffmpeg |
-| STT + 화자 분리 | [WhisperX](https://github.com/m-bain/whisperX) (Distil-Whisper + pyannote, primary) · [AssemblyAI](https://www.assemblyai.com/) (fallback) |
+| STT + 화자 분리 | [WhisperX](https://github.com/m-bain/whisperX) (NVIDIA CUDA) · [mlx-whisper](https://github.com/ml-explore/mlx-examples/tree/main/whisper) + [pyannote.audio](https://github.com/pyannote/pyannote-audio) (Apple Silicon, Metal/MPS) · [AssemblyAI](https://www.assemblyai.com/) (Cloud fallback) |
 | 번역 / 요약 | [OpenAI](https://platform.openai.com/) `gpt-5.4` · [Anthropic](https://docs.anthropic.com/) `claude-sonnet-4-6` · [Google Gemini](https://aistudio.google.com/) `gemini-2.5-flash` · OpenAI-compatible (로컬 LLM) |
 | 환경 설정 | [python-dotenv](https://pypi.org/project/python-dotenv/) · 앱 내 ⚙️ 설정 다이얼로그 |
 
@@ -356,7 +358,7 @@ GuruNote/
 주요 변경 사항은 [CHANGELOG.md](./CHANGELOG.md) 에 [Keep a Changelog](https://keepachangelog.com/)
 형식으로 기록되며 버전은 [Semantic Versioning](https://semver.org/) 을 따릅니다.
 
-현재 버전: **v0.5.0** — Google Gemini API + 업데이트 체크 개선 + WhisperX STT.
+현재 버전: **v0.6.0** — macOS Apple Silicon 로컬 GPU STT (MLX Whisper + pyannote MPS).
 
 ---
 
@@ -365,6 +367,7 @@ GuruNote/
 | 질문 | 답변 |
 |---|---|
 | **GPU 없이 쓸 수 있나요?** | `.env` 에서 `GURUNOTE_STT_ENGINE=assemblyai` 로 설정하면 클라우드 API 로 동작합니다 (AssemblyAI 키 필요). |
+| **Apple Silicon Mac (M1~M4) 에서 GPU 로컬 STT 가 되나요?** | 네. v0.6.0 부터 `setup.sh` 가 Apple Silicon 을 자동 감지해 `mlx-whisper` + `pyannote.audio` 를 설치합니다. STT 엔진을 `auto` 로 두면 Metal/MPS GPU 가속으로 로컬 전사 + 화자 분리가 동작합니다. 화자 분리에는 `HUGGINGFACE_TOKEN` + [pyannote 모델 동의](https://huggingface.co/pyannote/speaker-diarization-3.1) 가 필요합니다. |
 | **1시간 넘는 영상은?** | STT 엔진이 `auto` 면 60분 초과 시 자동으로 AssemblyAI 로 전환됩니다. `vibevoice` 고정 시 처음 60분만 전사될 수 있습니다. |
 | **로컬 LLM 을 쓰고 싶어요** | `.env` 에서 `LLM_PROVIDER=openai_compatible` + `OPENAI_BASE_URL=http://127.0.0.1:8000/v1` 설정. Ollama, vLLM, LM Studio 등 OpenAI-compatible 서버라면 모두 가능합니다. |
 | **"ffmpeg not found" 에러** | Mac: `brew install ffmpeg` / Windows: `winget install ffmpeg` / Ubuntu: `sudo apt install ffmpeg` |

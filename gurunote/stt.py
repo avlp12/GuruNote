@@ -15,6 +15,7 @@ import gc
 import os
 import platform
 import warnings
+from pathlib import Path
 
 # Windows HuggingFace 심볼릭 링크 문제 방지:
 # Developer Mode 미활성 시 symlink 생성이 실패(WinError 1314)하므로
@@ -140,19 +141,130 @@ def install_whisperx(progress: Optional[ProgressFn] = None) -> bool:
         return False
 
 
+# faster-whisper 모델의 HuggingFace repo 매핑
+_WHISPER_REPO_MAP = {
+    "tiny": "Systran/faster-whisper-tiny",
+    "base": "Systran/faster-whisper-base",
+    "small": "Systran/faster-whisper-small",
+    "medium": "Systran/faster-whisper-medium",
+    "large-v2": "Systran/faster-whisper-large-v2",
+    "large-v3": "Systran/faster-whisper-large-v3",
+    "distil-large-v3": "Systran/faster-distil-whisper-large-v3",
+    "distil-large-v2": "Systran/faster-distil-whisper-large-v2",
+}
+
+_MODELS_DIR = Path.home() / ".gurunote" / "models"
+
+
+def _has_nvidia_gpu() -> bool:
+    """nvidia-smi 가 존재하면 NVIDIA GPU 가 있다고 판단."""
+    import shutil
+    return shutil.which("nvidia-smi") is not None
+
+
+# PyTorch CUDA 최신 안정 버전 (2026-04 기준)
+_TORCH_CUDA_INDEX = "https://download.pytorch.org/whl/cu128"
+
+
+def ensure_cuda_torch(log: Optional[ProgressFn] = None) -> bool:
+    """
+    NVIDIA GPU 가 있는데 PyTorch 가 CPU 버전이면 CUDA 버전을 자동 설치.
+    GPU 가 없으면 아무것도 하지 않음 (CPU torch 유지).
+
+    Returns:
+        True 면 CUDA 사용 가능, False 면 CPU 모드.
+    """
+    _log = log or (lambda _: None)
+    import torch
+
+    # 이미 CUDA 사용 가능
+    if torch.cuda.is_available():
+        return True
+
+    # GPU 자체가 없으면 CPU 모드로 정상
+    if not _has_nvidia_gpu():
+        return False
+
+    # GPU 있지만 torch 가 CPU 버전 → CUDA 버전 자동 설치
+    _log(f"NVIDIA GPU 감지됨, PyTorch CUDA 버전 설치 중 ({_TORCH_CUDA_INDEX})...")
+    import subprocess
+    import sys
+
+    try:
+        result = subprocess.run(
+            [
+                sys.executable, "-m", "pip", "install",
+                "torch", "--index-url", _TORCH_CUDA_INDEX,
+                "--force-reinstall", "--no-deps",
+            ],
+            capture_output=True, text=True, timeout=600,
+        )
+        if result.returncode == 0:
+            _log("PyTorch CUDA 설치 완료. 앱을 재시작하면 GPU 가 활성화됩니다.")
+            return False  # 재시작 필요하므로 이번 세션은 CPU
+        _log(f"PyTorch CUDA 설치 실패: {result.stderr[:200]}")
+    except Exception as exc:  # noqa: BLE001
+        _log(f"PyTorch CUDA 설치 실패: {exc}")
+    return False
+
+
+def _ensure_model_local(model_name: str, log: ProgressFn) -> str:
+    """
+    WhisperX 모델을 symlink 없이 로컬 디렉토리에 다운로드.
+
+    Windows 의 HuggingFace 캐시 symlink 문제(WinError 1314)를 근본적으로 회피:
+    `snapshot_download(local_dir_use_symlinks=False)` 로 파일을 직접 복사.
+    이미 다운로드 완료된 경우 즉시 로컬 경로를 반환.
+
+    Returns:
+        모델이 저장된 로컬 디렉토리 경로 (WhisperX 에 model_path 로 전달)
+    """
+    repo_id = _WHISPER_REPO_MAP.get(model_name)
+    if not repo_id:
+        # 매핑에 없는 이름은 직접 경로 또는 커스텀 repo 로 간주
+        return model_name
+
+    local_dir = _MODELS_DIR / model_name
+    marker = local_dir / "config.json"
+
+    if marker.exists():
+        return str(local_dir)
+
+    # 최초 다운로드
+    log(f"모델 다운로드 중 ({repo_id} → {local_dir})...")
+    from huggingface_hub import snapshot_download  # type: ignore
+
+    snapshot_download(
+        repo_id,
+        local_dir=str(local_dir),
+        local_dir_use_symlinks=False,  # 핵심: symlink 대신 파일 복사
+    )
+    log("모델 다운로드 완료")
+    return str(local_dir)
+
+
 def _transcribe_whisperx(
     audio_path: str, log: ProgressFn, hotwords: List[str]
 ) -> Transcript:
     """WhisperX 로 전사 + 화자 분리."""
     import torch
 
-    # pyannote / torchcodec 의 무해한 경고 억제
+    # pyannote / torchcodec / huggingface 의 무해한 경고 억제
     warnings.filterwarnings("ignore", message=".*torchcodec.*")
     warnings.filterwarnings("ignore", message=".*symlink.*")
+    warnings.filterwarnings("ignore", message=".*hf_xet.*")
+    warnings.filterwarnings("ignore", category=UserWarning, module="pyannote")
+    warnings.filterwarnings("ignore", category=UserWarning, module="huggingface_hub")
 
     import whisperx  # type: ignore
 
-    # 디바이스 자동 감지
+    # 디바이스 자동 감지 — GPU 있는데 CPU torch 면 자동 설치 시도
+    if not torch.cuda.is_available():
+        ensure_cuda_torch(log)
+        # 설치 직후에는 재시작 필요하므로 이번 세션은 CPU
+        import importlib
+        importlib.reload(torch)  # 재로드 시도
+
     if torch.cuda.is_available():
         device = "cuda"
         compute_type = "float16"
@@ -162,36 +274,31 @@ def _transcribe_whisperx(
 
     model_name = os.environ.get("WHISPERX_MODEL", "distil-large-v3")
     batch_size = int(os.environ.get("WHISPERX_BATCH_SIZE", "16"))
-
-    # 핫워드를 initial_prompt 로 주입 (Whisper 의 디코더 바이어스)
     initial_prompt = ", ".join(hotwords[:30]) if hotwords else None
+
+    # Windows symlink 문제 완전 우회:
+    # HuggingFace 기본 캐시(~/.cache/huggingface/)는 symlink 사용 → WinError 1314.
+    # 대신 ~/.gurunote/models/ 에 local_dir_use_symlinks=False 로 직접 다운로드하고
+    # 로컬 경로를 WhisperX 에 전달하면 symlink 을 아예 거치지 않는다.
+    model_path = _ensure_model_local(model_name, log)
+
+    # WhisperX 의 initial_prompt 는 load_model 의 asr_options 로 전달해야 함
+    # (transcribe() 에 직접 넣으면 FasterWhisperPipeline 이 거부)
+    asr_options = {}
+    if initial_prompt:
+        asr_options["initial_prompt"] = initial_prompt
 
     # 1. 전사
     log(f"WhisperX 모델 로딩 ({model_name}, {device}, {compute_type})...")
-    try:
-        model = whisperx.load_model(
-            model_name, device, compute_type=compute_type,
-            language="en",
-        )
-    except OSError as exc:
-        # Windows 심볼릭 링크 권한 에러 (WinError 1314)
-        if "1314" in str(exc) or "privilege" in str(exc).lower():
-            raise RuntimeError(
-                "Windows 에서 모델 캐시 생성 시 심볼릭 링크 권한이 부족합니다.\n\n"
-                "해결 방법 (택 1):\n"
-                "  1) Windows 설정 → 개발자 모드 활성화\n"
-                "     (설정 > 업데이트 및 보안 > 개발자용)\n"
-                "  2) GuruNote 를 관리자 권한으로 실행\n"
-                "  3) PowerShell(관리자): fsutil behavior set SymlinkEvaluation L2L:1"
-            ) from exc
-        raise
+    model = whisperx.load_model(
+        model_path, device, compute_type=compute_type,
+        language="en",
+        asr_options=asr_options,
+    )
 
     log("전사 중 (청크 분할 처리)...")
     audio = whisperx.load_audio(audio_path)
-    result = model.transcribe(
-        audio, batch_size=batch_size,
-        initial_prompt=initial_prompt,
-    )
+    result = model.transcribe(audio, batch_size=batch_size)
     log(f"전사 완료 — {len(result.get('segments', []))} 세그먼트")
 
     # 2. 워드 레벨 타임스탬프 정렬

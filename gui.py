@@ -394,6 +394,78 @@ class HistoryDialog(ctk.CTkToplevel):
             self._refresh()
 
 
+class UpdateProgressDialog(ctk.CTkToplevel):
+    """업데이트 진행 상황을 실시간 표시하는 다이얼로그."""
+
+    def __init__(self, parent: ctk.CTk) -> None:
+        super().__init__(parent)
+        self.title("GuruNote Update")
+        self.geometry("520x340")
+        self.resizable(False, False)
+        self.transient(parent)
+        self.grab_set()
+
+        self._msg_queue: queue.Queue[str] = queue.Queue()
+        self._done_queue: queue.Queue[dict] = queue.Queue()
+
+        ctk.CTkLabel(
+            self, text="업데이트 진행 중...",
+            font=ctk.CTkFont(size=15, weight="bold"),
+        ).pack(padx=20, pady=(20, 8), anchor="w")
+
+        self._log_text = ctk.CTkTextbox(self, font=ctk.CTkFont(size=12), state="disabled", wrap="word")
+        self._log_text.pack(fill="both", expand=True, padx=16, pady=(0, 8))
+
+        self._status_label = ctk.CTkLabel(
+            self, text="git fetch...", font=ctk.CTkFont(size=11), text_color=C_TEXT_DIM,
+        )
+        self._status_label.pack(padx=20, pady=(0, 16), anchor="w")
+
+        # 백그라운드 스레드에서 실행
+        self._thread = threading.Thread(target=self._run_update, daemon=True)
+        self._thread.start()
+        self._poll()
+
+    def _log(self, msg: str) -> None:
+        self._msg_queue.put(msg)
+
+    def _run_update(self) -> None:
+        try:
+            update_project(self._log, upgrade_deps=True)
+            self._done_queue.put({"ok": True})
+        except Exception as exc:  # noqa: BLE001
+            self._done_queue.put({"ok": False, "error": str(exc)})
+
+    def _poll(self) -> None:
+        while True:
+            try:
+                msg = self._msg_queue.get_nowait()
+                self._log_text.configure(state="normal")
+                self._log_text.insert("end", msg + "\n")
+                self._log_text.see("end")
+                self._log_text.configure(state="disabled")
+                # 마지막 줄을 status 에도 표시
+                short = msg.strip()[:60]
+                self._status_label.configure(text=short)
+            except queue.Empty:
+                break
+
+        try:
+            result = self._done_queue.get_nowait()
+            if result.get("ok"):
+                self._status_label.configure(text="업데이트 완료!")
+                messagebox.showinfo("완료", "업데이트 완료. 앱을 재시작하세요.")
+            else:
+                self._status_label.configure(text="업데이트 실패")
+                messagebox.showerror("실패", result.get("error", "알 수 없는 오류"))
+            self.destroy()
+            return
+        except queue.Empty:
+            pass
+
+        self.after(100, self._poll)
+
+
 class SettingsDialog(ctk.CTkToplevel):
     """API 키와 모델 설정을 입력/저장하는 모달 다이얼로그."""
 
@@ -753,14 +825,16 @@ class GuruNoteApp(ctk.CTk):
 
     def _on_update_sb(self):
         try:
-            logs = []
+            logs: list[str] = []
             st = check_updates(logs.append)
             if not messagebox.askyesno("업데이트", f"{st}\n\n실행할까요?"):
                 return
-            update_project(logs.append, upgrade_deps=True)
-            messagebox.showinfo("완료", "업데이트 완료. 앱을 재시작하세요.")
         except Exception as e:
             messagebox.showerror("실패", str(e))
+            return
+
+        # 진행 다이얼로그에서 백그라운드 실행
+        UpdateProgressDialog(self)
 
     def _on_pick_file(self):
         exts = sorted(SUPPORTED_EXTS)

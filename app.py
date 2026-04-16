@@ -35,6 +35,10 @@ from gurunote.audio import (
 from gurunote.exporter import build_gurunote_markdown, sanitize_filename
 from gurunote.llm import LLMConfig, summarize_translation, test_connection, translate_transcript
 from gurunote.settings import save_settings
+from gurunote.history import (
+    JobLogger, get_job_log, get_job_markdown,
+    load_index, new_job_id, save_job,
+)
 from gurunote.stt import install_vibevoice, is_vibevoice_installed, transcribe
 from gurunote.types import Transcript, _format_ts
 from gurunote.updater import check_updates, update_project
@@ -111,6 +115,48 @@ def render_sidebar() -> dict:
         st.caption("Powered by VibeVoice-ASR · yt-dlp · Streamlit")
 
         return {"engine": engine_label, "provider": provider}
+
+
+def render_history_tab() -> None:
+    """📂 히스토리 탭 — 과거 작업 목록 + 다운로드 + 로그 확인."""
+    st.subheader("📂 작업 히스토리")
+    jobs = load_index()
+    if not jobs:
+        st.info("아직 작업 기록이 없습니다. GuruNote 를 생성하면 여기에 자동 저장됩니다.")
+        return
+
+    for job in jobs:
+        status = job.get("status", "unknown")
+        icon = "✅" if status == "completed" else "❌"
+        title = job.get("title", "제목 없음")
+        created = (job.get("created_at") or "")[:16].replace("T", " ")
+        engine = job.get("stt_engine", "")
+        job_id = job.get("job_id", "")
+        err = job.get("error_message", "")
+
+        with st.expander(f"{icon} {title}  —  {created}  ·  {engine}", expanded=False):
+            if err:
+                st.error(f"오류: {err}")
+
+            col1, col2 = st.columns(2)
+            # 마크다운 다운로드
+            if job.get("has_markdown"):
+                md = get_job_markdown(job_id)
+                if md:
+                    from gurunote.exporter import sanitize_filename
+                    col1.download_button(
+                        "📥 마크다운 다운로드",
+                        data=md.encode("utf-8"),
+                        file_name=f"GuruNote_{sanitize_filename(title)}.md",
+                        mime="text/markdown",
+                        key=f"dl_{job_id}",
+                    )
+
+            # 로그 보기
+            log_text = get_job_log(job_id)
+            if log_text:
+                if col2.button("📋 로그 보기", key=f"log_{job_id}"):
+                    st.code(log_text, language="bash")
 
 
 def render_settings_tab(default_provider: str) -> None:
@@ -235,6 +281,8 @@ def run_pipeline(
         return
 
     tmp_dir = tempfile.mkdtemp(prefix="gurunote_")
+    job_id = new_job_id()
+    job_logger = JobLogger(job_id)
 
     try:
         with st.status("GuruNote 파이프라인 실행 중...", expanded=True) as status:
@@ -242,7 +290,9 @@ def run_pipeline(
             def set_progress(pct: int, label: str) -> None:
                 progress_bar.progress(max(0, min(100, pct)), text=f"{label} ({pct}%)")
 
-            log = lambda msg: st.write(msg)  # noqa: E731
+            def log(msg: str) -> None:
+                st.write(msg)
+                job_logger.write(msg)
 
             # ----- Step 1: 오디오 준비 -----
             set_progress(5, "Step 1 오디오 준비 중")
@@ -342,6 +392,20 @@ def run_pipeline(
 
             status.update(label="GuruNote 생성 완료 🎉", state="complete", expanded=False)
 
+        # 히스토리에 자동 저장
+        save_job(
+            job_id,
+            title=audio.video_title,
+            source_url=audio.webpage_url,
+            stt_engine=transcript.engine,
+            llm_provider=provider,
+            status="completed",
+            duration_sec=audio.duration_sec,
+            num_speakers=len(transcript.speakers),
+            full_md=full_md,
+        )
+        log("💾 히스토리에 저장됨")
+
         # 세션 상태에 저장 → 탭 렌더링에서 사용
         st.session_state["result"] = {
             "audio": audio,
@@ -353,8 +417,18 @@ def run_pipeline(
     except Exception as exc:  # noqa: BLE001
         st.error(f"파이프라인 실행 중 오류: {exc}")
         st.exception(exc)
+        # 실패도 히스토리에 기록
+        save_job(
+            job_id,
+            title=youtube_url or local_file_path or "unknown",
+            source_url=youtube_url or local_file_path,
+            stt_engine=engine,
+            llm_provider=provider,
+            status="failed",
+            error_message=str(exc),
+        )
     finally:
-        # PRD §5 - 작업 완료 후 임시 오디오 파일 삭제
+        job_logger.close()
         cleanup_dir(tmp_dir)
 
 
@@ -406,7 +480,7 @@ def render_results() -> None:
 def main() -> None:
     render_header()
     settings = render_sidebar()
-    tab_run, tab_settings = st.tabs(["🎧 GuruNote 생성", "⚙️ Settings"])
+    tab_run, tab_history, tab_settings = st.tabs(["🎧 GuruNote 생성", "📂 히스토리", "⚙️ Settings"])
 
     with tab_run:
         st.subheader("🎧 오디오 소스 선택")
@@ -481,6 +555,9 @@ def main() -> None:
                 cleanup_dir(tmp_upload)
 
         render_results()
+
+    with tab_history:
+        render_history_tab()
 
     with tab_settings:
         render_settings_tab(settings["provider"])

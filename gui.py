@@ -37,6 +37,10 @@ from gurunote.audio import (
 from gurunote.exporter import build_gurunote_markdown, sanitize_filename
 from gurunote.llm import LLMConfig, summarize_translation, test_connection, translate_transcript
 from gurunote.settings import save_settings
+from gurunote.history import (
+    JobLogger, delete_job, get_job_log, get_job_markdown,
+    load_index, new_job_id, save_job,
+)
 from gurunote.stt import install_vibevoice, is_vibevoice_installed, transcribe
 from gurunote.types import _format_ts
 from gurunote.updater import check_updates, update_project
@@ -94,6 +98,8 @@ class PipelineWorker:
         self.local_file = local_file
         self.engine = engine
         self.provider = provider
+        self.job_id = new_job_id()
+        self._job_logger = JobLogger(self.job_id)
         self.msg_queue: queue.Queue[str] = queue.Queue()
         self.progress_queue: queue.Queue[float] = queue.Queue()
         self.result_queue: queue.Queue[dict] = queue.Queue()
@@ -104,6 +110,7 @@ class PipelineWorker:
         if self._stop_event.is_set():
             raise RuntimeError("사용자가 작업 중지를 요청했습니다.")
         self.msg_queue.put(msg)
+        self._job_logger.write(msg)  # 파일에도 기록
 
     def _set_progress(self, pct: float) -> None:
         self.progress_queue.put(max(0.0, min(1.0, pct)))
@@ -204,6 +211,20 @@ class PipelineWorker:
             self._log("🎉 GuruNote 생성 완료!")
             self._set_progress(1.0)
 
+            # 히스토리에 자동 저장
+            save_job(
+                self.job_id,
+                title=audio.video_title,
+                source_url=audio.webpage_url,
+                stt_engine=transcript.engine,
+                llm_provider=self.provider,
+                status="completed",
+                duration_sec=audio.duration_sec,
+                num_speakers=len(transcript.speakers),
+                full_md=full_md,
+            )
+            self._log("💾 히스토리에 저장됨")
+
             self.result_queue.put(
                 {
                     "ok": True,
@@ -216,8 +237,19 @@ class PipelineWorker:
             )
         except Exception as exc:
             self.msg_queue.put(f"❌ 오류: {exc}")
+            # 실패도 히스토리에 기록 (로그 파일은 이미 저장됨)
+            save_job(
+                self.job_id,
+                title=self.youtube_url or self.local_file or "unknown",
+                source_url=self.youtube_url or self.local_file,
+                stt_engine=self.engine,
+                llm_provider=self.provider,
+                status="failed",
+                error_message=str(exc),
+            )
             self.result_queue.put({"ok": False, "error": str(exc)})
         finally:
+            self._job_logger.close()
             cleanup_dir(tmp_dir)
 
 
@@ -239,6 +271,113 @@ _SETTINGS_FIELDS = [
     ("VIBEVOICE_MODEL_ID", "VibeVoice 모델 ID", False),
     ("HUGGINGFACE_TOKEN", "HuggingFace 토큰 (선택)", True),
 ]
+
+
+class HistoryDialog(ctk.CTkToplevel):
+    """완료/실패 작업 목록 + 마크다운 다운로드 + 로그 확인."""
+
+    def __init__(self, parent: ctk.CTk) -> None:
+        super().__init__(parent)
+        self.title("📂 GuruNote 히스토리")
+        self.geometry("700x520")
+        self.transient(parent)
+        self.grab_set()
+        self._parent = parent
+        self._build_ui()
+        self.after(100, self.focus_force)
+
+    def _build_ui(self) -> None:
+        top = ctk.CTkFrame(self, fg_color="transparent")
+        top.pack(fill="x", padx=16, pady=(16, 8))
+        ctk.CTkLabel(top, text="작업 히스토리",
+                     font=ctk.CTkFont(size=16, weight="bold")).pack(side="left")
+        ctk.CTkButton(top, text="🔄 새로고침", width=100, height=28,
+                      command=self._refresh).pack(side="right")
+
+        self._scroll = ctk.CTkScrollableFrame(self)
+        self._scroll.pack(fill="both", expand=True, padx=16, pady=(0, 16))
+        self._scroll.grid_columnconfigure(0, weight=1)
+        self._refresh()
+
+    def _refresh(self) -> None:
+        for w in self._scroll.winfo_children():
+            w.destroy()
+        jobs = load_index()
+        if not jobs:
+            ctk.CTkLabel(self._scroll, text="아직 작업 기록이 없습니다.",
+                         text_color="gray55").grid(row=0, column=0, pady=40)
+            return
+        for i, job in enumerate(jobs):
+            self._render_job_row(i, job)
+
+    def _render_job_row(self, row: int, job: dict) -> None:
+        status = job.get("status", "unknown")
+        icon = "✅" if status == "completed" else "❌"
+        title = job.get("title", "제목 없음")
+        created = (job.get("created_at") or "")[:16].replace("T", " ")
+        engine = job.get("stt_engine", "")
+        job_id = job.get("job_id", "")
+
+        frame = ctk.CTkFrame(self._scroll, fg_color=C_SURFACE, corner_radius=8)
+        frame.grid(row=row, column=0, sticky="ew", pady=3)
+        frame.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(frame, text=icon, font=ctk.CTkFont(size=14)).grid(
+            row=0, column=0, padx=(10, 6), pady=8)
+        info = f"{title}\n{created}  ·  {engine}"
+        if status == "failed":
+            err = job.get("error_message", "")
+            if err:
+                info += f"\n❌ {err[:80]}"
+        ctk.CTkLabel(frame, text=info, font=ctk.CTkFont(size=12),
+                     anchor="w", justify="left").grid(
+            row=0, column=1, sticky="w", padx=4, pady=8)
+
+        btn_frame = ctk.CTkFrame(frame, fg_color="transparent")
+        btn_frame.grid(row=0, column=2, padx=(4, 10), pady=8)
+
+        if job.get("has_markdown"):
+            ctk.CTkButton(btn_frame, text="📥", width=32, height=28,
+                          command=lambda jid=job_id, t=title: self._save_md(jid, t)
+                          ).pack(side="left", padx=2)
+        ctk.CTkButton(btn_frame, text="📋", width=32, height=28,
+                      fg_color="gray35",
+                      command=lambda jid=job_id: self._show_log(jid)
+                      ).pack(side="left", padx=2)
+        ctk.CTkButton(btn_frame, text="🗑", width=32, height=28,
+                      fg_color="gray35", hover_color=C_DANGER,
+                      command=lambda jid=job_id: self._delete(jid)
+                      ).pack(side="left", padx=2)
+
+    def _save_md(self, job_id: str, title: str) -> None:
+        md = get_job_markdown(job_id)
+        if not md:
+            messagebox.showinfo("없음", "마크다운 파일이 없습니다.")
+            return
+        from gurunote.exporter import sanitize_filename
+        path = filedialog.asksaveasfilename(
+            title="마크다운 저장", defaultextension=".md",
+            filetypes=[("Markdown", "*.md")],
+            initialfile=f"GuruNote_{sanitize_filename(title)}.md",
+        )
+        if path:
+            Path(path).write_text(md, encoding="utf-8")
+            messagebox.showinfo("완료", f"저장됨:\n{path}")
+
+    def _show_log(self, job_id: str) -> None:
+        log = get_job_log(job_id) or "(로그 없음)"
+        win = ctk.CTkToplevel(self)
+        win.title(f"📋 로그 — {job_id}")
+        win.geometry("600x400")
+        tb = ctk.CTkTextbox(win, font=ctk.CTkFont(size=12), wrap="word")
+        tb.pack(fill="both", expand=True, padx=10, pady=10)
+        tb.insert("1.0", log)
+        tb.configure(state="disabled")
+
+    def _delete(self, job_id: str) -> None:
+        if messagebox.askyesno("삭제", "이 작업 기록을 삭제할까요?"):
+            delete_job(job_id)
+            self._refresh()
 
 
 class SettingsDialog(ctk.CTkToplevel):
@@ -437,6 +576,7 @@ class GuruNoteApp(ctk.CTk):
                      font=ctk.CTkFont(size=11), text_color=C_TEXT_DIM
                      ).grid(row=1, column=0, padx=20, sticky="w", pady=(0, 20))
         for i, (txt, cmd) in enumerate([("⚙️  설정", self._on_settings),
+                                         ("📂  히스토리", self._on_history),
                                          ("🔄  업데이트", self._on_update_sb)]):
             ctk.CTkButton(sb, text=txt, anchor="w", height=36, fg_color="transparent",
                           hover_color=C_SURFACE_HI, text_color=C_TEXT_DIM,
@@ -569,6 +709,9 @@ class GuruNoteApp(ctk.CTk):
     # ── 이벤트 핸들러 ────────────────────────────────────────
     def _on_settings(self):
         SettingsDialog(self)
+
+    def _on_history(self):
+        HistoryDialog(self)
 
     def _on_update_sb(self):
         try:

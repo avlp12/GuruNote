@@ -627,15 +627,14 @@ class SettingsDialog(ctk.CTkToplevel):
 
     def _on_update(self) -> None:
         try:
-            logs: list[str] = []
-            status = check_updates(logs.append)
+            info = check_for_update()
             ok = messagebox.askyesno(
                 "업데이트 확인",
-                f"{status}\n\n업데이트를 실행할까요? (git pull + pip upgrade)",
+                f"{info['message']}\n\n업데이트를 실행할까요? (git pull + pip upgrade)",
             )
             if not ok:
                 return
-            logs = []
+            logs: list[str] = []
             update_project(logs.append, upgrade_deps=True)
             messagebox.showinfo("업데이트 완료", "업데이트가 완료되었습니다.\n앱을 재시작해주세요.")
         except Exception as exc:  # noqa: BLE001

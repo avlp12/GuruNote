@@ -40,6 +40,7 @@ from gurunote.history import (
     load_index, new_job_id, save_job,
 )
 from gurunote.stt import install_whisperx, is_whisperx_installed, transcribe
+from gurunote.stt_mlx import is_apple_silicon
 from gurunote.types import Transcript, _format_ts
 from gurunote.updater import check_updates, update_project
 
@@ -81,7 +82,7 @@ def render_sidebar() -> dict:
         st.divider()
 
         st.subheader("⚙️ 설정")
-        stt_options = ["auto", "whisperx", "assemblyai"]
+        stt_options = ["auto", "whisperx", "mlx", "assemblyai"]
         env_stt = os.environ.get("GURUNOTE_STT_ENGINE", "auto").lower().strip()
         stt_default = stt_options.index(env_stt) if env_stt in stt_options else 0
         engine_label = st.selectbox(
@@ -89,8 +90,9 @@ def render_sidebar() -> dict:
             options=stt_options,
             index=stt_default,
             help=(
-                "auto: WhisperX 가 가능하면 사용, 안되면 AssemblyAI 폴백 (권장).\n"
-                "whisperx: 항상 WhisperX (Distil-Whisper + pyannote, GPU 권장).\n"
+                "auto: NVIDIA → WhisperX, Apple Silicon → MLX, 그 외 → AssemblyAI (권장).\n"
+                "whisperx: 항상 WhisperX (Distil-Whisper + pyannote, NVIDIA GPU 필요).\n"
+                "mlx: 항상 MLX Whisper (macOS Apple Silicon 전용, Metal/MPS 가속).\n"
                 "assemblyai: 항상 AssemblyAI Cloud API."
             ),
         )
@@ -519,9 +521,14 @@ def main() -> None:
             )
 
         # WhisperX 미설치 감지 + 안내
+        # mlx 또는 Apple Silicon 의 auto 라우팅에서는 WhisperX 가 필요 없으므로 스킵
         engine_to_use = settings["engine"]
         if yt_submitted or local_submitted:
-            if engine_to_use in ("whisperx", "auto") and not is_whisperx_installed():
+            needs_whisperx = (
+                engine_to_use == "whisperx"
+                or (engine_to_use == "auto" and not is_apple_silicon())
+            )
+            if needs_whisperx and not is_whisperx_installed():
                 st.warning(
                     "WhisperX-ASR 패키지가 설치되어 있지 않습니다. "
                     "아래에서 설치하거나 AssemblyAI 로 전환하세요."

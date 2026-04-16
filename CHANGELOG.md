@@ -8,6 +8,17 @@
 ## [Unreleased]
 
 ### Fixed
+- **ffmpeg/ffprobe 누락 감지 + 친절한 에러** (`gurunote/audio.py`,
+  `setup.sh`, `setup.bat`) — yt-dlp 오디오 추출에 ffmpeg 가 필요하지만 macOS 기본
+  환경엔 없어 Step 1 에서 `ERROR: Postprocessing: ffprobe and ffmpeg not found`
+  (ANSI 컬러 escape 포함) 로 파이프라인이 실패. 새 `ensure_ffmpeg_available()`
+  pre-flight 가 `download_audio()` / `extract_audio_from_file()` 시작부에서
+  `shutil.which` 로 감지 → 누락 시 OS 별 설치 명령 (`brew install ffmpeg` /
+  `winget install ffmpeg` / `apt install ffmpeg`) 을 포함한 한국어 RuntimeError
+  발생. setup.sh / setup.bat 에도 같은 감지 단계(`[0/4]`)를 추가해 setup 단계에서
+  자동 설치 제안(brew/winget 감지 시) 또는 명확한 실패 메시지 출력.
+
+
 - **Apple Silicon 세대 표기 M5 반영** — README / `requirements-mac.txt` / `stt.py`
   / `stt_mlx.py` 의 "M1/M2/M3/M4", "M1~M4" 표기 9곳을 M5 포함으로 갱신. 실제
   코드는 `platform.machine() == "arm64"` 로 세대 무관 동작하나 문서 표기는

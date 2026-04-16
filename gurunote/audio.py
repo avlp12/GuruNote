@@ -26,6 +26,52 @@ SUPPORTED_EXTS = AUDIO_EXTS | VIDEO_EXTS
 # yt-dlp 로 받아볼 자막 언어 우선순위
 SUBTITLE_LANGS = ["en", "en-US", "en-GB", "ko"]
 
+
+def ensure_ffmpeg_available() -> None:
+    """
+    `ffmpeg` / `ffprobe` 가 PATH 에 있는지 확인.
+
+    yt-dlp 가 내부적으로 ffmpeg 를 호출할 때 생성하는 ANSI 컬러 포함 에러
+    (`[0;31mERROR:[0m Postprocessing: ffprobe and ffmpeg not found...`) 대신,
+    파이프라인 실행 초기에 명확한 한국어 안내를 주기 위한 pre-flight.
+
+    Raises:
+        RuntimeError: ffmpeg 또는 ffprobe 가 없을 때 — OS 별 설치 명령 포함.
+    """
+    missing = [name for name in ("ffmpeg", "ffprobe") if shutil.which(name) is None]
+    if not missing:
+        return
+
+    import platform
+    system = platform.system()
+    if system == "Darwin":
+        install_hint = (
+            "  macOS:\n"
+            "    brew install ffmpeg\n"
+            "  (Homebrew 가 없으면 먼저 설치: https://brew.sh)"
+        )
+    elif system == "Windows":
+        install_hint = (
+            "  Windows:\n"
+            "    winget install ffmpeg\n"
+            "  또는 https://ffmpeg.org/download.html 에서 다운로드 후 PATH 등록"
+        )
+    else:
+        install_hint = (
+            "  Ubuntu / Debian:\n"
+            "    sudo apt update && sudo apt install -y ffmpeg\n"
+            "  Fedora / RHEL:\n"
+            "    sudo dnf install -y ffmpeg"
+        )
+
+    raise RuntimeError(
+        f"ffmpeg / ffprobe 를 찾을 수 없습니다 (누락: {', '.join(missing)}).\n"
+        "오디오 추출 및 길이 측정에 필수이므로 설치 후 앱을 재시작해주세요.\n\n"
+        f"{install_hint}\n\n"
+        "설치 후 터미널을 새로 열어 `ffmpeg -version` 명령이 동작하는지 확인하세요."
+    )
+
+
 # yt-dlp 가 선택한 포맷이 vtt 가 아닐 수 있어 여러 확장자를 모두 탐색한다.
 # `_parse_subtitle_file()` 이 VTT 와 SRT 를 모두 처리.
 SUBTITLE_EXTS = [".vtt", ".srt", ".ttml", ".srv3", ".json3", ".sub"]
@@ -114,8 +160,12 @@ def download_audio(url: str, out_dir: str) -> AudioDownloadResult:
         AudioDownloadResult — 파일 경로 + 메타데이터
 
     Raises:
+        RuntimeError — ffmpeg/ffprobe 누락 시 (pre-flight)
         yt_dlp.utils.DownloadError, FileNotFoundError — **오디오 단계에서만**
     """
+    # ffmpeg pre-flight — yt-dlp 의 혼란스러운 ANSI 에러 대신 명확한 한국어 안내
+    ensure_ffmpeg_available()
+
     os.makedirs(out_dir, exist_ok=True)
 
     # --- 1차: 오디오 다운로드 (실패 시 예외 전파) ---
@@ -417,8 +467,11 @@ def extract_audio_from_file(file_path: str, out_dir: str) -> AudioDownloadResult
         AudioDownloadResult
 
     Raises:
-        FileNotFoundError, RuntimeError (ffmpeg 실패)
+        FileNotFoundError, RuntimeError (ffmpeg 실패 또는 누락)
     """
+    # ffmpeg pre-flight
+    ensure_ffmpeg_available()
+
     src = Path(file_path).resolve()
     if not src.is_file():
         raise FileNotFoundError(f"파일을 찾을 수 없습니다: {file_path}")

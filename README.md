@@ -30,7 +30,10 @@ $ streamlit run app.py             # 웹 앱 실행
 # 1. 설치
 git clone https://github.com/avlp12/GuruNote.git && cd GuruNote
 python -m venv .venv && source .venv/bin/activate
+
 pip install -r requirements.txt
+# NVIDIA GPU 가 있으면 첫 실행 시 CUDA PyTorch 를 자동 설치합니다.
+# GPU 없어도 CPU 모드로 동작합니다.
 
 # 2. API 키 설정 (최소 OpenAI 또는 Anthropic 중 하나)
 cp .env.example .env

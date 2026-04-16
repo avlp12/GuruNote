@@ -321,6 +321,17 @@ def _load_vibevoice():
         return _VIBEVOICE_SINGLETON["model"], _VIBEVOICE_SINGLETON["processor"], _VIBEVOICE_SINGLETON["device"]
 
     import torch
+
+    # ── 공유 메모리(시스템 RAM via PCIe) 사용 차단 ──
+    # Windows 에서 VRAM 초과 시 PyTorch 가 자동으로 "shared GPU memory" 를
+    # 사용하는데, PCIe 대역폭이 VRAM 대비 10~100배 느려 실질적으로 멈춤.
+    # 차단하면 VRAM 초과 즉시 OOM → 토큰 축소 재시도 로직이 정상 작동.
+    if torch.cuda.is_available():
+        try:
+            torch.cuda.set_per_process_memory_fraction(0.95)  # VRAM 의 95% 까지만
+        except Exception:  # noqa: BLE001
+            pass  # 일부 환경에서 미지원
+
     from vibevoice.modular.modeling_vibevoice_asr import (  # type: ignore
         VibeVoiceASRForConditionalGeneration,
     )

@@ -5,6 +5,53 @@ echo "    GuruNote 환경 설정"
 echo "================================================"
 echo ""
 
+# 0. 시스템 의존성: ffmpeg / ffprobe
+#    yt-dlp 오디오 추출에 필수. 없으면 파이프라인 Step 1 에서 즉시 실패.
+#    macOS 에서 brew 가 있으면 자동 설치 제안 (여전히 사용자 확인 필요).
+if ! command -v ffmpeg &> /dev/null || ! command -v ffprobe &> /dev/null; then
+    echo "[0/4] ⚠️  ffmpeg / ffprobe 미설치 — yt-dlp 오디오 추출에 필수입니다."
+    case "$(uname -s)" in
+        Darwin*)
+            if command -v brew &> /dev/null; then
+                echo "      Homebrew 감지됨. 다음 명령으로 설치:"
+                echo "        brew install ffmpeg"
+                read -p "      지금 설치할까요? [y/N] " yn
+                case "$yn" in
+                    [Yy]*)
+                        brew install ffmpeg || {
+                            echo "      ffmpeg 설치 실패. 수동 설치 후 setup.sh 를 재실행하세요."
+                            exit 1
+                        }
+                        ;;
+                    *)
+                        echo "      설치 건너뜀. 수동 설치 후 setup.sh 를 재실행하세요:"
+                        echo "        brew install ffmpeg"
+                        exit 1
+                        ;;
+                esac
+            else
+                echo "      Homebrew 가 없습니다. 먼저 Homebrew 설치 후 재실행:"
+                echo "        /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
+                echo "        brew install ffmpeg"
+                exit 1
+            fi
+            ;;
+        Linux*)
+            echo "      다음 명령으로 설치 (sudo 필요):"
+            echo "        sudo apt update && sudo apt install -y ffmpeg   # Debian/Ubuntu"
+            echo "        sudo dnf install -y ffmpeg                       # Fedora/RHEL"
+            exit 1
+            ;;
+        *)
+            echo "      수동 설치 후 재실행하세요: https://ffmpeg.org/download.html"
+            exit 1
+            ;;
+    esac
+else
+    echo "[0/4] ffmpeg / ffprobe 확인 OK"
+fi
+echo ""
+
 # 1. venv
 if [ ! -f ".venv/bin/python" ]; then
     echo "[1/4] 가상환경 생성 중..."

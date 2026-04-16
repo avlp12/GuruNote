@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-04-16
+
 ### Added
 - **유튜브 메타데이터 컨텍스트 주입** (`gurunote/audio.py`, `llm.py`, `exporter.py`)
   - `yt-dlp` 호출 시 수동/자동 자막(VTT)까지 함께 다운로드
@@ -147,5 +149,6 @@
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/avlp12/GuruNote/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/avlp12/GuruNote/releases/tag/v0.1.0

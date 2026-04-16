@@ -7,6 +7,18 @@
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-04-16
+
+### Added
+- **Google Gemini API 지원** (`gurunote/llm.py`) — `LLM_PROVIDER=gemini` 으로
+  Google Gemini 모델 사용 가능. `GOOGLE_API_KEY`, `GEMINI_MODEL` 환경변수 추가.
+  `google-genai>=1.0` 의존성 추가. GUI/Streamlit Settings 에 Gemini 옵션 반영.
+
+### Fixed
+- **업데이트 체크 원격 버전 감지 실패 수정** (`gurunote/updater.py`) — remote 이름과
+  기본 브랜치를 자동 감지(`_detect_remote_and_branch`)하여 `origin/main` 이 아닌
+  환경에서도 동작. `git ls-remote` 폴백 추가. 실패 시 네트워크/remote 설정 안내 메시지.
+
 ## [0.4.1] - 2026-04-16
 
 ### Fixed
@@ -191,7 +203,10 @@
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/avlp12/GuruNote/compare/v0.4.1...v0.5.0
+[0.4.1]: https://github.com/avlp12/GuruNote/compare/v0.4.0...v0.4.1
+[0.4.0]: https://github.com/avlp12/GuruNote/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/avlp12/GuruNote/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/avlp12/GuruNote/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/avlp12/GuruNote/releases/tag/v0.1.0

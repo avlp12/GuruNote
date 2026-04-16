@@ -75,7 +75,7 @@ SUMMARY_SYSTEM_PROMPT = """\
 # =============================================================================
 @dataclass
 class LLMConfig:
-    provider: str            # "openai" | "openai_compatible" | "anthropic"
+    provider: str            # "openai" | "openai_compatible" | "anthropic" | "gemini"
     model: str
     api_key: str
     base_url: str = ""
@@ -102,6 +102,15 @@ class LLMConfig:
                 provider="anthropic",
                 model=os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6"),
                 api_key=os.environ.get("ANTHROPIC_API_KEY", ""),
+                temperature=temp,
+                translation_max_tokens=translation_max_tokens,
+                summary_max_tokens=summary_max_tokens,
+            )
+        if provider == "gemini":
+            return cls(
+                provider="gemini",
+                model=os.environ.get("GEMINI_MODEL", "gemini-2.5-flash"),
+                api_key=os.environ.get("GOOGLE_API_KEY", ""),
                 temperature=temp,
                 translation_max_tokens=translation_max_tokens,
                 summary_max_tokens=summary_max_tokens,
@@ -159,7 +168,7 @@ def _call_llm(config: LLMConfig, system: str, user: str, max_tokens: int = 4096)
     Rate Limit(HTTP 429 / overloaded) 발생 시 지수 백오프(2s → 4s → 8s → 16s)로
     최대 _MAX_RETRIES 회 자동 재시도한다.
     """
-    if config.provider in {"openai", "anthropic"} and not config.api_key:
+    if config.provider in {"openai", "anthropic", "gemini"} and not config.api_key:
         raise RuntimeError(
             f"{config.provider.upper()}_API_KEY 가 .env 에 설정돼 있지 않습니다."
         )
@@ -202,6 +211,20 @@ def _call_llm_once(config: LLMConfig, system: str, user: str, max_tokens: int) -
         return "".join(
             getattr(b, "text", "") for b in msg.content if getattr(b, "type", "") == "text"
         ).strip()
+
+    if config.provider == "gemini":
+        from google import genai  # type: ignore
+
+        client = genai.Client(api_key=config.api_key)
+        resp = client.models.generate_content(
+            model=config.model,
+            contents=f"{system}\n\n{user}",
+            config=genai.types.GenerateContentConfig(
+                temperature=config.temperature,
+                max_output_tokens=max_tokens,
+            ),
+        )
+        return (resp.text or "").strip()
 
     # default: openai
     from openai import OpenAI  # type: ignore

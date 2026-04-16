@@ -285,13 +285,28 @@ def run_pipeline(
     job_logger = JobLogger(job_id)
 
     try:
+        import time as _time
+        _pipeline_start = _time.monotonic()
+
         with st.status("GuruNote 파이프라인 실행 중...", expanded=True) as status:
             progress_bar = st.progress(0, text="진행률 0%")
+
             def set_progress(pct: int, label: str) -> None:
-                progress_bar.progress(max(0, min(100, pct)), text=f"{label} ({pct}%)")
+                elapsed = _time.monotonic() - _pipeline_start
+                em, es = divmod(int(elapsed), 60)
+                eta_str = f"{em}m {es}s"
+                if 2 < pct < 100:
+                    remaining = max(0, (elapsed / pct * 100) - elapsed)
+                    rm, rs = divmod(int(remaining), 60)
+                    eta_str += f" | ~{rm}m {rs}s left"
+                progress_bar.progress(
+                    max(0, min(100, pct)),
+                    text=f"{label} ({pct}%)  [{eta_str}]",
+                )
 
             def log(msg: str) -> None:
-                st.write(msg)
+                ts = _time.strftime("%H:%M:%S")
+                st.write(f"[{ts}] {msg}")
                 job_logger.write(msg)
 
             # ----- Step 1: 오디오 준비 -----

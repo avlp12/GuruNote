@@ -100,6 +100,7 @@ class PipelineWorker:
         self.provider = provider
         self.job_id = new_job_id()
         self._job_logger = JobLogger(self.job_id)
+        self._start_time: Optional[float] = None
         self.msg_queue: queue.Queue[str] = queue.Queue()
         self.progress_queue: queue.Queue[float] = queue.Queue()
         self.result_queue: queue.Queue[dict] = queue.Queue()
@@ -109,8 +110,11 @@ class PipelineWorker:
     def _log(self, msg: str) -> None:
         if self._stop_event.is_set():
             raise RuntimeError("사용자가 작업 중지를 요청했습니다.")
-        self.msg_queue.put(msg)
-        self._job_logger.write(msg)  # 파일에도 기록
+        import time as _time
+        ts = _time.strftime("%H:%M:%S")
+        stamped = f"[{ts}] {msg}"
+        self.msg_queue.put(stamped)
+        self._job_logger.write(msg)
 
     def _set_progress(self, pct: float) -> None:
         self.progress_queue.put(max(0.0, min(1.0, pct)))
@@ -123,6 +127,8 @@ class PipelineWorker:
         self._thread.start()
 
     def _run(self) -> None:
+        import time as _time
+        self._start_time = _time.monotonic()
         tmp_dir = tempfile.mkdtemp(prefix="gurunote_")
         try:
             self._set_progress(0.02)
@@ -909,9 +915,27 @@ class GuruNoteApp(ctk.CTk):
         self._last_log_label.configure(text="")
 
     def _set_progress(self, pct):
+        import time as _time
         pct = max(0.0, min(1.0, pct))
         self._progress.set(pct)
-        self._progress_label.configure(text=f"{int(pct * 100)}%")
+
+        # ETA 계산
+        eta_str = ""
+        if self._worker and self._worker._start_time and 0.02 < pct < 1.0:
+            elapsed = _time.monotonic() - self._worker._start_time
+            if pct > 0:
+                total_est = elapsed / pct
+                remaining = max(0, total_est - elapsed)
+                if remaining >= 60:
+                    m, s = divmod(int(remaining), 60)
+                    eta_str = f"  |  ~{m}m {s}s left"
+                else:
+                    eta_str = f"  |  ~{int(remaining)}s left"
+                # 경과 시간도 표시
+                em, es = divmod(int(elapsed), 60)
+                eta_str = f"  |  {em}m {es}s elapsed{eta_str}"
+
+        self._progress_label.configure(text=f"{int(pct * 100)}%{eta_str}")
         self._update_steps(pct)
 
     @staticmethod

@@ -52,12 +52,27 @@ load_dotenv()
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
-APP_TITLE = "GuruNote 🎙️"
-WINDOW_WIDTH = 1100
-WINDOW_HEIGHT = 780
+APP_TITLE = "GuruNote"
+WINDOW_WIDTH = 1200
+WINDOW_HEIGHT = 820
 
 STT_OPTIONS = ["auto", "vibevoice", "assemblyai"]
 LLM_OPTIONS = ["openai", "openai_compatible", "anthropic"]
+
+# ── 브랜드 컬러 팔레트 ──
+C_BG = "#1A1B2E"
+C_SIDEBAR = "#212240"
+C_SURFACE = "#262842"
+C_SURFACE_HI = "#303260"
+C_BORDER = "#3A3C5E"
+C_PRIMARY = "#6C63FF"
+C_PRIMARY_HO = "#5A52E0"
+C_ACCENT = "#22D3EE"
+C_TEXT = "#E8E8F0"
+C_TEXT_DIM = "#8B8DA8"
+C_SUCCESS = "#4ADE80"
+C_DANGER = "#F87171"
+STEP_LABELS = ["오디오", "STT", "번역", "요약", "조립"]
 
 
 # =============================================================================
@@ -381,304 +396,227 @@ class SettingsDialog(ctk.CTkToplevel):
 
 
 # =============================================================================
-# 메인 애플리케이션
+# 메인 애플리케이션 (사이드바 + 카드 레이아웃 리디자인)
 # =============================================================================
-class GuruNoteApp(ctk.CTk):
-    def __init__(self) -> None:
-        super().__init__()
+def _card(parent, **kw):
+    d = dict(fg_color=C_SURFACE, corner_radius=12, border_width=1, border_color=C_BORDER)
+    d.update(kw)
+    return ctk.CTkFrame(parent, **d)
 
+
+class GuruNoteApp(ctk.CTk):
+    def __init__(self):
+        super().__init__()
         self.title(APP_TITLE)
         self.geometry(f"{WINDOW_WIDTH}x{WINDOW_HEIGHT}")
-        self.minsize(900, 650)
-
-        self._worker: Optional[PipelineWorker] = None
-        self._result: Optional[dict] = None
-
+        self.minsize(1000, 700)
+        self.configure(fg_color=C_BG)
+        self._worker = None
+        self._result = None
+        self._local_file_path = ""
+        self._step_labels = []
         self._build_ui()
 
-    # -------------------------------------------------------------------------
-    # UI 구성
-    # -------------------------------------------------------------------------
-    def _build_ui(self) -> None:
-        # Grid 설정 — row 2 (결과 영역) 가 남는 공간을 전부 차지
-        self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(2, weight=1)
+    def _build_ui(self):
+        self.grid_columnconfigure(1, weight=1)
+        self.grid_rowconfigure(0, weight=1)
+        self._build_sidebar()
+        self._build_main()
 
-        self._build_header()        # row 0
-        self._build_controls()      # row 1
-        self._build_result_area()   # row 2
+    # ── 사이드바 ─────────────────────────────────────────────
+    def _build_sidebar(self):
+        sb = ctk.CTkFrame(self, fg_color=C_SIDEBAR, width=200, corner_radius=0)
+        sb.grid(row=0, column=0, sticky="nsew")
+        sb.grid_propagate(False)
+        sb.grid_rowconfigure(4, weight=1)
+        sb.grid_columnconfigure(0, weight=1)
+        brand = ctk.CTkFrame(sb, fg_color="transparent")
+        brand.grid(row=0, column=0, padx=16, pady=(24, 4), sticky="ew")
+        ctk.CTkLabel(brand, text="🎙️", font=ctk.CTkFont(size=32)).pack(side="left")
+        ctk.CTkLabel(brand, text=" GuruNote", font=ctk.CTkFont(size=20, weight="bold"),
+                     text_color=C_TEXT).pack(side="left", padx=(4, 0))
+        ctk.CTkLabel(sb, text="글로벌 IT/AI 구루의 인사이트",
+                     font=ctk.CTkFont(size=11), text_color=C_TEXT_DIM
+                     ).grid(row=1, column=0, padx=20, sticky="w", pady=(0, 20))
+        for i, (txt, cmd) in enumerate([("⚙️  설정", self._on_settings),
+                                         ("🔄  업데이트", self._on_update_sb)]):
+            ctk.CTkButton(sb, text=txt, anchor="w", height=36, fg_color="transparent",
+                          hover_color=C_SURFACE_HI, text_color=C_TEXT_DIM,
+                          font=ctk.CTkFont(size=13), command=cmd
+                          ).grid(row=2 + i, column=0, padx=10, pady=2, sticky="ew")
+        ctk.CTkLabel(sb, text="v0.1.0", font=ctk.CTkFont(size=10),
+                     text_color=C_TEXT_DIM).grid(row=5, column=0, padx=20, pady=(0, 16), sticky="sw")
 
-    def _build_header(self) -> None:
-        header = ctk.CTkFrame(self, fg_color="transparent")
-        header.grid(row=0, column=0, padx=20, pady=(18, 0), sticky="ew")
-        header.grid_columnconfigure(0, weight=1)
+    # ── 메인 영역 ────────────────────────────────────────────
+    def _build_main(self):
+        m = ctk.CTkFrame(self, fg_color=C_BG, corner_radius=0)
+        m.grid(row=0, column=1, sticky="nsew")
+        m.grid_columnconfigure(0, weight=1)
+        m.grid_rowconfigure(2, weight=1)
+        self._build_input_card(m, 0)
+        self._build_progress_card(m, 1)
+        self._build_result_card(m, 2)
 
-        ctk.CTkLabel(
-            header,
-            text="GuruNote 🎙️: 글로벌 IT/AI 구루들의 인사이트",
-            font=ctk.CTkFont(size=22, weight="bold"),
-        ).grid(row=0, column=0, sticky="w")
-
-        # ⚙️ 설정 버튼 (헤더 우측)
-        ctk.CTkButton(
-            header,
-            text="⚙️ 설정",
-            width=80,
-            height=32,
-            fg_color="gray30",
-            hover_color="gray40",
-            command=self._on_settings,
-        ).grid(row=0, column=1, sticky="e")
-
-        ctk.CTkLabel(
-            header,
-            text="유튜브 링크 하나로 해외 IT/AI 팟캐스트를 화자 분리된 한국어 요약본으로",
-            font=ctk.CTkFont(size=13),
-            text_color="gray60",
-        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(2, 0))
-
-    def _build_controls(self) -> None:
-        ctl = ctk.CTkFrame(self)
-        ctl.grid(row=1, column=0, padx=20, pady=12, sticky="ew")
-
-        # 내부 그리드: 입력 필드가 가변 폭
-        ctl.grid_columnconfigure(2, weight=1)
-
-        # 소스 라벨
-        ctk.CTkLabel(ctl, text="소스", font=ctk.CTkFont(weight="bold")).grid(
-            row=0, column=0, padx=(14, 6), pady=12, sticky="w"
-        )
-
-        # 📁 파일 선택 버튼
-        self._file_btn = ctk.CTkButton(
-            ctl,
-            text="📁",
-            width=38,
-            height=38,
-            command=self._on_pick_file,
-        )
-        self._file_btn.grid(row=0, column=1, padx=(0, 4), pady=12)
-
-        # URL / 파일경로 입력
-        self._local_file_path: str = ""  # 로컬 파일이 선택되면 여기 저장
-        self._url_entry = ctk.CTkEntry(
-            ctl,
-            placeholder_text="유튜브 URL 또는 📁 버튼으로 로컬 파일 선택",
-            height=38,
-        )
-        self._url_entry.grid(row=0, column=2, padx=4, pady=12, sticky="ew")
-
-        # STT 엔진
-        ctk.CTkLabel(ctl, text="STT").grid(row=0, column=3, padx=(12, 4), pady=12)
+    def _build_input_card(self, p, r):
+        c = _card(p)
+        c.grid(row=r, column=0, padx=20, pady=(20, 8), sticky="ew")
+        c.grid_columnconfigure(1, weight=1)
+        ctk.CTkLabel(c, text="오디오 소스", font=ctk.CTkFont(size=14, weight="bold"),
+                     text_color=C_TEXT).grid(row=0, column=0, columnspan=4, padx=16, pady=(14, 8), sticky="w")
+        ctk.CTkButton(c, text="📁", width=40, height=40, corner_radius=8,
+                      fg_color=C_SURFACE_HI, hover_color=C_BORDER,
+                      command=self._on_pick_file).grid(row=1, column=0, padx=(16, 6), pady=(0, 14))
+        self._url_entry = ctk.CTkEntry(c, height=40, corner_radius=8,
+                                       placeholder_text="유튜브 URL 붙여넣기 또는 📁 로컬 파일 선택",
+                                       fg_color=C_BG, border_color=C_BORDER, text_color=C_TEXT)
+        self._url_entry.grid(row=1, column=1, padx=4, pady=(0, 14), sticky="ew")
+        of = ctk.CTkFrame(c, fg_color="transparent")
+        of.grid(row=2, column=0, columnspan=2, padx=16, pady=(0, 14), sticky="ew")
+        of.grid_columnconfigure(4, weight=1)
+        ctk.CTkLabel(of, text="STT", text_color=C_TEXT_DIM, font=ctk.CTkFont(size=12)).grid(row=0, column=0, padx=(0, 6))
         self._stt_var = ctk.StringVar(value="auto")
-        ctk.CTkOptionMenu(
-            ctl, variable=self._stt_var, values=STT_OPTIONS, width=120
-        ).grid(row=0, column=4, padx=4, pady=12)
+        ctk.CTkOptionMenu(of, variable=self._stt_var, values=STT_OPTIONS, width=130, height=32,
+                          corner_radius=8, fg_color=C_SURFACE_HI, button_color=C_BORDER).grid(row=0, column=1, padx=(0, 16))
+        ctk.CTkLabel(of, text="LLM", text_color=C_TEXT_DIM, font=ctk.CTkFont(size=12)).grid(row=0, column=2, padx=(0, 6))
+        self._llm_var = ctk.StringVar(value=os.environ.get("LLM_PROVIDER", "openai"))
+        ctk.CTkOptionMenu(of, variable=self._llm_var, values=LLM_OPTIONS, width=160, height=32,
+                          corner_radius=8, fg_color=C_SURFACE_HI, button_color=C_BORDER).grid(row=0, column=3, padx=(0, 16))
+        self._run_btn = ctk.CTkButton(of, text="▶  GuruNote 생성하기", height=36, width=200, corner_radius=8,
+                                      font=ctk.CTkFont(size=13, weight="bold"),
+                                      fg_color=C_PRIMARY, hover_color=C_PRIMARY_HO, command=self._on_run)
+        self._run_btn.grid(row=0, column=5, padx=(0, 6))
+        self._stop_btn = ctk.CTkButton(of, text="⏹", height=36, width=36, corner_radius=8,
+                                       fg_color=C_SURFACE_HI, hover_color=C_DANGER, state="disabled", command=self._on_stop)
+        self._stop_btn.grid(row=0, column=6)
 
-        # LLM
-        ctk.CTkLabel(ctl, text="LLM").grid(row=0, column=5, padx=(12, 4), pady=12)
-        self._llm_var = ctk.StringVar(
-            value=os.environ.get("LLM_PROVIDER", "openai")
-        )
-        ctk.CTkOptionMenu(
-            ctl, variable=self._llm_var, values=LLM_OPTIONS, width=120
-        ).grid(row=0, column=6, padx=4, pady=12)
-
-        # 실행 버튼
-        self._run_btn = ctk.CTkButton(
-            ctl,
-            text="GuruNote 생성하기",
-            font=ctk.CTkFont(size=14, weight="bold"),
-            height=38,
-            width=170,
-            command=self._on_run,
-        )
-        self._run_btn.grid(row=0, column=7, padx=(12, 14), pady=12)
-
-        self._stop_btn = ctk.CTkButton(
-            ctl,
-            text="⏹ 중지",
-            height=38,
-            width=90,
-            state="disabled",
-            fg_color="gray35",
-            hover_color="gray45",
-            command=self._on_stop,
-        )
-        self._stop_btn.grid(row=0, column=8, padx=(0, 14), pady=12)
-
-    def _build_result_area(self) -> None:
-        """결과 영역: 왼쪽 = 진행 로그, 오른쪽 = 결과 탭."""
-        container = ctk.CTkFrame(self, fg_color="transparent")
-        container.grid(row=2, column=0, padx=20, pady=(0, 16), sticky="nsew")
-        container.grid_columnconfigure(0, weight=2)  # 로그
-        container.grid_columnconfigure(1, weight=5)  # 결과 탭
-        container.grid_rowconfigure(0, weight=1)
-
-        # ---- 진행 로그 (왼쪽) ----
-        log_frame = ctk.CTkFrame(container)
-        log_frame.grid(row=0, column=0, padx=(0, 8), sticky="nsew")
-        log_frame.grid_rowconfigure(2, weight=1)
-        log_frame.grid_columnconfigure(0, weight=1)
-
-        ctk.CTkLabel(
-            log_frame,
-            text="📋 진행 로그",
-            font=ctk.CTkFont(size=13, weight="bold"),
-        ).grid(row=0, column=0, padx=12, pady=(10, 4), sticky="w")
-
-        prog_wrap = ctk.CTkFrame(log_frame, fg_color="transparent")
-        prog_wrap.grid(row=1, column=0, padx=10, pady=(0, 6), sticky="ew")
-        prog_wrap.grid_columnconfigure(0, weight=1)
-        self._progress = ctk.CTkProgressBar(prog_wrap)
+    def _build_progress_card(self, p, r):
+        c = _card(p)
+        c.grid(row=r, column=0, padx=20, pady=8, sticky="ew")
+        c.grid_columnconfigure(0, weight=1)
+        sf = ctk.CTkFrame(c, fg_color="transparent")
+        sf.grid(row=0, column=0, padx=16, pady=(14, 6), sticky="ew")
+        self._step_labels = []
+        for i, lb in enumerate(STEP_LABELS):
+            if i > 0:
+                ctk.CTkLabel(sf, text="───", text_color=C_BORDER, font=ctk.CTkFont(size=10)).pack(side="left", padx=2)
+            sl = ctk.CTkLabel(sf, text=f" {i+1}. {lb} ", font=ctk.CTkFont(size=11),
+                              text_color=C_TEXT_DIM, fg_color=C_SURFACE_HI, corner_radius=6)
+            sl.pack(side="left", padx=2)
+            self._step_labels.append(sl)
+        pw = ctk.CTkFrame(c, fg_color="transparent")
+        pw.grid(row=1, column=0, padx=16, pady=(0, 4), sticky="ew")
+        pw.grid_columnconfigure(0, weight=1)
+        self._progress = ctk.CTkProgressBar(pw, height=6, corner_radius=3,
+                                            fg_color=C_SURFACE_HI, progress_color=C_ACCENT)
         self._progress.grid(row=0, column=0, sticky="ew")
         self._progress.set(0)
-        self._progress_label = ctk.CTkLabel(
-            prog_wrap, text="진행률 0%", font=ctk.CTkFont(size=11), text_color="gray60"
-        )
-        self._progress_label.grid(row=1, column=0, sticky="w", pady=(3, 0))
+        self._progress_label = ctk.CTkLabel(pw, text="대기 중", font=ctk.CTkFont(size=11), text_color=C_TEXT_DIM)
+        self._progress_label.grid(row=1, column=0, sticky="w", pady=(2, 0))
+        self._last_log_label = ctk.CTkLabel(c, text="", font=ctk.CTkFont(size=11),
+                                            text_color=C_TEXT_DIM, anchor="w", wraplength=800)
+        self._last_log_label.grid(row=2, column=0, padx=16, pady=(0, 12), sticky="ew")
 
-        self._log_text = ctk.CTkTextbox(
-            log_frame, font=ctk.CTkFont(size=12), state="disabled", wrap="word"
-        )
-        self._log_text.grid(row=2, column=0, padx=8, pady=(0, 8), sticky="nsew")
-
-        # ---- 결과 탭 (오른쪽) ----
-        tab_frame = ctk.CTkFrame(container)
-        tab_frame.grid(row=0, column=1, padx=(8, 0), sticky="nsew")
-        tab_frame.grid_rowconfigure(1, weight=1)
-        tab_frame.grid_columnconfigure(0, weight=1)
-
-        # 상단: 다운로드 버튼
-        top_bar = ctk.CTkFrame(tab_frame, fg_color="transparent")
-        top_bar.grid(row=0, column=0, padx=12, pady=(10, 4), sticky="ew")
-        top_bar.grid_columnconfigure(0, weight=1)
-
-        self._title_label = ctk.CTkLabel(
-            top_bar,
-            text="결과가 여기에 표시됩니다",
-            font=ctk.CTkFont(size=13, weight="bold"),
-        )
+    def _build_result_card(self, p, r):
+        c = _card(p)
+        c.grid(row=r, column=0, padx=20, pady=(8, 20), sticky="nsew")
+        c.grid_rowconfigure(1, weight=1)
+        c.grid_columnconfigure(0, weight=1)
+        top = ctk.CTkFrame(c, fg_color="transparent")
+        top.grid(row=0, column=0, padx=16, pady=(14, 4), sticky="ew")
+        top.grid_columnconfigure(0, weight=1)
+        self._title_label = ctk.CTkLabel(top, text="결과", font=ctk.CTkFont(size=14, weight="bold"), text_color=C_TEXT)
         self._title_label.grid(row=0, column=0, sticky="w")
-
-        self._save_btn = ctk.CTkButton(
-            top_bar,
-            text="📥 마크다운 저장",
-            width=140,
-            state="disabled",
-            command=self._on_save,
-        )
+        self._save_btn = ctk.CTkButton(top, text="📥 마크다운 저장", height=32, width=140, corner_radius=8,
+                                       fg_color=C_SURFACE_HI, hover_color=C_PRIMARY, state="disabled", command=self._on_save)
         self._save_btn.grid(row=0, column=1, sticky="e")
-
-        # TabView
-        self._tabview = ctk.CTkTabview(tab_frame, height=400)
-        self._tabview.grid(row=1, column=0, padx=8, pady=(0, 8), sticky="nsew")
-
+        self._tabview = ctk.CTkTabview(c, height=300, corner_radius=8, fg_color=C_SURFACE,
+                                       segmented_button_fg_color=C_SURFACE_HI,
+                                       segmented_button_selected_color=C_PRIMARY,
+                                       segmented_button_unselected_color=C_SURFACE_HI)
+        self._tabview.grid(row=1, column=0, padx=12, pady=(0, 12), sticky="nsew")
         self._tab_summary = self._tabview.add("📌 요약본")
         self._tab_translated = self._tabview.add("🇰🇷 번역")
         self._tab_original = self._tabview.add("🇺🇸 원문")
-
-        # 각 탭에 텍스트 위젯 배치
-        self._summary_text = self._make_tab_textbox(self._tab_summary)
-        self._translated_text = self._make_tab_textbox(self._tab_translated)
-        self._original_text = self._make_tab_textbox(self._tab_original)
-
-        # 안내 메시지
-        self._set_text(
-            self._summary_text,
-            "유튜브 URL 을 입력하고 'GuruNote 생성하기' 를 눌러주세요.",
-        )
+        self._tab_log = self._tabview.add("📋 로그")
+        self._summary_text = self._make_tb(self._tab_summary)
+        self._translated_text = self._make_tb(self._tab_translated)
+        self._original_text = self._make_tb(self._tab_original)
+        self._log_text = self._make_tb(self._tab_log)
+        self._set_text(self._summary_text,
+                       "🎙️ 유튜브 URL 또는 로컬 파일을 선택하고\n"
+                       "'GuruNote 생성하기' 를 눌러주세요.\n\n"
+                       "화자 분리된 한국어 요약본이 이 자리에 표시됩니다.")
 
     @staticmethod
-    def _make_tab_textbox(parent: ctk.CTkFrame) -> ctk.CTkTextbox:
+    def _make_tb(parent):
         parent.grid_rowconfigure(0, weight=1)
         parent.grid_columnconfigure(0, weight=1)
-        tb = ctk.CTkTextbox(
-            parent,
-            font=ctk.CTkFont(family="Menlo, Consolas, monospace", size=13),
-            state="disabled",
-            wrap="word",
-        )
+        tb = ctk.CTkTextbox(parent, font=ctk.CTkFont(size=13), state="disabled",
+                            wrap="word", fg_color=C_BG, text_color=C_TEXT, corner_radius=8)
         tb.grid(row=0, column=0, sticky="nsew", padx=4, pady=4)
         return tb
 
-    # -------------------------------------------------------------------------
-    # 이벤트 핸들러
-    # -------------------------------------------------------------------------
-    def _on_settings(self) -> None:
+    def _update_steps(self, pct):
+        th = [0.18, 0.55, 0.78, 0.90, 1.0]
+        for i, sl in enumerate(self._step_labels):
+            if pct >= th[i]:
+                sl.configure(fg_color=C_SUCCESS, text_color=C_BG)
+            elif i > 0 and pct >= th[i - 1]:
+                sl.configure(fg_color=C_PRIMARY, text_color="#FFF")
+            elif i == 0 and pct > 0:
+                sl.configure(fg_color=C_PRIMARY, text_color="#FFF")
+            else:
+                sl.configure(fg_color=C_SURFACE_HI, text_color=C_TEXT_DIM)
+
+    # ── 이벤트 핸들러 ────────────────────────────────────────
+    def _on_settings(self):
         SettingsDialog(self)
 
-    def _on_pick_file(self) -> None:
-        """네이티브 파일 대화상자로 로컬 동영상/오디오 파일을 선택한다."""
-        ext_list = sorted(SUPPORTED_EXTS)
-        filetypes = [
-            ("미디어 파일", " ".join(f"*{e}" for e in ext_list)),
-            ("All Files", "*.*"),
-        ]
-        path = filedialog.askopenfilename(
-            title="오디오/동영상 파일 선택",
-            filetypes=filetypes,
-        )
+    def _on_update_sb(self):
+        try:
+            logs = []
+            st = check_updates(logs.append)
+            if not messagebox.askyesno("업데이트", f"{st}\n\n실행할까요?"):
+                return
+            update_project(logs.append, upgrade_deps=True)
+            messagebox.showinfo("완료", "업데이트 완료. 앱을 재시작하세요.")
+        except Exception as e:
+            messagebox.showerror("실패", str(e))
+
+    def _on_pick_file(self):
+        exts = sorted(SUPPORTED_EXTS)
+        path = filedialog.askopenfilename(title="파일 선택",
+                                          filetypes=[("미디어", " ".join(f"*{e}" for e in exts)), ("All", "*.*")])
         if not path:
             return
-
         self._local_file_path = path
-        # 엔트리에 파일명 표시 (전체 경로 대신 이름만)
         self._url_entry.delete(0, "end")
         self._url_entry.insert(0, f"📁 {Path(path).name}")
 
-    def _check_api_keys(self) -> bool:
-        """LLM 호출 준비가 됐는지 확인. 없으면 설정 다이얼로그 안내.
-
-        - openai        : OPENAI_API_KEY 필수
-        - anthropic     : ANTHROPIC_API_KEY 필수
-        - openai_compatible : OPENAI_BASE_URL 이 있으면 키는 선택 (로컬 LLM 등)
-        """
-        provider = self._llm_var.get()
-
-        if provider == "openai_compatible":
-            # 로컬/사설 OpenAI-compatible 엔드포인트는 키 대신 base_url 이 필수.
+    def _check_api_keys(self):
+        prov = self._llm_var.get()
+        if prov == "openai_compatible":
             if os.environ.get("OPENAI_BASE_URL"):
                 return True
-            missing = "OPENAI_BASE_URL"
-            msg = (
-                f"{missing} 가 설정되어 있지 않습니다.\n"
-                "로컬/사설 OpenAI-compatible 서버(vLLM, Ollama, LM Studio 등)의 "
-                "엔드포인트 URL을 설정 화면에서 입력해주세요."
-            )
+            msg = "OPENAI_BASE_URL 이 설정되지 않았습니다.\n설정에서 입력하시겠습니까?"
         else:
-            key_name = (
-                "ANTHROPIC_API_KEY" if provider == "anthropic" else "OPENAI_API_KEY"
-            )
-            if os.environ.get(key_name):
+            k = "ANTHROPIC_API_KEY" if prov == "anthropic" else "OPENAI_API_KEY"
+            if os.environ.get(k):
                 return True
-            missing = key_name
-            msg = f"{missing} 가 설정되어 있지 않습니다.\n설정 화면을 열어 API 키를 입력하시겠습니까?"
-
-        open_settings = messagebox.askyesno("설정 미완료", msg)
-        if open_settings:
+            msg = f"{k} 가 설정되지 않았습니다.\n설정에서 입력하시겠습니까?"
+        if messagebox.askyesno("설정 필요", msg):
             SettingsDialog(self)
         return False
 
-    def _on_run(self) -> None:
-        entry_text = self._url_entry.get().strip()
+    def _on_run(self):
+        txt = self._url_entry.get().strip()
         has_local = bool(self._local_file_path and is_supported_local_file(self._local_file_path))
-        has_url = is_probably_youtube_url(entry_text)
-
-        # 로컬 파일이 선택돼 있고 엔트리에 📁 마커가 남아있으면 → 로컬 모드
-        use_local = has_local and entry_text.startswith("📁")
-
-        if not use_local and not has_url:
-            messagebox.showwarning(
-                "소스를 입력해주세요",
-                "유튜브 URL 을 입력하거나, 📁 버튼으로 로컬 파일을 선택해주세요.",
-            )
+        use_local = has_local and txt.startswith("📁")
+        if not use_local and not is_probably_youtube_url(txt):
+            messagebox.showwarning("소스 필요", "유튜브 URL 또는 📁 로컬 파일을 선택해주세요.")
             return
-
         if not self._check_api_keys():
             return
-
-        # UI 잠금
         self._run_btn.configure(state="disabled", text="처리 중…")
         self._stop_btn.configure(state="normal")
         self._save_btn.configure(state="disabled")
@@ -686,143 +624,110 @@ class GuruNoteApp(ctk.CTk):
         self._clear_results()
         self._title_label.configure(text="파이프라인 실행 중…")
         self._set_progress(0.01)
-
-        # 워커 시작
+        for sl in self._step_labels:
+            sl.configure(fg_color=C_SURFACE_HI, text_color=C_TEXT_DIM)
+        kw = dict(engine=self._stt_var.get(), provider=self._llm_var.get())
         if use_local:
-            self._worker = PipelineWorker(
-                engine=self._stt_var.get(),
-                provider=self._llm_var.get(),
-                local_file=self._local_file_path,
-            )
+            kw["local_file"] = self._local_file_path
         else:
-            self._worker = PipelineWorker(
-                engine=self._stt_var.get(),
-                provider=self._llm_var.get(),
-                youtube_url=entry_text,
-            )
+            kw["youtube_url"] = txt
+        self._worker = PipelineWorker(**kw)
         self._worker.start()
         self._poll_worker()
 
-    def _poll_worker(self) -> None:
-        """100ms 간격으로 워커의 메시지/결과 큐를 확인해 UI에 반영."""
-        if self._worker is None:
+    def _poll_worker(self):
+        if not self._worker:
             return
-
-        # 진행 메시지 소비
         while True:
             try:
                 msg = self._worker.msg_queue.get_nowait()
                 self._append_log(msg)
+                self._last_log_label.configure(text=msg)
             except queue.Empty:
                 break
-
         while True:
             try:
-                pct = self._worker.progress_queue.get_nowait()
-                self._set_progress(pct)
+                self._set_progress(self._worker.progress_queue.get_nowait())
             except queue.Empty:
                 break
-
-        # 결과 확인
         try:
-            result = self._worker.result_queue.get_nowait()
-            self._on_pipeline_done(result)
+            self._on_pipeline_done(self._worker.result_queue.get_nowait())
             return
         except queue.Empty:
             pass
-
-        # 아직 실행 중 → 100ms 후 다시 확인
         self.after(100, self._poll_worker)
 
-    def _on_pipeline_done(self, result: dict) -> None:
-        self._run_btn.configure(state="normal", text="GuruNote 생성하기")
+    def _on_pipeline_done(self, result):
+        self._run_btn.configure(state="normal", text="▶  GuruNote 생성하기")
         self._stop_btn.configure(state="disabled")
-
         if not result.get("ok"):
             self._title_label.configure(text="❌ 오류 발생")
-            messagebox.showerror("파이프라인 오류", result.get("error", "알 수 없는 오류"))
+            messagebox.showerror("오류", result.get("error", "알 수 없는 오류"))
             return
-
         self._result = result
-        audio: AudioDownloadResult = result["audio"]
-        transcript: Transcript = result["transcript"]
-
+        audio = result["audio"]
+        transcript = result["transcript"]
         self._title_label.configure(text=f"🎉 {audio.video_title}")
         self._save_btn.configure(state="normal")
-
-        # 탭 채우기
         self._set_text(self._summary_text, result["summary_md"])
         self._set_text(self._translated_text, result["translated"])
-
-        # 영어 원문
-        original_lines = []
-        for seg in transcript.segments:
-            ts = _format_ts(seg.start)
-            original_lines.append(f"[{ts}] Speaker {seg.speaker}: {seg.text}")
-        self._set_text(self._original_text, "\n\n".join(original_lines))
-
-        # 요약 탭으로 포커스
+        lines = [f"[{_format_ts(s.start)}] Speaker {s.speaker}: {s.text}" for s in transcript.segments]
+        self._set_text(self._original_text, "\n\n".join(lines))
         self._tabview.set("📌 요약본")
         self._set_progress(1.0)
+        self._last_log_label.configure(text="🎉 GuruNote 생성 완료!")
 
-    def _on_stop(self) -> None:
-        if self._worker is None:
-            return
-        self._worker.request_stop()
-        self._stop_btn.configure(state="disabled")
-        self._append_log("⏹ 사용자가 작업 중지를 요청했습니다. 안전한 지점에서 중단합니다…")
+    def _on_stop(self):
+        if self._worker:
+            self._worker.request_stop()
+            self._stop_btn.configure(state="disabled")
+            self._append_log("⏹ 중지 요청됨")
 
-    def _on_save(self) -> None:
+    def _on_save(self):
         if not self._result:
             return
-        audio: AudioDownloadResult = self._result["audio"]
-        default_name = f"GuruNote_{sanitize_filename(audio.video_title)}.md"
-
-        path = filedialog.asksaveasfilename(
-            title="GuruNote 마크다운 저장",
-            defaultextension=".md",
-            filetypes=[("Markdown", "*.md"), ("All Files", "*.*")],
-            initialfile=default_name,
-        )
+        name = f"GuruNote_{sanitize_filename(self._result['audio'].video_title)}.md"
+        path = filedialog.asksaveasfilename(title="저장", defaultextension=".md",
+                                            filetypes=[("Markdown", "*.md"), ("All", "*.*")], initialfile=name)
         if not path:
             return
-
         try:
             Path(path).write_text(self._result["full_md"], encoding="utf-8")
-            messagebox.showinfo("저장 완료", f"파일이 저장되었습니다:\n{path}")
-        except Exception as exc:
-            messagebox.showerror("저장 실패", str(exc))
+            messagebox.showinfo("완료", f"저장됨:\n{path}")
+        except Exception as e:
+            messagebox.showerror("실패", str(e))
 
-    # -------------------------------------------------------------------------
-    # 유틸
-    # -------------------------------------------------------------------------
-    def _append_log(self, msg: str) -> None:
+    # ── 유틸 ─────────────────────────────────────────────────
+    def _append_log(self, msg):
         self._log_text.configure(state="normal")
         self._log_text.insert("end", msg + "\n")
         self._log_text.see("end")
         self._log_text.configure(state="disabled")
 
-    def _clear_log(self) -> None:
+    def _clear_log(self):
         self._log_text.configure(state="normal")
         self._log_text.delete("1.0", "end")
         self._log_text.configure(state="disabled")
+        self._last_log_label.configure(text="")
 
-    def _set_progress(self, pct: float) -> None:
-        self._progress.set(max(0.0, min(1.0, pct)))
-        self._progress_label.configure(text=f"진행률 {int(pct * 100)}%")
+    def _set_progress(self, pct):
+        pct = max(0.0, min(1.0, pct))
+        self._progress.set(pct)
+        self._progress_label.configure(text=f"{int(pct * 100)}%")
+        self._update_steps(pct)
 
     @staticmethod
-    def _set_text(textbox: ctk.CTkTextbox, content: str) -> None:
-        textbox.configure(state="normal")
-        textbox.delete("1.0", "end")
-        textbox.insert("1.0", content)
-        textbox.configure(state="disabled")
+    def _set_text(tb, content):
+        tb.configure(state="normal")
+        tb.delete("1.0", "end")
+        tb.insert("1.0", content)
+        tb.configure(state="disabled")
 
-    def _clear_results(self) -> None:
+    def _clear_results(self):
         for tb in (self._summary_text, self._translated_text, self._original_text):
             self._set_text(tb, "")
 
-    def _on_closing(self) -> None:
+    def _on_closing(self):
         self.destroy()
 
 

@@ -7,6 +7,28 @@
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-04-16
+
+### Added
+- **작업 히스토리** (`gurunote/history.py`) — 완료/실패 작업이 `~/.gurunote/jobs/`
+  에 자동 저장. 마크다운 재다운로드, 파이프라인 로그 확인, 에러 진단 가능.
+  데스크톱 History 다이얼로그 + Streamlit 히스토리 탭.
+- **영속 파이프라인 로그** — 모든 `_log()` 호출이 `pipeline.log` 파일에 타임스탬프와
+  함께 기록되어 실패 원인을 사후 분석 가능.
+- **로그 타임스탬프** — `[HH:MM:SS]` prefix 자동 추가.
+- **진행 바 ETA** — 경과 시간 + 남은 예상 시간 계산 표시.
+- **4-bit/8-bit 자동 양자화** — VRAM 기반 자동 선택 (48GB+→bf16, 24GB+→8bit,
+  기타→4bit NF4). `VIBEVOICE_QUANTIZATION` 환경변수로 오버라이드 가능.
+- **CUDA OOM 방어** — 토큰 축소 재시도 (32768→16384→8192), 실패 시 모델 자동
+  언로드 + GPU 메모리 반환.
+- **VibeVoice 미설치 안내** — 설치/AssemblyAI 전환 선택 다이얼로그.
+
+### Changed
+- **GUI 텍스트 라벨 정비** — 이모지 → 텍스트 (Windows 렌더링 호환), 사이드바
+  브랜드 잘림 수정 (200→220px, 세로 배치).
+- **Windows 경고 억제** — `expandable_segments` 미지원 경고 + 무해한 토크나이저/
+  preprocessor 경고를 `warnings.filterwarnings` 로 억제.
+
 ## [0.2.0] - 2026-04-16
 
 ### Added
@@ -149,6 +171,7 @@
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/avlp12/GuruNote/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/avlp12/GuruNote/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/avlp12/GuruNote/releases/tag/v0.1.0

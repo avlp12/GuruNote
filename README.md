@@ -35,7 +35,7 @@ pip install -r requirements.txt
 # NVIDIA GPU 가 있으면 첫 실행 시 CUDA PyTorch 를 자동 설치합니다.
 # GPU 없어도 CPU 모드로 동작합니다.
 
-# 2. API 키 설정 (최소 OpenAI 또는 Anthropic 중 하나)
+# 2. API 키 설정 (OpenAI / Anthropic / Google Gemini 중 하나)
 cp .env.example .env
 # .env 를 열어 OPENAI_API_KEY=sk-... 입력
 
@@ -61,7 +61,7 @@ streamlit run app.py   # 웹 앱
   - 화자(Who) + 타임스탬프(When) + 내용(What) 을 동시 추출
   - IT/AI 도메인 핫워드 64 개 (Sam Altman, RLHF, Mixture of Experts …) 를 `context_info` 로 주입해 고유명사/약어 인식률 향상
   - GPU 미가용 환경에서는 **AssemblyAI Cloud API** 로 자동 폴백
-- 🌐 **IT/AI 전문 톤 한국어 번역** — OpenAI `gpt-5.4` 또는 Anthropic `claude-sonnet-4-6`
+- 🌐 **IT/AI 전문 톤 한국어 번역** — OpenAI `gpt-5.4` / Anthropic `claude-sonnet-4-6` / Google Gemini `gemini-2.5-flash`
   - 화자 실명(진행자/게스트) 자동 추론
   - LLM / RAG / Fine-tuning 등 전문 용어 영문 병기
   - 구어체 추임새 정리, 가독성 높은 인터뷰 톤
@@ -345,8 +345,8 @@ GuruNote/
 | 데스크톱 UI | [CustomTkinter](https://github.com/TomSchimansky/CustomTkinter) (사이드바 + 카드 레이아웃) |
 | 웹 UI | [Streamlit](https://streamlit.io/) |
 | 오디오 추출 | [yt-dlp](https://github.com/yt-dlp/yt-dlp) · ffmpeg |
-| STT + 화자 분리 | [Microsoft VibeVoice-ASR](https://github.com/microsoft/VibeVoice) (primary) · [AssemblyAI](https://www.assemblyai.com/) (fallback) |
-| 번역 / 요약 | [OpenAI](https://platform.openai.com/) `gpt-5.4` · [Anthropic](https://docs.anthropic.com/) `claude-sonnet-4-6` · OpenAI-compatible (로컬 LLM) |
+| STT + 화자 분리 | [WhisperX](https://github.com/m-bain/whisperX) (Distil-Whisper + pyannote, primary) · [AssemblyAI](https://www.assemblyai.com/) (fallback) |
+| 번역 / 요약 | [OpenAI](https://platform.openai.com/) `gpt-5.4` · [Anthropic](https://docs.anthropic.com/) `claude-sonnet-4-6` · [Google Gemini](https://aistudio.google.com/) `gemini-2.5-flash` · OpenAI-compatible (로컬 LLM) |
 | 환경 설정 | [python-dotenv](https://pypi.org/project/python-dotenv/) · 앱 내 ⚙️ 설정 다이얼로그 |
 
 ---
@@ -356,7 +356,7 @@ GuruNote/
 주요 변경 사항은 [CHANGELOG.md](./CHANGELOG.md) 에 [Keep a Changelog](https://keepachangelog.com/)
 형식으로 기록되며 버전은 [Semantic Versioning](https://semver.org/) 을 따릅니다.
 
-현재 버전: **v0.4.1** — WhisperX STT 엔진 + 작업 히스토리 + CUDA 자동 설정.
+현재 버전: **v0.5.0** — Google Gemini API + 업데이트 체크 개선 + WhisperX STT.
 
 ---
 

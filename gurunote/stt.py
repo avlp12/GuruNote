@@ -293,30 +293,46 @@ def _transcribe_whisperx(
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
 
-    # 3. 화자 분리 (HuggingFace 토큰 필요)
+    # 3. 화자 분리 (HuggingFace 토큰 + 모델 사용 동의 필요)
     hf_token = os.environ.get("HUGGINGFACE_TOKEN", "").strip()
     if hf_token:
         log("화자 분리 중 (pyannote)...")
-        # whisperx 버전에 따라 DiarizationPipeline 위치가 다름
         try:
             _DiarPipeline = whisperx.DiarizationPipeline
         except AttributeError:
             from whisperx.diarize import DiarizationPipeline as _DiarPipeline
 
-        # pyannote 버전에 따라 token 파라미터명이 다름
         try:
-            diarize_model = _DiarPipeline(token=hf_token, device=device)
-        except TypeError:
-            diarize_model = _DiarPipeline(use_auth_token=hf_token, device=device)
-        diarize_segments = diarize_model(audio)
-        result = whisperx.assign_word_speakers(diarize_segments, result)
-        del diarize_model
-        gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-        log("화자 분리 완료")
+            try:
+                diarize_model = _DiarPipeline(token=hf_token, device=device)
+            except TypeError:
+                diarize_model = _DiarPipeline(use_auth_token=hf_token, device=device)
+            diarize_segments = diarize_model(audio)
+            result = whisperx.assign_word_speakers(diarize_segments, result)
+            del diarize_model
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            log("화자 분리 완료")
+        except Exception as diar_exc:
+            err_msg = str(diar_exc)
+            if "401" in err_msg or "gated" in err_msg.lower() or "restricted" in err_msg.lower():
+                log(
+                    "화자 분리 실패: pyannote 모델 접근 권한이 없습니다.\n"
+                    "  다음 2개 페이지에서 'Agree and access' 를 클릭하세요:\n"
+                    "  1) https://huggingface.co/pyannote/speaker-diarization-community-1\n"
+                    "  2) https://huggingface.co/pyannote/segmentation-community-1\n"
+                    "  화자 분리 없이 계속 진행합니다."
+                )
+            else:
+                log(f"화자 분리 실패: {diar_exc}\n  화자 분리 없이 계속 진행합니다.")
     else:
-        log("HUGGINGFACE_TOKEN 미설정 — 화자 분리 건너뜀 (단일 화자로 처리)")
+        log(
+            "HUGGINGFACE_TOKEN 미설정 — 화자 분리를 건너뜁니다.\n"
+            "  화자 분리를 원하면 Settings 에서 HUGGINGFACE_TOKEN 을 설정하고,\n"
+            "  https://huggingface.co/pyannote/speaker-diarization-community-1\n"
+            "  에서 모델 사용에 동의하세요."
+        )
 
     # 4. 공통 Segment 형태로 변환
     segments: List[Segment] = []

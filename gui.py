@@ -37,7 +37,7 @@ from gurunote.audio import (
 from gurunote.exporter import build_gurunote_markdown, sanitize_filename
 from gurunote.llm import LLMConfig, summarize_translation, test_connection, translate_transcript
 from gurunote.settings import save_settings
-from gurunote.stt import transcribe
+from gurunote.stt import install_vibevoice, is_vibevoice_installed, transcribe
 from gurunote.types import _format_ts
 from gurunote.updater import check_updates, update_project
 
@@ -606,6 +606,52 @@ class GuruNoteApp(ctk.CTk):
             SettingsDialog(self)
         return False
 
+    def _check_vibevoice_available(self) -> bool:
+        """
+        VibeVoice 가 필요한 엔진(vibevoice/auto) 선택 시, 패키지 미설치면
+        사용자에게 설치 / AssemblyAI 전환 / 취소 중 선택하게 한다.
+        Returns True 면 진행 가능, False 면 중단.
+        """
+        engine = self._stt_var.get()
+        if engine == "assemblyai":
+            return True  # VibeVoice 필요 없음
+        if is_vibevoice_installed():
+            return True
+
+        # VibeVoice 미설치 — 3가지 선택지 제공
+        choice = messagebox.askyesnocancel(
+            "VibeVoice-ASR 미설치",
+            "VibeVoice-ASR 패키지가 설치되어 있지 않습니다.\n\n"
+            "  [예]    → VibeVoice 를 지금 설치 (git+https, 수 분 소요)\n"
+            "  [아니오] → AssemblyAI 클라우드 API 로 전환해서 진행\n"
+            "  [취소]  → 작업 취소",
+        )
+        if choice is None:
+            # 취소
+            return False
+        if choice:
+            # 예 → 설치 시도
+            self._append_log("📦 VibeVoice-ASR 설치를 시작합니다…")
+            ok = install_vibevoice(progress=self._append_log)
+            if ok:
+                return True
+            # 설치 실패 — AssemblyAI 로 전환 제안
+            fallback = messagebox.askyesno(
+                "설치 실패",
+                "VibeVoice 설치에 실패했습니다.\n"
+                "AssemblyAI 로 전환해서 진행할까요?",
+            )
+            if fallback:
+                self._stt_var.set("assemblyai")
+                self._append_log("🔄 STT 엔진을 AssemblyAI 로 전환했습니다.")
+                return True
+            return False
+        else:
+            # 아니오 → AssemblyAI 전환
+            self._stt_var.set("assemblyai")
+            self._append_log("🔄 STT 엔진을 AssemblyAI 로 전환했습니다.")
+            return True
+
     def _on_run(self):
         txt = self._url_entry.get().strip()
         has_local = bool(self._local_file_path and is_supported_local_file(self._local_file_path))
@@ -614,6 +660,8 @@ class GuruNoteApp(ctk.CTk):
             messagebox.showwarning("소스 필요", "유튜브 URL 또는 📁 로컬 파일을 선택해주세요.")
             return
         if not self._check_api_keys():
+            return
+        if not self._check_vibevoice_available():
             return
         self._run_btn.configure(state="disabled", text="처리 중…")
         self._stop_btn.configure(state="normal")

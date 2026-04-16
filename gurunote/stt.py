@@ -368,10 +368,10 @@ def _load_vibevoice():
     # VibeVoice + Transformers + PyTorch + bitsandbytes 가 내는 무해한 경고 억제.
     # warnings.warn() 뿐 아니라 transformers logging 도 일시적으로 ERROR 로 올린다.
     import logging as _logging
-    _prev_tf_level = _logging.getLogger("transformers").level
-    _prev_bnb_level = _logging.getLogger("bitsandbytes").level
-    _logging.getLogger("transformers").setLevel(_logging.ERROR)
-    _logging.getLogger("bitsandbytes").setLevel(_logging.ERROR)
+    _loggers_to_silence = ["transformers", "bitsandbytes", "vibevoice", "torch"]
+    _prev_levels = {name: _logging.getLogger(name).level for name in _loggers_to_silence}
+    for name in _loggers_to_silence:
+        _logging.getLogger(name).setLevel(_logging.ERROR)
 
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore")  # 모든 경고 억제 (모델 로딩 구간 한정)
@@ -428,8 +428,8 @@ def _load_vibevoice():
         model.eval()
 
     # 로깅 레벨 복원
-    _logging.getLogger("transformers").setLevel(_prev_tf_level)
-    _logging.getLogger("bitsandbytes").setLevel(_prev_bnb_level)
+    for name, level in _prev_levels.items():
+        _logging.getLogger(name).setLevel(level)
 
     _VIBEVOICE_SINGLETON.update(
         {"model": model, "processor": processor, "device": device,

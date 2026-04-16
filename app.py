@@ -98,7 +98,7 @@ def render_sidebar() -> dict:
         env_provider = os.environ.get("LLM_PROVIDER", "openai")
         provider = st.selectbox(
             "LLM Provider",
-            options=["openai", "openai_compatible", "anthropic"],
+            options=["openai", "openai_compatible", "anthropic", "gemini"],
             index=0 if env_provider == "openai" else (2 if env_provider == "anthropic" else 1),
         )
 
@@ -166,7 +166,7 @@ def render_settings_tab(default_provider: str) -> None:
     with st.form("settings_form"):
         provider = st.selectbox(
             "LLM Provider",
-            options=["openai", "openai_compatible", "anthropic"],
+            options=["openai", "openai_compatible", "anthropic", "gemini"],
             index=0 if default_provider == "openai" else (2 if default_provider == "anthropic" else 1),
             help="openai_compatible: oMLX / vLLM / Ollama / LM Studio / llama.cpp 서버 등",
         )

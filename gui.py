@@ -59,7 +59,7 @@ WINDOW_WIDTH = 1200
 WINDOW_HEIGHT = 820
 
 STT_OPTIONS = ["auto", "whisperx", "assemblyai"]
-LLM_OPTIONS = ["openai", "openai_compatible", "anthropic"]
+LLM_OPTIONS = ["openai", "openai_compatible", "anthropic", "gemini"]
 
 # ── 브랜드 컬러 팔레트 ──
 C_BG = "#1A1B2E"
@@ -271,12 +271,14 @@ class PipelineWorker:
 # =============================================================================
 # 설정 필드 정의: (환경변수명, 라벨, 마스킹 여부)
 _SETTINGS_FIELDS = [
-    ("LLM_PROVIDER", "LLM Provider (openai/openai_compatible/anthropic)", False),
+    ("LLM_PROVIDER", "LLM Provider (openai/anthropic/gemini/openai_compatible)", False),
     ("OPENAI_API_KEY", "OpenAI API Key", True),
     ("OPENAI_BASE_URL", "OpenAI Base URL (Local/Compatible)", False),
     ("OPENAI_MODEL", "OpenAI 모델", False),
     ("ANTHROPIC_API_KEY", "Anthropic API Key", True),
     ("ANTHROPIC_MODEL", "Anthropic 모델", False),
+    ("GOOGLE_API_KEY", "Google Gemini API Key", True),
+    ("GEMINI_MODEL", "Gemini 모델", False),
     ("LLM_TEMPERATURE", "LLM Temperature", False),
     ("LLM_TRANSLATION_MAX_TOKENS", "번역 Max Tokens", False),
     ("LLM_SUMMARY_MAX_TOKENS", "요약 Max Tokens", False),
@@ -514,6 +516,7 @@ class SettingsDialog(ctk.CTkToplevel):
                 "OPENAI_MODEL": "gpt-5.4",
                 "OPENAI_BASE_URL": "http://127.0.0.1:8000/v1",
                 "ANTHROPIC_MODEL": "claude-sonnet-4-6",
+                "GEMINI_MODEL": "gemini-2.5-flash",
                 "LLM_TEMPERATURE": "0.2",
                 "LLM_TRANSLATION_MAX_TOKENS": "8192",
                 "LLM_SUMMARY_MAX_TOKENS": "4096",
@@ -862,7 +865,12 @@ class GuruNoteApp(ctk.CTk):
                 return True
             msg = "OPENAI_BASE_URL 이 설정되지 않았습니다.\n설정에서 입력하시겠습니까?"
         else:
-            k = "ANTHROPIC_API_KEY" if prov == "anthropic" else "OPENAI_API_KEY"
+            if prov == "anthropic":
+                k = "ANTHROPIC_API_KEY"
+            elif prov == "gemini":
+                k = "GOOGLE_API_KEY"
+            else:
+                k = "OPENAI_API_KEY"
             if os.environ.get(k):
                 return True
             msg = f"{k} 가 설정되지 않았습니다.\n설정에서 입력하시겠습니까?"

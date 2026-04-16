@@ -197,9 +197,12 @@ def _transcribe_whisperx(
     """WhisperX 로 전사 + 화자 분리."""
     import torch
 
-    # pyannote / torchcodec 의 무해한 경고 억제
+    # pyannote / torchcodec / huggingface 의 무해한 경고 억제
     warnings.filterwarnings("ignore", message=".*torchcodec.*")
     warnings.filterwarnings("ignore", message=".*symlink.*")
+    warnings.filterwarnings("ignore", message=".*hf_xet.*")
+    warnings.filterwarnings("ignore", category=UserWarning, module="pyannote")
+    warnings.filterwarnings("ignore", category=UserWarning, module="huggingface_hub")
 
     import whisperx  # type: ignore
 
@@ -221,19 +224,23 @@ def _transcribe_whisperx(
     # 로컬 경로를 WhisperX 에 전달하면 symlink 을 아예 거치지 않는다.
     model_path = _ensure_model_local(model_name, log)
 
+    # WhisperX 의 initial_prompt 는 load_model 의 asr_options 로 전달해야 함
+    # (transcribe() 에 직접 넣으면 FasterWhisperPipeline 이 거부)
+    asr_options = {}
+    if initial_prompt:
+        asr_options["initial_prompt"] = initial_prompt
+
     # 1. 전사
     log(f"WhisperX 모델 로딩 ({model_name}, {device}, {compute_type})...")
     model = whisperx.load_model(
         model_path, device, compute_type=compute_type,
         language="en",
+        asr_options=asr_options,
     )
 
     log("전사 중 (청크 분할 처리)...")
     audio = whisperx.load_audio(audio_path)
-    result = model.transcribe(
-        audio, batch_size=batch_size,
-        initial_prompt=initial_prompt,
-    )
+    result = model.transcribe(audio, batch_size=batch_size)
     log(f"전사 완료 — {len(result.get('segments', []))} 세그먼트")
 
     # 2. 워드 레벨 타임스탬프 정렬

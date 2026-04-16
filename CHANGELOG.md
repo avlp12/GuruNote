@@ -7,7 +7,27 @@
 
 ## [Unreleased]
 
-## [0.3.0] - 2026-04-16
+## [0.4.1] - 2026-04-16
+
+### Fixed
+- WhisperX `DiarizationPipeline` API 변경 대응 (v3.8.5+: `whisperx.diarize.DiarizationPipeline`)
+- AssemblyAI `speech_model` → `speech_models` (복수형 리스트) API 변경
+- Windows symlink 없이 모델 다운로드 (`~/.gurunote/models/`)
+- WhisperX `initial_prompt` → `load_model(asr_options=)` 로 이동
+- setup.bat CUDA torch 버전 핀 (`torch==2.8.0+cu128`, whisperx 호환)
+- GPU 미감지 시 CPU whisperx 거부 → AssemblyAI 직행
+- 경고 억제 확대 (torchcodec, pyannote, huggingface_hub)
+
+### Added
+- 버전 비교 기반 업데이트 체크 (local vs remote `__version__` 비교)
+- 업데이트 진행 다이얼로그 (백그라운드 스레드 + 실시간 로그)
+- Semantic Versioning 정책 (`CLAUDE.md`)
+
+### Changed
+- STT 엔진: VibeVoice-ASR → **WhisperX** (Distil-Whisper + pyannote)
+- setup.bat/sh: CUDA torch 먼저 설치 → whisperx "already satisfied"
+
+## [0.4.0] - 2026-04-16
 
 ### Added
 - **작업 히스토리** (`gurunote/history.py`) — 완료/실패 작업이 `~/.gurunote/jobs/`

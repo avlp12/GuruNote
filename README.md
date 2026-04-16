@@ -356,7 +356,7 @@ GuruNote/
 주요 변경 사항은 [CHANGELOG.md](./CHANGELOG.md) 에 [Keep a Changelog](https://keepachangelog.com/)
 형식으로 기록되며 버전은 [Semantic Versioning](https://semver.org/) 을 따릅니다.
 
-현재 버전: **v0.3.0** — 작업 히스토리 + VRAM 자동 양자화 + OOM 방어 + ETA 표시.
+현재 버전: **v0.4.1** — WhisperX STT 엔진 + 작업 히스토리 + CUDA 자동 설정.
 
 ---
 

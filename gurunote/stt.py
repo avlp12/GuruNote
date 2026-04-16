@@ -303,9 +303,11 @@ def _transcribe_whisperx(
         except AttributeError:
             from whisperx.diarize import DiarizationPipeline as _DiarPipeline
 
-        diarize_model = _DiarPipeline(
-            use_auth_token=hf_token, device=device,
-        )
+        # pyannote 버전에 따라 token 파라미터명이 다름
+        try:
+            diarize_model = _DiarPipeline(token=hf_token, device=device)
+        except TypeError:
+            diarize_model = _DiarPipeline(use_auth_token=hf_token, device=device)
         diarize_segments = diarize_model(audio)
         result = whisperx.assign_word_speakers(diarize_segments, result)
         del diarize_model
@@ -358,14 +360,21 @@ def _transcribe_assemblyai(audio_path: str, log: ProgressFn) -> Transcript:
     import assemblyai as aai  # type: ignore
 
     aai.settings.api_key = api_key
-    # AssemblyAI API 버전에 따라 파라미터명이 다름
+    # AssemblyAI API: speech_models 파라미터 (복수형, 문자열 리스트)
     try:
         config = aai.TranscriptionConfig(
             speaker_labels=True,
-            speech_models=[aai.SpeechModel.best],
+            speech_models=["universal-3-pro"],
         )
-    except (TypeError, AttributeError):
-        config = aai.TranscriptionConfig(speaker_labels=True)
+    except TypeError:
+        # 구 버전 폴백
+        try:
+            config = aai.TranscriptionConfig(
+                speaker_labels=True,
+                speech_model=aai.SpeechModel.best,
+            )
+        except (TypeError, AttributeError):
+            config = aai.TranscriptionConfig(speaker_labels=True)
 
     log("AssemblyAI 에 업로드 후 화자 분리 전사 중...")
     transcriber = aai.Transcriber()

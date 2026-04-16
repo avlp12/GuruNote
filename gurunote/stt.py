@@ -84,10 +84,10 @@ def transcribe(
         _assert_transcript_not_empty(result)
         return result
 
-    # auto: GPU+CUDA → WhisperX, 아니면 AssemblyAI 직행
+    # auto: GPU + CUDA → WhisperX, 아니면 AssemblyAI 직행
     if _check_cuda_ready():
         try:
-            log("[auto] GPU(CUDA) 감지 — WhisperX 로 전사합니다.")
+            log("[auto] GPU 감지 — WhisperX 로 전사를 시도합니다.")
             result = _transcribe_whisperx(audio_path, log=log, hotwords=hotwords)
             _assert_transcript_not_empty(result)
             return result
@@ -97,12 +97,11 @@ def transcribe(
         hint = ""
         if _has_nvidia_gpu():
             hint = (
-                "\n  NVIDIA GPU 있지만 CUDA PyTorch 미설치."
-                "\n  setup.bat 을 실행하거나:"
-                "\n  .venv\\Scripts\\pip install torch --index-url"
-                " https://download.pytorch.org/whl/cu128"
+                " (CUDA PyTorch 미설치.\n"
+                "  터미널: pip install torch --index-url "
+                "https://download.pytorch.org/whl/cu128)"
             )
-        log(f"[auto] GPU 미사용 — AssemblyAI Cloud API 로 직행합니다.{hint}")
+        log(f"[auto] GPU 미사용{hint} — AssemblyAI Cloud API 로 직행합니다.")
 
     result = _transcribe_assemblyai(audio_path, log=log)
     _assert_transcript_not_empty(result)
@@ -233,19 +232,18 @@ def _transcribe_whisperx(
 
     import whisperx  # type: ignore
 
-    # GPU(CUDA) 필수 — CPU whisperx 는 비실용적
+    # GPU 필수 — CPU 모드는 비실용적이므로 거부
     if not torch.cuda.is_available():
         hint = ""
         if _has_nvidia_gpu():
             hint = (
-                "\nNVIDIA GPU 감지됨, CUDA PyTorch 가 필요합니다."
-                "\nsetup.bat 실행 또는:"
-                "\n  .venv\\Scripts\\pip install torch torchaudio"
-                " --index-url https://download.pytorch.org/whl/cu128"
+                "\nNVIDIA GPU 가 있지만 PyTorch 가 CPU 버전입니다.\n"
+                "터미널에서 다음 명령 후 앱을 재시작하세요:\n"
+                "  pip install torch --index-url https://download.pytorch.org/whl/cu128"
             )
         raise RuntimeError(
             f"WhisperX 는 GPU(CUDA) 가 필요합니다.{hint}\n"
-            "GPU 없이 쓰려면 STT 엔진을 'auto' 또는 'assemblyai' 로 변경하세요."
+            "GPU 가 없으면 STT 엔진을 'auto' 또는 'assemblyai' 로 변경하세요."
         )
 
     device = "cuda"

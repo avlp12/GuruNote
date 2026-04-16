@@ -271,11 +271,16 @@ def _load_vibevoice():
         device = "cpu"
         attn_impl = "sdpa"
 
-    # VibeVoice + Transformers + PyTorch 가 내는 무해한 경고들을 억제.
+    # VibeVoice + Transformers + PyTorch + bitsandbytes 가 내는 무해한 경고 억제.
+    # warnings.warn() 뿐 아니라 transformers logging 도 일시적으로 ERROR 로 올린다.
+    import logging as _logging
+    _prev_tf_level = _logging.getLogger("transformers").level
+    _prev_bnb_level = _logging.getLogger("bitsandbytes").level
+    _logging.getLogger("transformers").setLevel(_logging.ERROR)
+    _logging.getLogger("bitsandbytes").setLevel(_logging.ERROR)
+
     with warnings.catch_warnings():
-        warnings.filterwarnings("ignore", message=".*torch_dtype.*deprecated.*")
-        warnings.filterwarnings("ignore", message=".*expandable_segments.*")
-        warnings.filterwarnings("ignore", message=".*tokenizer class.*not the same type.*")
+        warnings.filterwarnings("ignore")  # 모든 경고 억제 (모델 로딩 구간 한정)
 
         processor = VibeVoiceASRProcessor.from_pretrained(
             model_id,
@@ -322,6 +327,10 @@ def _load_vibevoice():
             model = model.to(device)
 
         model.eval()
+
+    # 로깅 레벨 복원
+    _logging.getLogger("transformers").setLevel(_prev_tf_level)
+    _logging.getLogger("bitsandbytes").setLevel(_prev_bnb_level)
 
     _VIBEVOICE_SINGLETON.update(
         {"model": model, "processor": processor, "device": device,

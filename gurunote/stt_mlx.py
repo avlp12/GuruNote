@@ -221,7 +221,13 @@ def _diarize_with_pyannote(
     import torch
 
     diar_model = os.environ.get("PYANNOTE_DIARIZATION_MODEL", DEFAULT_DIARIZATION_MODEL)
-    pipeline = Pipeline.from_pretrained(diar_model, use_auth_token=hf_token)
+
+    # pyannote.audio 3.x 는 token=, 그 이전(또는 4.x) 은 use_auth_token= 를 받을 수 있어
+    # WhisperX 분기(stt.py)와 동일한 try/except TypeError 폴백을 사용한다.
+    try:
+        pipeline = Pipeline.from_pretrained(diar_model, token=hf_token)
+    except TypeError:
+        pipeline = Pipeline.from_pretrained(diar_model, use_auth_token=hf_token)
 
     if pipeline is None:
         raise RuntimeError(

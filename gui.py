@@ -442,7 +442,7 @@ class GuruNoteApp(ctk.CTk):
                           hover_color=C_SURFACE_HI, text_color=C_TEXT_DIM,
                           font=ctk.CTkFont(size=13), command=cmd
                           ).grid(row=2 + i, column=0, padx=10, pady=2, sticky="ew")
-        ctk.CTkLabel(sb, text="v0.1.0", font=ctk.CTkFont(size=10),
+        ctk.CTkLabel(sb, text="v0.2.0", font=ctk.CTkFont(size=10),
                      text_color=C_TEXT_DIM).grid(row=5, column=0, padx=20, pady=(0, 16), sticky="sw")
 
     # ── 메인 영역 ────────────────────────────────────────────

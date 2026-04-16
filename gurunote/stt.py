@@ -156,6 +156,12 @@ _WHISPER_REPO_MAP = {
 _MODELS_DIR = Path.home() / ".gurunote" / "models"
 
 
+def _has_nvidia_gpu() -> bool:
+    """nvidia-smi 가 존재하면 NVIDIA GPU 가 있다고 판단."""
+    import shutil
+    return shutil.which("nvidia-smi") is not None
+
+
 def _ensure_model_local(model_name: str, log: ProgressFn) -> str:
     """
     WhisperX 모델을 symlink 없이 로컬 디렉토리에 다운로드.
@@ -206,13 +212,21 @@ def _transcribe_whisperx(
 
     import whisperx  # type: ignore
 
-    # 디바이스 자동 감지
+    # 디바이스 자동 감지 + CUDA PyTorch 미설치 경고
     if torch.cuda.is_available():
         device = "cuda"
         compute_type = "float16"
     else:
         device = "cpu"
         compute_type = "int8"
+        # NVIDIA GPU 는 있는데 PyTorch 가 CPU 버전인 경우 안내
+        if _has_nvidia_gpu():
+            log(
+                "! NVIDIA GPU 가 감지되었지만 PyTorch 가 CPU 버전입니다.\n"
+                "  GPU 를 사용하려면 다음 명령을 실행하세요:\n"
+                "  pip install torch --index-url https://download.pytorch.org/whl/cu124\n"
+                "  현재는 CPU 모드로 진행합니다 (느림)."
+            )
 
     model_name = os.environ.get("WHISPERX_MODEL", "distil-large-v3")
     batch_size = int(os.environ.get("WHISPERX_BATCH_SIZE", "16"))

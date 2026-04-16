@@ -135,15 +135,24 @@ def transcribe(
         _assert_transcript_not_empty(result)
         return result
 
-    # auto: VibeVoice 우선, 실패 시 AssemblyAI 폴백
+    # auto: 하드웨어에 따라 최적 엔진 선택
+    device = _detect_device()
+    if device == "cpu":
+        # CPU 에서 VibeVoice 7B 는 비실용적 (수십 분~수 시간 소요)
+        log("[auto] GPU 미감지 — AssemblyAI Cloud API 로 직행합니다.")
+        result = _transcribe_assemblyai(audio_path, log=log)
+        _assert_transcript_not_empty(result)
+        return result
+
+    # GPU (CUDA / MPS) → VibeVoice 우선, 실패 시 AssemblyAI 폴백
     try:
-        log("🚀 기본 엔진 VibeVoice-ASR 로 전사를 시도합니다…")
+        hw_label = "CUDA" if device == "cuda" else "Apple Silicon (MPS)"
+        log(f"[auto] {hw_label} 감지 — VibeVoice-ASR 로 전사를 시도합니다.")
         result = _transcribe_vibevoice(audio_path, log=log, hotwords=hotwords, stop_event=stop_event)
         _assert_transcript_not_empty(result)
         return result
     except Exception as exc:  # noqa: BLE001
-        # 폴백 전에 VibeVoice 모델을 GPU 에서 내려 AssemblyAI 에 영향 없게
-        log(f"⚠️ VibeVoice 사용 불가 ({exc}). 모델 언로드 후 AssemblyAI 로 폴백합니다…")
+        log(f"VibeVoice 실패 ({exc}). 모델 언로드 후 AssemblyAI 로 폴백합니다.")
         _unload_vibevoice()
         result = _transcribe_assemblyai(audio_path, log=log)
         _assert_transcript_not_empty(result)
@@ -199,20 +208,35 @@ def _unload_vibevoice() -> None:
         pass
 
 
+def _detect_device() -> str:
+    """현재 사용 가능한 최적 디바이스를 감지한다."""
+    try:
+        import torch
+        if torch.cuda.is_available():
+            return "cuda"
+        if getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
+            return "mps"
+    except Exception:  # noqa: BLE001
+        pass
+    return "cpu"
+
+
 def _select_quantization() -> str:
     """
-    VRAM 에 맞는 양자화 레벨을 자동 선택한다.
+    VRAM + 하드웨어에 맞는 양자화 레벨을 자동 선택한다.
 
     사용자 오버라이드: VIBEVOICE_QUANTIZATION 환경변수
-      - "none" / "bf16"  : 양자화 없음 (bf16, ~14GB)
-      - "8bit"           : 8-bit 양자화 (~7GB)
-      - "4bit"           : 4-bit NF4 양자화 (~4GB)  ← 기본값
-      - "auto"           : VRAM 기준 자동 (기본)
+      - "none" / "bf16"  : 양자화 없음 (bf16/fp16, ~14GB)
+      - "8bit"           : 8-bit 양자화 (~7GB)  — CUDA 전용
+      - "4bit"           : 4-bit NF4 양자화 (~4GB) — CUDA 전용
+      - "auto"           : 하드웨어 기준 자동 (기본)
 
     자동 기준:
-      - VRAM ≥ 48GB → bf16
-      - VRAM ≥ 24GB → 8bit
-      - 기타          → 4bit
+      - Apple Silicon (MPS)  → "none" (bitsandbytes 미지원, fp16 로딩)
+      - CPU                  → "none" (양자화 불필요, CPU 추론 자체가 비권장)
+      - CUDA VRAM ≥ 80GB     → "none" (bf16)
+      - CUDA VRAM ≥ 48GB     → "8bit"
+      - CUDA 기타            → "4bit"
     """
     user = os.environ.get("VIBEVOICE_QUANTIZATION", "auto").lower().strip()
     if user in ("none", "bf16"):
@@ -222,19 +246,22 @@ def _select_quantization() -> str:
     if user in ("8bit", "8"):
         return "8bit"
     if user != "auto":
-        return "4bit"  # 알 수 없는 값 → 안전하게 4bit
+        return "4bit"
 
-    # auto: VRAM 감지
+    device = _detect_device()
+
+    # MPS / CPU → bitsandbytes 가 지원하지 않으므로 양자화 불가
+    if device != "cuda":
+        return "none"
+
+    # CUDA: VRAM 감지
     try:
         import torch
-        if torch.cuda.is_available():
-            vram_gb = torch.cuda.get_device_properties(0).total_mem / (1024 ** 3)
-            if vram_gb >= 80:
-                return "none"   # A100 80GB 등
-            if vram_gb >= 48:
-                return "8bit"   # A6000, A100 40GB 등
-            # 32GB 이하 (RTX 5090/4090 포함) → 4-bit 필수
-            # 모델 ~4GB + 오디오 인코딩 + KV cache 가 32GB 를 쉽게 채움
+        vram_gb = torch.cuda.get_device_properties(0).total_mem / (1024 ** 3)
+        if vram_gb >= 80:
+            return "none"
+        if vram_gb >= 48:
+            return "8bit"
     except Exception:  # noqa: BLE001
         pass
     return "4bit"
@@ -254,22 +281,23 @@ def _load_vibevoice():
     )
 
     model_id = os.environ.get("VIBEVOICE_MODEL_ID", "microsoft/VibeVoice-ASR")
+    device = _detect_device()
     quant = _select_quantization()
 
-    # 디바이스 + attention 선택
-    if torch.cuda.is_available():
-        device = "cuda"
+    # 디바이스별 attention 구현 선택
+    if device == "cuda":
         try:
             import flash_attn  # noqa: F401
             attn_impl = "flash_attention_2"
         except ImportError:
             attn_impl = "sdpa"
-    elif getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
-        device = "mps"
-        attn_impl = "sdpa"
     else:
-        device = "cpu"
+        # MPS / CPU → flash_attention 미지원
         attn_impl = "sdpa"
+
+    # MPS/CPU 에서 양자화 강제 요청이 들어오면 경고 후 none 으로 폴백
+    if quant in ("4bit", "8bit") and device != "cuda":
+        quant = "none"  # bitsandbytes 는 CUDA 전용
 
     # VibeVoice + Transformers + PyTorch + bitsandbytes 가 내는 무해한 경고 억제.
     # warnings.warn() 뿐 아니라 transformers logging 도 일시적으로 ERROR 로 올린다.
@@ -313,10 +341,15 @@ def _load_vibevoice():
             load_kwargs["device_map"] = "auto"
             _log_quant = "8-bit (~7GB)"
         else:
-            load_kwargs["dtype"] = torch.bfloat16 if device == "cuda" else (
-                torch.float16 if device == "mps" else torch.float32
-            )
-            _log_quant = f"bf16 (~14GB, device={device})"
+            if device == "cuda":
+                load_kwargs["dtype"] = torch.bfloat16
+                _log_quant = f"bf16 (~14GB, {device})"
+            elif device == "mps":
+                load_kwargs["dtype"] = torch.float16
+                _log_quant = f"fp16 (~14GB, Apple Silicon MPS)"
+            else:
+                load_kwargs["dtype"] = torch.float32
+                _log_quant = f"fp32 (~28GB, CPU — 매우 느림)"
 
         model = VibeVoiceASRForConditionalGeneration.from_pretrained(
             model_id, **load_kwargs

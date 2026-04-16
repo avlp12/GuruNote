@@ -1,11 +1,53 @@
 # GuruNote 🎙️
 
-> 글로벌 IT/AI 구루들의 인사이트를 — 유튜브 링크 한 줄로 **화자 분리된 한국어 마크다운 요약본**으로.
+> 유튜브 링크 한 줄로 해외 IT/AI 팟캐스트를 **화자 분리된 한국어 마크다운 요약본**으로.
 
-GuruNote 는 해외 IT/AI 권위자(Guru)들의 유튜브 인터뷰/팟캐스트 URL 을 입력받아
-오디오를 추출하고, **Microsoft VibeVoice-ASR** 로 화자 분리 + 타임스탬프
-전사를 수행한 뒤, LLM 으로 IT/AI 전문 톤의 한국어 번역과 GuruNote 스타일의
-마크다운 요약본을 자동 생성하는 Streamlit 웹 앱입니다.
+```
+┌──────────┬──────────────────────────────────────────────┐
+│ 🎙️       │  ┌─ 오디오 소스 ──────────────────────────┐  │
+│ GuruNote │  │ [📁] [https://youtube.com/watch?v=...] │  │
+│          │  │ STT [auto ▼]  LLM [openai ▼]           │  │
+│ ────     │  │ [  ▶  GuruNote 생성하기  ]              │  │
+│ ⚙ 설정   │  └───────────────────────────────────────┘  │
+│ 🔄 업데이트│  ┌─ 1.오디오 ── 2.STT ── 3.번역 ── 4.요약 ── 5.조립 ─┐ │
+│          │  │ [━━━━━━━━━━━━━━━━━░░░░] 78%              │  │
+│          │  └───────────────────────────────────────┘  │
+│          │  ┌─ 결과 ─────────────────────────────────┐  │
+│          │  │ [📌 요약본] [🇰🇷 번역] [🇺🇸 원문] [📋 로그]│  │
+│          │  │                                         │  │
+│          │  │  # 📌 영상 제목 및 핵심 주제 요약        │  │
+│          │  │  - AGI 실현 가능성에 대한 심층 토론...     │  │
+│          │  │                                         │  │
+│          │  │  # 💡 Guru's Insights                   │  │
+│          │  │  - **스케일링 법칙의 한계**...            │  │
+│          │  │                          [📥 저장]      │  │
+│          │  └───────────────────────────────────────┘  │
+│ v0.1.0   │                                              │
+└──────────┴──────────────────────────────────────────────┘
+           ▲ CustomTkinter 데스크톱 앱 (python gui.py)
+```
+
+---
+
+## ⚡ 빠른 시작 (3단계)
+
+```bash
+# 1. 설치
+git clone https://github.com/avlp12/GuruNote.git && cd GuruNote
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+
+# 2. API 키 설정 (최소 OpenAI 또는 Anthropic 중 하나)
+cp .env.example .env
+# .env 를 열어 OPENAI_API_KEY=sk-... 입력
+
+# 3. 실행
+python gui.py          # 데스크톱 앱
+# 또는
+streamlit run app.py   # 웹 앱
+```
+
+> 앱 안의 **⚙️ 설정** 에서도 API 키를 입력할 수 있어 `.env` 를 직접 편집하지 않아도 됩니다.
 
 ---
 
@@ -33,6 +75,41 @@ GuruNote 는 해외 IT/AI 권위자(Guru)들의 유튜브 인터뷰/팟캐스트
   - 📝 전체 스크립트 번역본 + 🇺🇸 영어 원문
 - 📥 **`.md` 파일 다운로드** (`GuruNote_<영상제목>.md`)
 - 🧹 **임시 파일 자동 정리**
+
+---
+
+## 📋 출력 예시
+
+GuruNote 가 생성하는 마크다운 요약본의 실제 모습:
+
+```markdown
+# 🎙️ GuruNote — Sam Altman: GPT-5 and the Future of AI
+
+- **채널:** Lex Fridman
+- **게시일:** 2025-09-15
+- **STT 엔진:** `vibevoice`
+- **화자 수:** 2
+- **재생 시간:** 01:42:30
+
+# 📌 영상 제목 및 핵심 주제 요약
+OpenAI CEO Sam Altman 이 Lex Fridman 팟캐스트에 출연해
+GPT-5 의 아키텍처, AGI 로드맵, AI 안전성 연구 방향을 심층 논의.
+
+# 💡 Guru's Insights (핵심 인사이트)
+- **스케일링 법칙은 아직 유효하다** — ...
+- **멀티모달 통합이 다음 도약의 열쇠** — ...
+- **AI Alignment 연구에 수익의 20% 를 투자** — ...
+
+# ⏱️ 타임라인별 주요 내용 요약
+- [00:00] 인사 및 GPT-5 발표 배경
+- [12:30] 아키텍처 변화 — Transformer 를 넘어서
+- [35:00] AGI 정의와 실현 시점에 대한 견해
+- ...
+
+# 📝 전체 스크립트 번역본
+[00:00] Speaker A (Lex Fridman): 오늘 특별한 게스트를 모셨습니다...
+[00:15] Speaker B (Sam Altman): 초대해주셔서 감사합니다...
+```
 
 ---
 
@@ -130,135 +207,94 @@ GURUNOTE_STT_ENGINE=auto
 
 ## ▶️ 실행
 
-### 방법 A — Streamlit 웹 앱
-
-```bash
-streamlit run app.py
-```
-
-브라우저가 열리면 유튜브 URL 을 입력하고 **GuruNote 생성하기** 버튼을 누릅니다.
-실행 중에는 단계별 로그와 함께 **퍼센트 진행률 바**가 표시됩니다.
-
-> Streamlit 앱에는 **⚙️ Settings 탭**이 포함되어 있어 `.env` 수동 편집 없이
-> LLM Provider(`openai` / `openai_compatible` / `anthropic`), API Key,
-> Base URL, 모델명, Temperature, Max Tokens 저장/연결 테스트가 가능합니다.
-
-### 방법 B — CustomTkinter 데스크톱 앱
+### 데스크톱 앱 (권장)
 
 ```bash
 python gui.py
 ```
 
-브라우저 없이 네이티브 창으로 동일한 파이프라인을 실행합니다.
-결과를 탭(요약/번역/원문)으로 확인하고, **파일 → 저장** 대화상자로 `.md` 를 내보냅니다.
-상단 **⚙️ 설정**에서 동일하게 LLM Provider / Base URL / 모델 / 토큰 설정과
-연결 테스트를 수행할 수 있습니다.
-실행 중에는 좌측 로그 패널에서 **진행률(%)**을 확인할 수 있으며, `⏹ 중지` 버튼으로
-현재 작업을 안전한 지점에서 중단할 수 있습니다.
+| 기능 | 설명 |
+|---|---|
+| **사이드바** | 🎙️ 브랜드 + ⚙️ 설정 + 🔄 업데이트 |
+| **입력 카드** | 유튜브 URL 붙여넣기 또는 📁 로컬 파일 선택, STT/LLM 엔진 선택 |
+| **진행 카드** | 5단계 뱃지 인디케이터 (dim → 보라 → 초록) + 시안 진행 바 |
+| **결과 카드** | 📌 요약본 / 🇰🇷 번역 / 🇺🇸 원문 / 📋 로그 탭 + 📥 마크다운 저장 |
+| **⏹ 중지** | 실행 중 안전한 지점에서 중단 가능 |
+
+### 웹 앱 (Streamlit)
 
 ```bash
-# (선택) 독립 실행 파일로 패키징
-pip install pyinstaller
-pyinstaller --windowed --onefile gui.py
-# dist/gui.app (Mac) 또는 dist/gui.exe (Windows) 생성
+streamlit run app.py
 ```
 
-### 방법 C — 설치 패키지까지 자동 생성 (권장, 배포용)
+브라우저에서 동일한 파이프라인을 실행합니다.
+⚙️ Settings 탭에서 API 키, 모델, Temperature 등을 저장/테스트할 수 있습니다.
 
-반복적인 패키징 명령을 줄이기 위해 `scripts/package_desktop.py` 를 제공합니다.
+### 사용 흐름
 
-```bash
-# 공통 사전 준비
-pip install pyinstaller
 ```
-
-#### Windows
-
-```bash
-# 1) 단일 실행 파일(.exe)
-python scripts/package_desktop.py --target windows
-
-# 2) 설치형 exe까지 생성 (Inno Setup 필요)
-python scripts/package_desktop.py --target windows --formats installer
+1. 유튜브 URL 입력 (또는 📁 로컬 파일 선택)
+       ↓
+2. STT 엔진 (auto/vibevoice/assemblyai)
+   LLM 제공자 (openai/anthropic/openai_compatible) 선택
+       ↓
+3. "▶ GuruNote 생성하기" 클릭
+       ↓
+4. 진행 상황을 5단계 인디케이터 + 로그로 실시간 확인
+       ↓
+5. 📌 요약본 / 🇰🇷 번역 / 🇺🇸 원문 탭에서 결과 확인
+       ↓
+6. 📥 마크다운 저장 → GuruNote_<영상제목>.md 다운로드
 ```
-
-- 출력:
-  - `dist/GuruNote.exe` (단일 파일 실행형)
-  - `dist/GuruNote-Installer.exe` (설치형, `--formats installer` 사용 시)
-- 설치형 exe를 만들려면 [Inno Setup](https://jrsoftware.org/isdl.php) 의
-  `ISCC.exe` 가 필요합니다.
-
-#### macOS
-
-```bash
-# 1) .app 번들
-python scripts/package_desktop.py --target macos
-
-# 2) DMG 생성 (create-dmg 필요)
-python scripts/package_desktop.py --target macos --formats dmg
-
-# 3) PKG 생성 (macOS 기본 pkgbuild 사용)
-python scripts/package_desktop.py --target macos --formats pkg
-```
-
-- 출력:
-  - `dist/GuruNote.app`
-  - `dist/GuruNote.dmg` (`--formats dmg`)
-  - `dist/GuruNote.pkg` (`--formats pkg`)
-- DMG를 만들려면 `brew install create-dmg` 가 필요합니다.
-
-### GitHub Actions 릴리스 자동화
-
-저장소에는 태그 푸시 시 데스크톱 패키지를 자동 빌드/업로드하는 워크플로우가
-포함되어 있습니다.
-
-- 워크플로우 파일: `.github/workflows/release-desktop.yml`
-- 트리거:
-  - `git push origin v0.1.1` 같은 `v*` 태그 푸시
-  - 수동 실행 (`workflow_dispatch`)
-- 결과:
-  - Windows: `GuruNote.exe`, `GuruNote-Installer.exe`
-  - macOS: `GuruNote.dmg`, `GuruNote.pkg` (그리고 빌드 산출물 `GuruNote.app`)
-- 태그 이벤트에서는 위 파일을 GitHub Release assets 로 자동 첨부
-
-### 업데이트 (재설치 없이)
-
-소스 설치 사용자는 아래 명령으로 삭제/재설치 없이 업데이트할 수 있습니다.
-
-```bash
-# 업데이트 가능 상태 확인
-python scripts/update_gurunote.py --check
-
-# 코드 pull + 의존성 업그레이드
-python scripts/update_gurunote.py --update
-```
-
-- Streamlit `⚙️ Settings` 탭과 Desktop GUI `⚙️ 설정`에도 **업데이트 버튼**이 있어
-  앱 안에서 동일한 업데이트를 실행할 수 있습니다.
-
-### 태그 릴리스 리허설 체크 (실패 시 즉시 원인 출력)
-
-태그 푸시 전에 아래 스크립트로 릴리스 준비 상태를 점검할 수 있습니다.
-
-```bash
-# 기본: 태그 형식 + 필수 파일 + 워크플로우 핵심 항목 + 패키징 스크립트 스모크 테스트
-python scripts/release_rehearsal_check.py --tag v0.1.1
-
-# 선택: 현재 PC의 로컬 도구(pyinstaller/create-dmg/iscc 등)까지 검사
-python scripts/release_rehearsal_check.py --tag v0.1.1 --local-tools
-```
-
-- 실패 시 `❌`와 함께 원인을 즉시 출력하고 종료 코드 1로 종료합니다.
-- 통과 시 바로 실행할 태그 푸시 명령을 출력합니다.
-
-두 방식 모두 사이드바/상단에서 STT 엔진(`auto` / `vibevoice` / `assemblyai`)과
-LLM provider(`openai` / `openai_compatible` / `anthropic`) 를 런타임에 선택할 수 있습니다.
 
 > **최초 실행 안내:**
 > VibeVoice-ASR 엔진을 처음 사용할 때 Hugging Face Hub 에서 모델 가중치(약
 > 14GB)를 다운로드합니다. 네트워크 속도에 따라 **수 분~수십 분이 소요**될 수
 > 있으며, 터미널에 진행 상황이 표시됩니다. 이후 실행부터는 로컬 캐시를
 > 사용하므로 대기 시간이 없습니다.
+
+<details>
+<summary><strong>🔧 고급: 패키징 / CI / 업데이트</strong></summary>
+
+### 독립 실행 파일 패키징
+
+```bash
+pip install pyinstaller
+pyinstaller --windowed --onefile gui.py
+# dist/gui.app (Mac) 또는 dist/gui.exe (Windows)
+```
+
+또는 `scripts/package_desktop.py` 로 Windows `.exe`/설치형, macOS `.app`/`.dmg`/`.pkg` 를 자동 생성:
+
+```bash
+python scripts/package_desktop.py --target windows              # .exe
+python scripts/package_desktop.py --target windows --formats installer  # 설치형
+python scripts/package_desktop.py --target macos                # .app
+python scripts/package_desktop.py --target macos --formats dmg  # .dmg
+```
+
+### GitHub Actions 릴리스 자동화
+
+`.github/workflows/release-desktop.yml` — `v*` 태그 푸시 시 Windows/macOS 패키지를
+CI 에서 자동 빌드하고 GitHub Release 에 업로드합니다.
+
+### 업데이트 (재설치 없이)
+
+```bash
+python scripts/update_gurunote.py --check   # 상태 확인
+python scripts/update_gurunote.py --update  # git pull + pip upgrade
+```
+
+앱 내 ⚙️ 설정에도 동일한 업데이트 버튼이 있습니다.
+
+### 릴리스 리허설 체크
+
+```bash
+python scripts/release_rehearsal_check.py --tag v0.1.1
+python scripts/release_rehearsal_check.py --tag v0.1.1 --local-tools  # 로컬 도구까지 검사
+```
+
+</details>
 
 ---
 
@@ -295,11 +331,12 @@ GuruNote/
 
 | 영역 | 사용 기술 |
 |---|---|
-| UI | [Streamlit](https://streamlit.io/) |
+| 데스크톱 UI | [CustomTkinter](https://github.com/TomSchimansky/CustomTkinter) (사이드바 + 카드 레이아웃) |
+| 웹 UI | [Streamlit](https://streamlit.io/) |
 | 오디오 추출 | [yt-dlp](https://github.com/yt-dlp/yt-dlp) · ffmpeg |
 | STT + 화자 분리 | [Microsoft VibeVoice-ASR](https://github.com/microsoft/VibeVoice) (primary) · [AssemblyAI](https://www.assemblyai.com/) (fallback) |
-| 번역 / 요약 | [OpenAI](https://platform.openai.com/) `gpt-5.4` · [Anthropic](https://docs.anthropic.com/) `claude-sonnet-4-6` |
-| 환경 설정 | [python-dotenv](https://pypi.org/project/python-dotenv/) |
+| 번역 / 요약 | [OpenAI](https://platform.openai.com/) `gpt-5.4` · [Anthropic](https://docs.anthropic.com/) `claude-sonnet-4-6` · OpenAI-compatible (로컬 LLM) |
+| 환경 설정 | [python-dotenv](https://pypi.org/project/python-dotenv/) · 앱 내 ⚙️ 설정 다이얼로그 |
 
 ---
 
@@ -309,6 +346,19 @@ GuruNote/
 형식으로 기록되며 버전은 [Semantic Versioning](https://semver.org/) 을 따릅니다.
 
 현재 버전: **v0.1.0** — VibeVoice-ASR 기반 Step 1~5 전체 파이프라인 초판.
+
+---
+
+## ❓ 자주 묻는 질문 (FAQ)
+
+| 질문 | 답변 |
+|---|---|
+| **GPU 없이 쓸 수 있나요?** | `.env` 에서 `GURUNOTE_STT_ENGINE=assemblyai` 로 설정하면 클라우드 API 로 동작합니다 (AssemblyAI 키 필요). |
+| **1시간 넘는 영상은?** | STT 엔진이 `auto` 면 60분 초과 시 자동으로 AssemblyAI 로 전환됩니다. `vibevoice` 고정 시 처음 60분만 전사될 수 있습니다. |
+| **로컬 LLM 을 쓰고 싶어요** | `.env` 에서 `LLM_PROVIDER=openai_compatible` + `OPENAI_BASE_URL=http://127.0.0.1:8000/v1` 설정. Ollama, vLLM, LM Studio 등 OpenAI-compatible 서버라면 모두 가능합니다. |
+| **"ffmpeg not found" 에러** | Mac: `brew install ffmpeg` / Windows: `winget install ffmpeg` / Ubuntu: `sudo apt install ffmpeg` |
+| **모델 가중치 다운로드가 오래 걸려요** | VibeVoice-ASR 7B (약 14GB) 는 최초 1회만 다운로드됩니다. 이후는 `~/.cache/huggingface/` 캐시를 사용합니다. |
+| **API 키를 어디에 넣나요?** | 앱 실행 후 **⚙️ 설정** 버튼 → 다이얼로그에서 입력 → 💾 저장. `.env` 파일에 자동 기록됩니다. |
 
 ---
 

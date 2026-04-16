@@ -125,9 +125,25 @@ def transcribe(
             result = _transcribe_vibevoice(audio_path, log=log, hotwords=hotwords, stop_event=stop_event)
             _assert_transcript_not_empty(result)
             return result
-        except Exception:
-            # 강제 모드에서도 실패 시 GPU 메모리 해제 후 에러 전파
+        except Exception as exc:
             _unload_vibevoice()
+            # OOM 실패 시 AssemblyAI 자동 폴백 시도
+            err_str = str(exc).lower()
+            is_oom = "out of memory" in err_str or "cuda" in err_str and "메모리" in err_str
+            if is_oom:
+                log(
+                    "[Fallback] VibeVoice 가 GPU 메모리 부족으로 실패했습니다. "
+                    "AssemblyAI 로 자동 전환합니다."
+                )
+                try:
+                    result = _transcribe_assemblyai(audio_path, log=log)
+                    _assert_transcript_not_empty(result)
+                    return result
+                except Exception as fallback_exc:
+                    raise RuntimeError(
+                        f"VibeVoice OOM 후 AssemblyAI 폴백도 실패: {fallback_exc}\n"
+                        "ASSEMBLYAI_API_KEY 가 설정돼 있는지 확인해주세요."
+                    ) from fallback_exc
             raise
 
     if engine == "assemblyai":

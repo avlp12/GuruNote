@@ -319,9 +319,8 @@ def _transcribe_whisperx(
             if "401" in err_msg or "gated" in err_msg.lower() or "restricted" in err_msg.lower():
                 log(
                     "화자 분리 실패: pyannote 모델 접근 권한이 없습니다.\n"
-                    "  다음 2개 페이지에서 'Agree and access' 를 클릭하세요:\n"
-                    "  1) https://huggingface.co/pyannote/speaker-diarization-community-1\n"
-                    "  2) https://huggingface.co/pyannote/segmentation-community-1\n"
+                    "  아래 페이지에서 'Agree and access repository' 를 클릭하세요:\n"
+                    "  https://huggingface.co/pyannote/speaker-diarization-community-1\n"
                     "  화자 분리 없이 계속 진행합니다."
                 )
             else:

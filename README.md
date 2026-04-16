@@ -32,7 +32,7 @@ git clone https://github.com/avlp12/GuruNote.git && cd GuruNote
 bash setup.sh        # macOS / Linux  (Windows 는 setup.bat)
 # 자동 감지 + 설치:
 #   - NVIDIA GPU (Linux/Windows) → CUDA PyTorch + WhisperX
-#   - Apple Silicon Mac (M1~M4)  → MLX Whisper + pyannote (Metal/MPS GPU 가속)
+#   - Apple Silicon Mac (M1~M5)  → MLX Whisper + pyannote (Metal/MPS GPU 가속)
 #   - 그 외                       → AssemblyAI Cloud API 만 사용 가능
 
 # 2. API 키 설정 (OpenAI / Anthropic / Google Gemini 중 하나)
@@ -63,7 +63,7 @@ bash run_web.sh          # 웹 앱   (macOS/Linux)
   게시일/챕터 섹션이 자동으로 삽입됨.
 - 🗣️ **화자 분리 STT** — 플랫폼별 로컬 GPU 엔진 + 클라우드 폴백
   - **NVIDIA GPU** (Linux/Windows): **WhisperX** (Distil-Whisper + pyannote, 청크 분할 처리, VRAM ~6GB)
-  - **Apple Silicon Mac** (M1~M4): **MLX Whisper** + pyannote (Metal/MPS GPU 가속)
+  - **Apple Silicon Mac** (M1~M5): **MLX Whisper** + pyannote (Metal/MPS GPU 가속)
   - **GPU 없음**: **AssemblyAI Cloud API** 자동 폴백
   - 화자(Who) + 타임스탬프(When) + 내용(What) 을 동시 추출
   - IT/AI 도메인 핫워드 64 개 (Sam Altman, RLHF, Mixture of Experts …) 를 `initial_prompt` 로 주입해 고유명사/약어 인식률 향상
@@ -155,7 +155,7 @@ GuruNote_<영상제목>.md
   - Ubuntu/Debian: `sudo apt install ffmpeg`
 - **로컬 STT GPU (선택)** — `setup.sh` 가 자동 감지/설치
   - **NVIDIA (Linux/Windows)** — WhisperX, VRAM ~6GB 권장 (Distil-Whisper + 청크 분할)
-  - **Apple Silicon (M1~M4)** — MLX Whisper, 16GB+ Unified Memory 권장
+  - **Apple Silicon (M1~M5)** — MLX Whisper, 16GB+ Unified Memory 권장
   - **GPU 없음** — `GURUNOTE_STT_ENGINE=assemblyai` 로 클라우드 API 사용
 - **API Key** (최소 하나씩)
   - LLM: `OPENAI_API_KEY` **또는** `ANTHROPIC_API_KEY`
@@ -405,7 +405,7 @@ GuruNote/
 |---|---|
 | **`command not found: python` / `streamlit` (macOS)** | macOS 12+ 는 `python` 명령이 없고 `python3` 만 있으며, `streamlit` 은 venv 내부에만 설치됩니다. `bash run_desktop.sh` / `bash run_web.sh` 를 쓰면 venv activate 없이 실행됩니다. 직접 실행하려면 먼저 `source .venv/bin/activate` 로 venv 를 활성화하세요. |
 | **GPU 없이 쓸 수 있나요?** | `.env` 에서 `GURUNOTE_STT_ENGINE=assemblyai` 로 설정하면 클라우드 API 로 동작합니다 (AssemblyAI 키 필요). |
-| **Apple Silicon Mac (M1~M4) 에서 GPU 로컬 STT 가 되나요?** | 네. v0.6.0 부터 `setup.sh` 가 Apple Silicon 을 자동 감지해 `mlx-whisper` + `pyannote.audio` 를 설치합니다. STT 엔진을 `auto` 로 두면 Metal/MPS GPU 가속으로 로컬 전사 + 화자 분리가 동작합니다. 화자 분리에는 `HUGGINGFACE_TOKEN` + [pyannote 모델 동의](https://huggingface.co/pyannote/speaker-diarization-3.1) 가 필요합니다. |
+| **Apple Silicon Mac (M1~M5) 에서 GPU 로컬 STT 가 되나요?** | 네. v0.6.0 부터 `setup.sh` 가 Apple Silicon 을 자동 감지해 `mlx-whisper` + `pyannote.audio` 를 설치합니다. STT 엔진을 `auto` 로 두면 Metal/MPS GPU 가속으로 로컬 전사 + 화자 분리가 동작합니다. 화자 분리에는 `HUGGINGFACE_TOKEN` + [pyannote 모델 동의](https://huggingface.co/pyannote/speaker-diarization-3.1) 가 필요합니다. |
 | **1시간 넘는 영상은?** | WhisperX / MLX 모두 청크 분할 처리라 길이 제한이 없습니다. AssemblyAI 도 길이 제한 없음. |
 | **로컬 LLM 을 쓰고 싶어요** | `.env` 에서 `LLM_PROVIDER=openai_compatible` + `OPENAI_BASE_URL=http://127.0.0.1:8000/v1` 설정. Ollama, vLLM, LM Studio 등 OpenAI-compatible 서버라면 모두 가능합니다. |
 | **"ffmpeg not found" 에러** | Mac: `brew install ffmpeg` / Windows: `winget install ffmpeg` / Ubuntu: `sudo apt install ffmpeg` |

@@ -1,9 +1,13 @@
 # =============================================================================
-# GuruNote 의존성
+# GuruNote 공통 의존성 (모든 플랫폼)
 # -----------------------------------------------------------------------------
 # 시스템 의존성:
 #   - ffmpeg (yt-dlp 의 mp3 변환)
-#   - GPU 권장 (WhisperX 추론, CPU 도 동작)
+#
+# STT 엔진은 플랫폼별로 분리되어 있으니 setup.sh / setup.bat 가 자동 선택합니다:
+#   - NVIDIA GPU (Linux/Windows): requirements-gpu.txt   (WhisperX + CUDA PyTorch)
+#   - Apple Silicon (macOS arm64): requirements-mac.txt  (MLX Whisper + pyannote)
+#   - GPU 없음:                    AssemblyAI Cloud API 만 사용 (추가 설치 불필요)
 # =============================================================================
 
 # --- UI ---
@@ -13,17 +17,7 @@ customtkinter>=5.2
 # --- 오디오 다운로드 ---
 yt-dlp>=2024.3.10
 
-# --- STT (Step 2) ---
-# Primary: WhisperX (Distil-Whisper + pyannote 화자 분리)
-#   청크 분할 처리로 VRAM ~6GB 에서 안정 동작.
-#   화자 분리에 pyannote 사용 (HuggingFace 토큰 필요).
-#
-# whisperx 가 torch + faster-whisper + pyannote 를 의존성으로 자동 설치.
-# NVIDIA GPU 가 있으면 앱이 첫 실행 시 CUDA PyTorch 를 자동 설치합니다.
-# (수동: pip install torch --index-url https://download.pytorch.org/whl/cu128)
-whisperx>=3.1
-
-# Fallback: AssemblyAI Cloud API
+# --- STT 폴백: AssemblyAI Cloud API (모든 플랫폼 공통) ---
 assemblyai>=0.26
 
 # --- LLM (Step 3~4) ---

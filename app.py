@@ -3,13 +3,13 @@ GuruNote 🎙️ — 글로벌 IT/AI 구루들의 인사이트
 ============================================
 
 해외 IT/AI 권위자(Guru)들의 유튜브 인터뷰/팟캐스트 링크를 입력하면
-오디오 추출 → **VibeVoice-ASR** 화자 분리 STT → LLM 한국어 번역 →
+오디오 추출 → **WhisperX-ASR** 화자 분리 STT → LLM 한국어 번역 →
 GuruNote 스타일 마크다운 요약까지 단번에 만들어주는 Streamlit 웹 앱.
 
 요구사항:
     - Python 3.10+
     - ffmpeg (yt-dlp 의 mp3 변환)
-    - GPU (VibeVoice-ASR 7B 추론에 권장. 없으면 AssemblyAI 폴백)
+    - GPU (WhisperX-ASR 7B 추론에 권장. 없으면 AssemblyAI 폴백)
     - requirements.txt 의 패키지들
 
 실행:
@@ -39,7 +39,7 @@ from gurunote.history import (
     JobLogger, get_job_log, get_job_markdown,
     load_index, new_job_id, save_job,
 )
-from gurunote.stt import install_vibevoice, is_vibevoice_installed, transcribe
+from gurunote.stt import install_whisperx, is_whisperx_installed, transcribe
 from gurunote.types import Transcript, _format_ts
 from gurunote.updater import check_updates, update_project
 
@@ -73,7 +73,7 @@ def render_sidebar() -> dict:
     with st.sidebar:
         st.header("✨ GuruNote 란?")
         st.markdown(
-            "- **STT + 화자 분리** — Microsoft VibeVoice-ASR (오픈소스)\n"
+            "- **STT + 화자 분리** — Microsoft WhisperX-ASR (오픈소스)\n"
             "- **IT/AI 전문 톤 한국어 번역** — gpt-5.4 / claude-sonnet-4-6\n"
             "- **인사이트 / 타임라인 / 전체 스크립트** 마크다운 요약\n"
             "- 결과를 `.md` 파일로 다운로드"
@@ -81,7 +81,7 @@ def render_sidebar() -> dict:
         st.divider()
 
         st.subheader("⚙️ 설정")
-        stt_options = ["auto", "vibevoice", "assemblyai"]
+        stt_options = ["auto", "whisperx", "assemblyai"]
         env_stt = os.environ.get("GURUNOTE_STT_ENGINE", "auto").lower().strip()
         stt_default = stt_options.index(env_stt) if env_stt in stt_options else 0
         engine_label = st.selectbox(
@@ -89,8 +89,8 @@ def render_sidebar() -> dict:
             options=stt_options,
             index=stt_default,
             help=(
-                "auto: VibeVoice 가 가능하면 사용, 안되면 AssemblyAI 폴백 (권장).\n"
-                "vibevoice: 항상 VibeVoice-ASR (오픈소스, GPU 권장).\n"
+                "auto: WhisperX 가 가능하면 사용, 안되면 AssemblyAI 폴백 (권장).\n"
+                "whisperx: 항상 WhisperX (Distil-Whisper + pyannote, GPU 권장).\n"
                 "assemblyai: 항상 AssemblyAI Cloud API."
             ),
         )
@@ -112,7 +112,7 @@ def render_sidebar() -> dict:
         )
 
         st.divider()
-        st.caption("Powered by VibeVoice-ASR · yt-dlp · Streamlit")
+        st.caption("Powered by WhisperX-ASR · yt-dlp · Streamlit")
 
         return {"engine": engine_label, "provider": provider}
 
@@ -325,16 +325,6 @@ def run_pipeline(
             )
             set_progress(20, "Step 1 완료")
             effective_engine = engine
-            if audio.duration_sec > 3600 and engine == "auto":
-                effective_engine = "assemblyai"
-                st.info(
-                    "ℹ️ 60분 초과 오디오는 `auto` 모드에서 AssemblyAI 로 자동 전환합니다."
-                )
-            elif audio.duration_sec > 3600 and engine == "vibevoice":
-                st.warning(
-                    "⚠️ 현재 VibeVoice 단일 패스는 최대 60분 처리에 최적화되어 있어, "
-                    "긴 영상은 일부만 전사될 수 있습니다."
-                )
 
             # 유튜브 메타데이터 로그 (로컬 파일에는 대부분 비어있음)
             if audio.upload_date:
@@ -351,7 +341,7 @@ def run_pipeline(
 
             # ----- Step 2: STT + 화자 분리 -----
             set_progress(25, "Step 2 STT 진행 중")
-            st.write("🎙️ **Step 2.** 화자 분리 STT (VibeVoice-ASR) …")
+            st.write("🎙️ **Step 2.** 화자 분리 STT (WhisperX-ASR) …")
             transcript: Transcript = transcribe(
                 audio.audio_path, engine=effective_engine, progress=log
             )
@@ -521,18 +511,18 @@ def main() -> None:
                 "GuruNote 생성하기", type="primary", key="btn_local"
             )
 
-        # VibeVoice 미설치 감지 + 안내
+        # WhisperX 미설치 감지 + 안내
         engine_to_use = settings["engine"]
         if yt_submitted or local_submitted:
-            if engine_to_use in ("vibevoice", "auto") and not is_vibevoice_installed():
+            if engine_to_use in ("whisperx", "auto") and not is_whisperx_installed():
                 st.warning(
-                    "VibeVoice-ASR 패키지가 설치되어 있지 않습니다. "
+                    "WhisperX-ASR 패키지가 설치되어 있지 않습니다. "
                     "아래에서 설치하거나 AssemblyAI 로 전환하세요."
                 )
                 col_install, col_switch, _ = st.columns([1, 1, 2])
-                if col_install.button("📦 VibeVoice 설치", key="btn_install_vv"):
-                    with st.status("VibeVoice 설치 중…", expanded=True):
-                        ok = install_vibevoice(progress=lambda m: st.write(m))
+                if col_install.button("📦 WhisperX 설치", key="btn_install_vv"):
+                    with st.status("WhisperX 설치 중…", expanded=True):
+                        ok = install_whisperx(progress=lambda m: st.write(m))
                     if ok:
                         st.success("설치 완료! 다시 'GuruNote 생성하기' 를 눌러주세요.")
                     else:
@@ -579,7 +569,7 @@ def main() -> None:
 
     st.divider()
     st.caption(
-        "Powered by **Microsoft VibeVoice-ASR** · OpenAI / Anthropic · yt-dlp · Streamlit"
+        "Powered by **Microsoft WhisperX-ASR** · OpenAI / Anthropic · yt-dlp · Streamlit"
     )
 
 

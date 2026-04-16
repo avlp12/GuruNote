@@ -7,6 +7,12 @@
 
 ## [Unreleased]
 
+### Fixed
+- **Apple Silicon 세대 표기 M5 반영** — README / `requirements-mac.txt` / `stt.py`
+  / `stt_mlx.py` 의 "M1/M2/M3/M4", "M1~M4" 표기 9곳을 M5 포함으로 갱신. 실제
+  코드는 `platform.machine() == "arm64"` 로 세대 무관 동작하나 문서 표기는
+  최신 세대 반영이 맞음.
+
 ### Added
 - **README "🗑️ 제거" 섹션** — 프로젝트 폴더 / `~/.gurunote/` / HuggingFace
   모델 캐시의 OS 별 삭제 명령과 경로별 용량 요약. `.env` API 키 백업/폐기

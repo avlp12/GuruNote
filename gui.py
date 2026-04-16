@@ -43,7 +43,7 @@ from gurunote.history import (
 )
 from gurunote.stt import install_whisperx, is_whisperx_installed, transcribe
 from gurunote.types import _format_ts
-from gurunote.updater import check_updates, update_project
+from gurunote.updater import check_for_update, update_project
 
 # 환경변수 로드
 load_dotenv()
@@ -828,15 +828,21 @@ class GuruNoteApp(ctk.CTk):
 
     def _on_update_sb(self):
         try:
-            logs: list[str] = []
-            st = check_updates(logs.append)
-            if not messagebox.askyesno("업데이트", f"{st}\n\n실행할까요?"):
-                return
+            info = check_for_update()
         except Exception as e:
-            messagebox.showerror("실패", str(e))
+            messagebox.showerror("업데이트 확인 실패", str(e))
             return
 
-        # 진행 다이얼로그에서 백그라운드 실행
+        if not info["update_available"]:
+            messagebox.showinfo("업데이트", info["message"])
+            return
+
+        if not messagebox.askyesno(
+            "업데이트 가능",
+            f"{info['message']}\n\n업데이트를 진행하시겠습니까?",
+        ):
+            return
+
         UpdateProgressDialog(self)
 
     def _on_pick_file(self):

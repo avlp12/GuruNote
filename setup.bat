@@ -22,8 +22,8 @@ set PYTHON=.venv\Scripts\python.exe
 echo.
 nvidia-smi >nul 2>&1
 if %errorlevel%==0 (
-    echo [2/4] NVIDIA GPU 감지됨 — CUDA PyTorch 먼저 설치
-    %PIP% install torch torchaudio --index-url https://download.pytorch.org/whl/cu128
+    echo [2/4] NVIDIA GPU 감지됨 — CUDA PyTorch 설치 (whisperx 호환 2.8.0)
+    %PIP% install torch==2.8.0+cu128 torchaudio==2.8.0+cu128 --index-url https://download.pytorch.org/whl/cu128
 ) else (
     echo [2/4] NVIDIA GPU 미감지 — CPU 모드 (STT 는 AssemblyAI 사용)
 )

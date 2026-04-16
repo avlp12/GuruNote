@@ -426,11 +426,23 @@ class SettingsDialog(ctk.CTkToplevel):
             ).grid(row=idx, column=0, sticky="w", padx=(0, 10), pady=6)
 
             current_val = os.environ.get(env_key, "")
+            # 비밀 필드가 아닌 경우 .env.example 기본값을 placeholder 로 표시
+            _placeholders = {
+                "LLM_PROVIDER": "openai",
+                "OPENAI_MODEL": "gpt-5.4",
+                "OPENAI_BASE_URL": "http://127.0.0.1:8000/v1",
+                "ANTHROPIC_MODEL": "claude-sonnet-4-6",
+                "LLM_TEMPERATURE": "0.2",
+                "LLM_TRANSLATION_MAX_TOKENS": "8192",
+                "LLM_SUMMARY_MAX_TOKENS": "4096",
+                "VIBEVOICE_MODEL_ID": "microsoft/VibeVoice-ASR",
+            }
+            ph = "미설정" if is_secret else _placeholders.get(env_key, "")
             entry = ctk.CTkEntry(
                 container,
                 width=300,
                 show="•" if is_secret and current_val else "",
-                placeholder_text="미설정" if is_secret else "",
+                placeholder_text=ph,
             )
             if current_val:
                 entry.insert(0, current_val)
@@ -859,6 +871,8 @@ class GuruNoteApp(ctk.CTk):
             return
         except queue.Empty:
             pass
+        # 경과 시간 실시간 갱신 (progress 업데이트 없어도 라벨은 갱신)
+        self._refresh_eta_label()
         self.after(100, self._poll_worker)
 
     def _on_pipeline_done(self, result):
@@ -918,24 +932,40 @@ class GuruNoteApp(ctk.CTk):
         import time as _time
         pct = max(0.0, min(1.0, pct))
         self._progress.set(pct)
+        self._last_progress_pct = pct
+        self._last_progress_time = _time.monotonic()
+        self._refresh_eta_label()
 
-        # ETA 계산
-        eta_str = ""
-        if self._worker and self._worker._start_time and 0.02 < pct < 1.0:
-            elapsed = _time.monotonic() - self._worker._start_time
-            if pct > 0:
-                total_est = elapsed / pct
-                remaining = max(0, total_est - elapsed)
-                if remaining >= 60:
-                    m, s = divmod(int(remaining), 60)
-                    eta_str = f"  |  ~{m}m {s}s left"
-                else:
-                    eta_str = f"  |  ~{int(remaining)}s left"
-                # 경과 시간도 표시
-                em, es = divmod(int(elapsed), 60)
-                eta_str = f"  |  {em}m {es}s elapsed{eta_str}"
+    def _refresh_eta_label(self):
+        """ETA 라벨을 현재 시점 기준으로 갱신. poll 에서도 호출."""
+        import time as _time
+        pct = getattr(self, "_last_progress_pct", 0.0)
+        if not (self._worker and self._worker._start_time and pct > 0.01):
+            return
 
-        self._progress_label.configure(text=f"{int(pct * 100)}%{eta_str}")
+        elapsed = _time.monotonic() - self._worker._start_time
+        em, es = divmod(int(elapsed), 60)
+        elapsed_str = f"{em}m {es}s"
+
+        # 진행률이 마지막으로 바뀐 후 경과 시간
+        since_update = _time.monotonic() - getattr(self, "_last_progress_time", _time.monotonic())
+
+        if pct >= 1.0:
+            self._progress_label.configure(text=f"100%  |  {elapsed_str} total")
+        elif since_update > 30:
+            # 30초 이상 진행 없음 → ETA 예측 불가, 경과 시간만 표시
+            self._progress_label.configure(
+                text=f"{int(pct * 100)}%  |  {elapsed_str} elapsed  |  처리 중..."
+            )
+        elif pct > 0.02:
+            total_est = elapsed / pct
+            remaining = max(0, total_est - elapsed)
+            rm, rs = divmod(int(remaining), 60)
+            self._progress_label.configure(
+                text=f"{int(pct * 100)}%  |  {elapsed_str} elapsed  |  ~{rm}m {rs}s left"
+            )
+        else:
+            self._progress_label.configure(text=f"{int(pct * 100)}%  |  {elapsed_str} elapsed")
         self._update_steps(pct)
 
     @staticmethod

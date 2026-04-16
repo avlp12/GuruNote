@@ -271,6 +271,14 @@ def _transcribe_whisperx(
     else:
         device = "cpu"
         compute_type = "int8"
+        # NVIDIA GPU 는 있는데 PyTorch 가 CPU 버전인 경우 안내
+        if _has_nvidia_gpu():
+            log(
+                "! NVIDIA GPU 가 감지되었지만 PyTorch 가 CPU 버전입니다.\n"
+                "  GPU 를 사용하려면 다음 명령을 실행하세요:\n"
+                "  pip install torch --index-url https://download.pytorch.org/whl/cu124\n"
+                "  현재는 CPU 모드로 진행합니다 (느림)."
+            )
 
     model_name = os.environ.get("WHISPERX_MODEL", "distil-large-v3")
     batch_size = int(os.environ.get("WHISPERX_BATCH_SIZE", "16"))

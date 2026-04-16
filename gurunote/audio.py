@@ -160,7 +160,6 @@ def download_audio(url: str, out_dir: str) -> AudioDownloadResult:
 
     audio_path = os.path.join(out_dir, f"{video_id}.mp3")
     if not os.path.exists(audio_path):
-        # FFmpeg 변환이 어떤 이유로 다른 확장자를 남겼다면 폴더에서 찾는다.
         candidates = sorted(
             p for p in Path(out_dir).glob(f"{video_id}.*")
             if p.suffix.lower() in AUDIO_EXTS
@@ -170,6 +169,15 @@ def download_audio(url: str, out_dir: str) -> AudioDownloadResult:
                 f"오디오 파일을 찾을 수 없습니다: {out_dir} (id={video_id})"
             )
         audio_path = str(candidates[0])
+
+    # yt-dlp 의 duration 을 ffprobe 로 교차 검증.
+    # 일부 영상에서 yt-dlp 가 잘못된 duration 을 보고하는 경우가 있어
+    # (예: 32분 영상을 19,425초로 보고) 실제 파일 길이를 기준으로 교정.
+    ffprobe_dur = _get_duration_ffprobe(audio_path)
+    if ffprobe_dur and ffprobe_dur > 0:
+        if duration_sec <= 0 or abs(duration_sec - ffprobe_dur) / max(ffprobe_dur, 1) > 0.1:
+            # 10% 이상 차이나면 ffprobe 값을 신뢰
+            duration_sec = ffprobe_dur
 
     return AudioDownloadResult(
         audio_path=audio_path,

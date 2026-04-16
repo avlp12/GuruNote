@@ -155,6 +155,45 @@ def _unload_vibevoice() -> None:
         pass
 
 
+def _select_quantization() -> str:
+    """
+    VRAM 에 맞는 양자화 레벨을 자동 선택한다.
+
+    사용자 오버라이드: VIBEVOICE_QUANTIZATION 환경변수
+      - "none" / "bf16"  : 양자화 없음 (bf16, ~14GB)
+      - "8bit"           : 8-bit 양자화 (~7GB)
+      - "4bit"           : 4-bit NF4 양자화 (~4GB)  ← 기본값
+      - "auto"           : VRAM 기준 자동 (기본)
+
+    자동 기준:
+      - VRAM ≥ 48GB → bf16
+      - VRAM ≥ 24GB → 8bit
+      - 기타          → 4bit
+    """
+    user = os.environ.get("VIBEVOICE_QUANTIZATION", "auto").lower().strip()
+    if user in ("none", "bf16"):
+        return "none"
+    if user in ("4bit", "4"):
+        return "4bit"
+    if user in ("8bit", "8"):
+        return "8bit"
+    if user != "auto":
+        return "4bit"  # 알 수 없는 값 → 안전하게 4bit
+
+    # auto: VRAM 감지
+    try:
+        import torch
+        if torch.cuda.is_available():
+            vram_gb = torch.cuda.get_device_properties(0).total_mem / (1024 ** 3)
+            if vram_gb >= 48:
+                return "none"
+            if vram_gb >= 24:
+                return "8bit"
+    except Exception:  # noqa: BLE001
+        pass
+    return "4bit"
+
+
 def _load_vibevoice():
     """VibeVoice 모델 + 프로세서를 lazy-load 후 캐시."""
     if _VIBEVOICE_SINGLETON.get("ready"):
@@ -169,11 +208,11 @@ def _load_vibevoice():
     )
 
     model_id = os.environ.get("VIBEVOICE_MODEL_ID", "microsoft/VibeVoice-ASR")
+    quant = _select_quantization()
 
-    # 디바이스 자동 선택
+    # 디바이스 + attention 선택
     if torch.cuda.is_available():
         device = "cuda"
-        dtype = torch.bfloat16
         try:
             import flash_attn  # noqa: F401
             attn_impl = "flash_attention_2"
@@ -181,18 +220,12 @@ def _load_vibevoice():
             attn_impl = "sdpa"
     elif getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
         device = "mps"
-        dtype = torch.float16
         attn_impl = "sdpa"
     else:
         device = "cpu"
-        dtype = torch.float32
         attn_impl = "sdpa"
 
     # VibeVoice + Transformers + PyTorch 가 내는 무해한 경고들을 억제.
-    # - preprocessor_config.json 없음 (기본값으로 동작)
-    # - Qwen2Tokenizer vs VibeVoiceASRTextTokenizerFast (래핑 구조 정상)
-    # - torch_dtype deprecated (라이브러리 내부, 우리가 고칠 수 없음)
-    # - expandable_segments not supported (Windows, 위에서 이미 분기 처리)
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", message=".*torch_dtype.*deprecated.*")
         warnings.filterwarnings("ignore", message=".*expandable_segments.*")
@@ -202,13 +235,52 @@ def _load_vibevoice():
             model_id,
             language_model_pretrained_name="Qwen/Qwen2.5-7B",
         )
+
+        # 양자화 레벨에 따라 로딩 방식 분기
+        load_kwargs: dict = {
+            "attn_implementation": attn_impl,
+            "trust_remote_code": True,
+        }
+
+        if quant == "4bit":
+            from transformers import BitsAndBytesConfig  # type: ignore
+
+            load_kwargs["quantization_config"] = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_compute_dtype=torch.bfloat16,
+                bnb_4bit_quant_type="nf4",
+                bnb_4bit_use_double_quant=True,
+            )
+            load_kwargs["device_map"] = "auto"
+            _log_quant = "4-bit NF4 (~4GB)"
+        elif quant == "8bit":
+            from transformers import BitsAndBytesConfig  # type: ignore
+
+            load_kwargs["quantization_config"] = BitsAndBytesConfig(
+                load_in_8bit=True,
+            )
+            load_kwargs["device_map"] = "auto"
+            _log_quant = "8-bit (~7GB)"
+        else:
+            load_kwargs["dtype"] = torch.bfloat16 if device == "cuda" else (
+                torch.float16 if device == "mps" else torch.float32
+            )
+            _log_quant = f"bf16 (~14GB, device={device})"
+
         model = VibeVoiceASRForConditionalGeneration.from_pretrained(
-            model_id,
-            dtype=dtype,
-            attn_implementation=attn_impl,
-            trust_remote_code=True,
-        ).to(device)
+            model_id, **load_kwargs
+        )
+
+        # device_map="auto" 를 쓰지 않은 경우 수동 이동
+        if "device_map" not in load_kwargs:
+            model = model.to(device)
+
         model.eval()
+
+    _VIBEVOICE_SINGLETON.update(
+        {"model": model, "processor": processor, "device": device,
+         "ready": True, "quant": quant, "quant_label": _log_quant}
+    )
 
     _VIBEVOICE_SINGLETON.update(
         {"model": model, "processor": processor, "device": device, "ready": True}
@@ -224,7 +296,8 @@ def _transcribe_vibevoice(
 
     log("📦 VibeVoice 모델 로딩 중 (최초 1회는 수 GB 다운로드 필요)…")
     model, processor, device = _load_vibevoice()
-    log(f"✅ 모델 로딩 완료 (device={device})")
+    quant_label = _VIBEVOICE_SINGLETON.get("quant_label", "unknown")
+    log(f"✅ 모델 로딩 완료 (device={device}, {quant_label})")
 
     # 추론 전 GPU 캐시 정리 — 이전 실행 잔여 메모리 반환
     if torch.cuda.is_available():

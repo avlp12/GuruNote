@@ -42,6 +42,7 @@ from gurunote.history import (
     load_index, new_job_id, save_job,
 )
 from gurunote.stt import install_whisperx, is_whisperx_installed, transcribe
+from gurunote.stt_mlx import is_apple_silicon
 from gurunote.types import _format_ts
 from gurunote.updater import check_for_update, update_project
 
@@ -58,7 +59,7 @@ APP_TITLE = "GuruNote"
 WINDOW_WIDTH = 1200
 WINDOW_HEIGHT = 820
 
-STT_OPTIONS = ["auto", "whisperx", "assemblyai"]
+STT_OPTIONS = ["auto", "whisperx", "mlx", "assemblyai"]
 LLM_OPTIONS = ["openai", "openai_compatible", "anthropic", "gemini"]
 
 # ── 브랜드 컬러 팔레트 ──
@@ -702,7 +703,7 @@ class GuruNoteApp(ctk.CTk):
             ).grid(row=2 + i, column=0, padx=10, pady=2, sticky="ew")
 
         ctk.CTkLabel(
-            sb, text="v0.5.0", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
+            sb, text="v0.6.0", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
         ).grid(row=6, column=0, padx=20, pady=(0, 16), sticky="sw")
 
     # ── 메인 영역 ────────────────────────────────────────────
@@ -886,9 +887,16 @@ class GuruNoteApp(ctk.CTk):
         return False
 
     def _check_whisperx_available(self) -> bool:
-        """WhisperX 미설치 시 설치/AssemblyAI 전환/취소 선택."""
+        """WhisperX 미설치 시 설치/AssemblyAI 전환/취소 선택.
+
+        engine 이 mlx/assemblyai 면 WhisperX 가 필요 없고, Apple Silicon 에서는
+        auto 라우팅이 MLX 또는 AssemblyAI 로 가므로 WhisperX 설치 안내를 생략한다.
+        """
         engine = self._stt_var.get()
-        if engine == "assemblyai":
+        if engine in ("assemblyai", "mlx"):
+            return True
+        if engine == "auto" and is_apple_silicon():
+            # auto 는 macOS arm64 에서 MLX → AssemblyAI 순서로 폴백
             return True
         if is_whisperx_installed():
             return True

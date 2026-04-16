@@ -20,26 +20,35 @@ set PYTHON=.venv\Scripts\python.exe
 :: 2. NVIDIA GPU 감지 → CUDA torch 를 먼저 설치
 ::    (whisperx 보다 먼저 깔아야 CPU torch 를 안 깜)
 echo.
+set STT_PROFILE=cpu
 nvidia-smi >nul 2>&1
 if %errorlevel%==0 (
     echo [2/4] NVIDIA GPU 감지됨 — CUDA PyTorch 설치 (whisperx 호환 2.8.0)
     %PIP% install torch==2.8.0+cu128 torchaudio==2.8.0+cu128 --index-url https://download.pytorch.org/whl/cu128
+    set STT_PROFILE=gpu
 ) else (
     echo [2/4] NVIDIA GPU 미감지 — CPU 모드 (STT 는 AssemblyAI 사용)
 )
 
-:: 3. 나머지 패키지 설치
-::    whisperx 가 torch 를 의존성으로 갖지만, 이미 CUDA 버전이 설치돼 있으면
-::    pip 가 "already satisfied" 로 건너뜀 → CPU 버전 안 깔림
+:: 3. 공통 패키지 설치
+::    whisperx 등 STT 엔진은 플랫폼별로 분리 (requirements-gpu.txt / requirements-mac.txt).
 echo.
-echo [3/4] GuruNote 패키지 설치 중...
+echo [3/4] GuruNote 공통 패키지 설치 중...
 %PIP% install -r requirements.txt
+
+if "%STT_PROFILE%"=="gpu" (
+    echo.
+    echo [3/4+] WhisperX ^(CUDA^) 설치 중...
+    %PIP% install -r requirements-gpu.txt
+)
 
 :: 4. 검증
 echo.
 echo [4/4] 환경 검증...
 %PYTHON% -c "import torch; cuda=torch.cuda.is_available(); v=torch.__version__; print(f'PyTorch {v}, CUDA: {cuda}')"
-%PYTHON% -c "import whisperx; print('WhisperX OK')" 2>nul || echo WhisperX: 설치 필요
+if "%STT_PROFILE%"=="gpu" (
+    %PYTHON% -c "import whisperx; print('WhisperX OK')" 2>nul || echo WhisperX: 설치 필요
+)
 %PYTHON% -c "import customtkinter; print(f'CustomTkinter {customtkinter.__version__}')"
 
 echo.

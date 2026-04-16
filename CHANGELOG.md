@@ -7,6 +7,29 @@
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-04-16
+
+### Added
+- **macOS Apple Silicon 로컬 GPU STT** (`gurunote/stt_mlx.py`) — `mlx-whisper` 로
+  Whisper 추론을 Apple GPU/Neural Engine 에서 native 실행, `pyannote.audio` 화자
+  분리를 MPS 디바이스에서 수행. 단어 레벨 타임스탬프, IT/AI 핫워드 `initial_prompt`
+  주입, SPEAKER_NN→A/B/C 오버랩 기반 화자 할당. `engine="mlx"` 로 명시 선택 또는
+  `auto` 라우팅에서 자동 선택. `HUGGINGFACE_TOKEN` 미설정 시 단일 화자(A) 폴백.
+  `MLX_WHISPER_MODEL` / `PYANNOTE_DIARIZATION_MODEL` 환경변수로 모델 오버라이드.
+- **STT `auto` 라우팅 확장** (`gurunote/stt.py`) — 우선순위:
+  CUDA WhisperX → Apple Silicon MLX → AssemblyAI Cloud. Apple Silicon 인데
+  mlx-whisper 미설치 시 안내 메시지 (`pip install -r requirements-mac.txt`).
+- **GUI / Streamlit STT 엔진 선택지에 `mlx` 추가** (`gui.py`, `app.py`) —
+  드롭다운에 노출, help 텍스트 갱신. macOS arm64 + `auto` 또는 `mlx` 선택 시
+  WhisperX 설치 강요 다이얼로그 우회.
+- **플랫폼별 의존성 분리** — `requirements.txt` 는 공통 의존성만 유지,
+  `requirements-mac.txt` (mlx-whisper, pyannote.audio, onnxruntime) 와
+  `requirements-gpu.txt` (whisperx) 신설. `setup.sh` 가 `uname -s/-m` 으로
+  Darwin arm64 를 감지해 MLX 스택을 자동 설치, `setup.bat` 는 NVIDIA 감지 시에만
+  `requirements-gpu.txt` 추가 설치. 검증 단계가 MPS 가용성도 함께 출력.
+- **README** — 빠른 시작에 `bash setup.sh` 안내, Apple Silicon FAQ 항목,
+  기술 스택 표에 mlx-whisper + pyannote.audio 명시.
+
 ## [0.5.0] - 2026-04-16
 
 ### Added
@@ -203,7 +226,8 @@
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/avlp12/GuruNote/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/avlp12/GuruNote/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/avlp12/GuruNote/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/avlp12/GuruNote/compare/v0.3.0...v0.4.0

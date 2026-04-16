@@ -169,6 +169,7 @@ class PipelineWorker:
                 audio.audio_path,
                 engine=effective_engine,
                 progress=self._log,
+                stop_event=self._stop_event,
             )
             self._log(
                 f"[Step 2] OK: {len(transcript.segments)} 세그먼트, "

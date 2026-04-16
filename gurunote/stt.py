@@ -102,6 +102,7 @@ def transcribe(
     engine: str = "auto",
     progress: Optional[ProgressFn] = None,
     hotwords: Optional[List[str]] = None,
+    stop_event: Optional[object] = None,
 ) -> Transcript:
     """
     오디오 파일을 화자 분리된 Transcript 로 변환한다.
@@ -121,7 +122,7 @@ def transcribe(
 
     if engine == "vibevoice":
         try:
-            result = _transcribe_vibevoice(audio_path, log=log, hotwords=hotwords)
+            result = _transcribe_vibevoice(audio_path, log=log, hotwords=hotwords, stop_event=stop_event)
             _assert_transcript_not_empty(result)
             return result
         except Exception:
@@ -137,7 +138,7 @@ def transcribe(
     # auto: VibeVoice 우선, 실패 시 AssemblyAI 폴백
     try:
         log("🚀 기본 엔진 VibeVoice-ASR 로 전사를 시도합니다…")
-        result = _transcribe_vibevoice(audio_path, log=log, hotwords=hotwords)
+        result = _transcribe_vibevoice(audio_path, log=log, hotwords=hotwords, stop_event=stop_event)
         _assert_transcript_not_empty(result)
         return result
     except Exception as exc:  # noqa: BLE001
@@ -334,7 +335,8 @@ def _load_vibevoice():
 
 
 def _transcribe_vibevoice(
-    audio_path: str, log: ProgressFn, hotwords: List[str]
+    audio_path: str, log: ProgressFn, hotwords: List[str],
+    stop_event: Optional[object] = None,
 ) -> Transcript:
     """VibeVoice-ASR 로 전사. CUDA OOM 발생 시 토큰 수를 줄여 재시도."""
     import torch
@@ -377,16 +379,38 @@ def _transcribe_vibevoice(
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
 
-            log(f"🧠 VibeVoice 추론 중 (max_tokens={max_tokens})…")
-            with torch.no_grad():
-                output_ids = model.generate(
-                    **inputs,
-                    max_new_tokens=max_tokens,
-                    do_sample=False,
-                    num_beams=1,
-                    pad_token_id=processor.pad_id,
-                    eos_token_id=processor.tokenizer.eos_token_id,
+            log(f"VibeVoice 추론 중 (max_tokens={max_tokens})...")
+
+            # StoppingCriteria — 중지 버튼이 눌리면 매 토큰 생성마다 체크해 즉시 중단
+            generate_kwargs: dict = {
+                "max_new_tokens": max_tokens,
+                "do_sample": False,
+                "num_beams": 1,
+                "pad_token_id": processor.pad_id,
+                "eos_token_id": processor.tokenizer.eos_token_id,
+            }
+            if stop_event is not None:
+                from transformers import StoppingCriteria, StoppingCriteriaList  # type: ignore
+
+                class _StopOnEvent(StoppingCriteria):
+                    def __init__(self, event):
+                        self._event = event
+                    def __call__(self, input_ids, scores, **kw):
+                        return self._event.is_set()
+
+                generate_kwargs["stopping_criteria"] = StoppingCriteriaList(
+                    [_StopOnEvent(stop_event)]
                 )
+
+            with torch.no_grad():
+                output_ids = model.generate(**inputs, **generate_kwargs)
+
+            # 중지 요청으로 조기 종료된 경우
+            if stop_event is not None and stop_event.is_set():
+                log("[Stop] 추론이 중지되었습니다. GPU 메모리를 해제합니다.")
+                del inputs, output_ids
+                _unload_vibevoice()
+                raise RuntimeError("사용자가 작업 중지를 요청했습니다.")
 
             input_length = inputs["input_ids"].shape[1]
             generated = output_ids[0, input_length:]

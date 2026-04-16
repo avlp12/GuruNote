@@ -297,7 +297,13 @@ def _transcribe_whisperx(
     hf_token = os.environ.get("HUGGINGFACE_TOKEN", "").strip()
     if hf_token:
         log("화자 분리 중 (pyannote)...")
-        diarize_model = whisperx.DiarizationPipeline(
+        # whisperx 버전에 따라 DiarizationPipeline 위치가 다름
+        try:
+            _DiarPipeline = whisperx.DiarizationPipeline
+        except AttributeError:
+            from whisperx.diarize import DiarizationPipeline as _DiarPipeline
+
+        diarize_model = _DiarPipeline(
             use_auth_token=hf_token, device=device,
         )
         diarize_segments = diarize_model(audio)
@@ -352,10 +358,14 @@ def _transcribe_assemblyai(audio_path: str, log: ProgressFn) -> Transcript:
     import assemblyai as aai  # type: ignore
 
     aai.settings.api_key = api_key
-    config = aai.TranscriptionConfig(
-        speaker_labels=True,
-        speech_model=aai.SpeechModel.best,
-    )
+    # AssemblyAI API 버전에 따라 파라미터명이 다름
+    try:
+        config = aai.TranscriptionConfig(
+            speaker_labels=True,
+            speech_models=[aai.SpeechModel.best],
+        )
+    except (TypeError, AttributeError):
+        config = aai.TranscriptionConfig(speaker_labels=True)
 
     log("AssemblyAI 에 업로드 후 화자 분리 전사 중...")
     transcriber = aai.Transcriber()

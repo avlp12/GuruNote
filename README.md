@@ -165,17 +165,35 @@ GuruNote_<영상제목>.md
 
 ## 🚀 설치
 
+`bash setup.sh` (macOS/Linux) 또는 `setup.bat` (Windows) 단일 명령으로
+가상환경 생성부터 플랫폼별 STT 엔진 설치까지 모두 자동 처리됩니다.
+
 ```bash
 git clone https://github.com/avlp12/GuruNote.git
 cd GuruNote
 
-# (권장) 가상환경
-python -m venv .venv
-source .venv/bin/activate          # Windows: .venv\Scripts\activate
+# macOS / Linux
+bash setup.sh
 
-# 패키지 설치 (플랫폼 자동 감지 + STT 엔진 자동 설치)
-bash setup.sh        # macOS / Linux  (Windows 는 setup.bat)
+# Windows
+setup.bat
 ```
+
+setup 스크립트가 순서대로 수행하는 작업:
+
+1. `.venv/` 가상환경 생성 (이미 있으면 재사용) — `python3 -m venv .venv`
+2. 플랫폼 감지: `nvidia-smi` 존재 여부 + `uname -s/-m`
+3. 공통 의존성(`requirements.txt`) 설치 (UI / audio / LLM / AssemblyAI 폴백)
+4. 플랫폼별 STT 엔진 추가 설치:
+   - **NVIDIA GPU** → CUDA PyTorch 2.8.0 + `requirements-gpu.txt` (WhisperX)
+   - **Apple Silicon** → `requirements-mac.txt` (MLX Whisper + pyannote + onnxruntime)
+   - **감지 실패** → 추가 설치 없음 (AssemblyAI Cloud API 만 사용 가능)
+5. 환경 검증 — PyTorch 버전, CUDA/MPS 가용성, 핵심 라이브러리 import 확인
+
+> 💡 **venv 를 수동으로 만들 필요 없음** — setup 스크립트가 이미 `.venv` 를
+> 만들고 그 안에 모든 의존성을 설치합니다. 실행은 `bash run_desktop.sh` /
+> `run_web.sh` 래퍼가 `.venv/bin/python` 을 직접 호출하므로 `source activate`
+> 없이 동작합니다 (macOS 의 `command not found: python` / `streamlit` 문제 회피).
 
 ### 📦 데스크톱 패키지 vs 소스 실행
 
@@ -396,6 +414,76 @@ GuruNote/
 | **CUDA Out of Memory 에러** | v0.3.0 부터 자동으로 토큰 수를 줄여 재시도합니다 (32768→16384→8192). 그래도 실패하면 모델을 자동 언로드하고 에러 메시지에 해결 방법을 안내합니다. |
 | **WhisperX 가 설치 안 됐다고 떠요** (NVIDIA) | "GuruNote 생성하기" 클릭 시 설치/AssemblyAI 전환 선택 다이얼로그가 뜹니다. Apple Silicon 에선 MLX 자동 사용. |
 | **과거 작업을 다시 보고 싶어요** | 사이드바 History → 목록에서 Save (마크다운 재다운로드) 또는 Log (파이프라인 로그 확인). |
+
+---
+
+## 🗑️ 제거 (Uninstall)
+
+GuruNote 는 시스템 레벨 설치를 하지 않고 `.venv` + 프로젝트 폴더 + 홈의 데이터
+폴더에만 파일을 남깁니다. 단계별로 지우면 깔끔하게 제거됩니다.
+
+### macOS / Linux
+
+```bash
+# 1. ⚠️ API 키 백업 또는 완전 삭제 (.env 에 저장됨)
+cat GuruNote/.env                 # 필요하면 내용 복사 후 보관
+# (따로 보관할 필요 없으면 다음 단계에서 함께 삭제됨)
+
+# 2. 프로젝트 폴더 통째로 삭제 (.venv/ + autosave/ + .env 모두 포함)
+rm -rf GuruNote
+
+# 3. 사용자 홈의 GuruNote 데이터 삭제
+#    - ~/.gurunote/jobs/       작업 히스토리 (메타 + 결과 마크다운 + pipeline.log)
+#    - ~/.gurunote/history.json  히스토리 인덱스
+#    - ~/.gurunote/models/      WhisperX 모델 (NVIDIA 로 썼던 경우, ~1.5GB)
+rm -rf ~/.gurunote
+
+# 4. (선택) HuggingFace 모델 캐시 — MLX / pyannote 가 다운받은 모델
+#    ⚠️ 이 폴더는 다른 프로젝트 (transformers 직접 사용, ComfyUI 등) 도
+#       공유하므로, GuruNote 전용이었던 경우에만 삭제.
+ls ~/.cache/huggingface/hub/      # 먼저 확인
+rm -rf ~/.cache/huggingface/hub/models--mlx-community--whisper-*
+rm -rf ~/.cache/huggingface/hub/models--pyannote--*
+rm -rf ~/.cache/huggingface/hub/models--Systran--faster-whisper-*
+# 또는 HuggingFace 캐시 자체를 통째로:
+# rm -rf ~/.cache/huggingface
+```
+
+### Windows (PowerShell)
+
+```powershell
+# 1. ⚠️ API 키 백업 (GuruNote\.env)
+Get-Content GuruNote\.env         # 내용 확인
+
+# 2. 프로젝트 폴더 통째로 삭제
+Remove-Item -Recurse -Force GuruNote
+
+# 3. 사용자 홈의 GuruNote 데이터 삭제
+Remove-Item -Recurse -Force "$env:USERPROFILE\.gurunote"
+
+# 4. (선택) HuggingFace 모델 캐시
+Remove-Item -Recurse -Force "$env:USERPROFILE\.cache\huggingface\hub\models--mlx-community--whisper-*"
+Remove-Item -Recurse -Force "$env:USERPROFILE\.cache\huggingface\hub\models--pyannote--*"
+Remove-Item -Recurse -Force "$env:USERPROFILE\.cache\huggingface\hub\models--Systran--faster-whisper-*"
+```
+
+### 삭제 대상 요약
+
+| 경로 | 내용 | 크기 (대략) |
+|---|---|---|
+| `GuruNote/` (프로젝트 폴더) | 소스 + `.venv/` + `autosave/` + `.env` | **2~5 GB** (의존성 포함) |
+| `~/.gurunote/jobs/` | 작업 히스토리 메타 + 결과 마크다운 + 로그 | 수 MB (작업 수에 따라) |
+| `~/.gurunote/models/` | WhisperX 모델 (NVIDIA 로 사용 시) | **~1.5 GB** |
+| `~/.gurunote/history.json` | 히스토리 인덱스 | 수 KB |
+| `~/.cache/huggingface/hub/` (일부) | MLX Whisper, pyannote diarization 모델 | **~3~4 GB** |
+
+> 🔒 **보안 주의**: `.env` 에는 OpenAI / Anthropic / Gemini / AssemblyAI API 키
+> 가 평문 저장됩니다. 프로젝트 폴더 삭제 전에 안전한 위치로 백업하거나,
+> API 제공자 대시보드에서 키를 폐기(revoke) 하세요.
+
+> 📁 **임시 파일**: 파이프라인 실행 중 `/tmp/gurunote_*` (Windows: `%TEMP%\gurunote_*`)
+> 에 임시 오디오 파일이 생성되며 작업 완료 시 자동 정리됩니다. 비정상 종료로
+> 남아있다면 OS 재부팅 또는 수동 삭제로 제거됩니다.
 
 ---
 

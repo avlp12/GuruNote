@@ -8,6 +8,20 @@
 ## [Unreleased]
 
 ### Added
+- **README "🗑️ 제거" 섹션** — 프로젝트 폴더 / `~/.gurunote/` / HuggingFace
+  모델 캐시의 OS 별 삭제 명령과 경로별 용량 요약. `.env` API 키 백업/폐기
+  보안 안내, 공유 HuggingFace 캐시 조심 경고, 임시 파일 정책 설명 포함.
+
+### Fixed
+- **README "🚀 설치" 모순 제거** — "빠른 시작" 은 `bash setup.sh` 바로 실행을
+  안내하는데 "🚀 설치" 는 `python -m venv .venv && source .venv/bin/activate`
+  수동 단계를 추가로 요구해 모순됐고, macOS 의 `python` 명령 부재로 이 수동
+  단계가 실제로 실패하는 원인이 됨. setup.sh 가 이미 `.venv` 를 자체 생성하므로
+  "🚀 설치" 섹션에서 수동 venv 단계를 제거하고, 대신 setup 스크립트가 자동
+  수행하는 5단계 (venv 생성 → 플랫폼 감지 → 공통 의존성 → 플랫폼별 STT → 검증)
+  를 명시적으로 문서화.
+
+### Added
 - **실행 래퍼 스크립트** — `run_desktop.sh` / `run_web.sh` (macOS/Linux) +
   `run_desktop.bat` / `run_web.bat` (Windows). `.venv` 를 activate 없이 직접
   호출해 macOS 의 `command not found: python` / `streamlit` 문제를 근본 차단.

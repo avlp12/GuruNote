@@ -12,12 +12,15 @@ LLM/요약 단계는 어느 엔진을 썼는지 신경 쓰지 않아도 된다.
 from __future__ import annotations
 
 import os
+import platform
 import re
+import warnings
 from typing import Callable, List, Optional
 
-# PyTorch CUDA 메모리 단편화 방지 — OOM 에러 메시지에서도 권장하는 설정.
-# torch import 전에 설정해야 효과가 있다.
-os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+# PyTorch CUDA 메모리 단편화 방지 — Linux 에서만 지원.
+# Windows 에서는 expandable_segments 가 미지원이라 UserWarning 이 뜨므로 건너뜀.
+if platform.system() != "Windows":
+    os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 
 from gurunote.types import Segment, Transcript
 
@@ -185,17 +188,27 @@ def _load_vibevoice():
         dtype = torch.float32
         attn_impl = "sdpa"
 
-    processor = VibeVoiceASRProcessor.from_pretrained(
-        model_id,
-        language_model_pretrained_name="Qwen/Qwen2.5-7B",
-    )
-    model = VibeVoiceASRForConditionalGeneration.from_pretrained(
-        model_id,
-        dtype=dtype,
-        attn_implementation=attn_impl,
-        trust_remote_code=True,
-    ).to(device)
-    model.eval()
+    # VibeVoice + Transformers + PyTorch 가 내는 무해한 경고들을 억제.
+    # - preprocessor_config.json 없음 (기본값으로 동작)
+    # - Qwen2Tokenizer vs VibeVoiceASRTextTokenizerFast (래핑 구조 정상)
+    # - torch_dtype deprecated (라이브러리 내부, 우리가 고칠 수 없음)
+    # - expandable_segments not supported (Windows, 위에서 이미 분기 처리)
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message=".*torch_dtype.*deprecated.*")
+        warnings.filterwarnings("ignore", message=".*expandable_segments.*")
+        warnings.filterwarnings("ignore", message=".*tokenizer class.*not the same type.*")
+
+        processor = VibeVoiceASRProcessor.from_pretrained(
+            model_id,
+            language_model_pretrained_name="Qwen/Qwen2.5-7B",
+        )
+        model = VibeVoiceASRForConditionalGeneration.from_pretrained(
+            model_id,
+            dtype=dtype,
+            attn_implementation=attn_impl,
+            trust_remote_code=True,
+        ).to(device)
+        model.eval()
 
     _VIBEVOICE_SINGLETON.update(
         {"model": model, "processor": processor, "device": device, "ready": True}

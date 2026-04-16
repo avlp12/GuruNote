@@ -6,6 +6,39 @@ echo     GuruNote 환경 설정
 echo ================================================
 echo.
 
+:: 0. 시스템 의존성: ffmpeg / ffprobe
+::    yt-dlp 오디오 추출에 필수. winget 이 있으면 자동 설치 제안.
+where ffmpeg >nul 2>&1
+if %errorlevel% neq 0 (
+    echo [0/4] [WARNING] ffmpeg 미설치 -- yt-dlp 오디오 추출에 필수입니다.
+    where winget >nul 2>&1
+    if %errorlevel% equ 0 (
+        echo       다음 명령으로 설치:
+        echo         winget install ffmpeg
+        set /p YN="      지금 설치할까요? [y/N] "
+        if /i "%YN%"=="y" (
+            winget install -e --id Gyan.FFmpeg
+            if %errorlevel% neq 0 (
+                echo       ffmpeg 설치 실패. 수동 설치 후 setup.bat 재실행하세요.
+                exit /b 1
+            )
+            echo       설치 완료. 새 터미널에서 setup.bat 를 재실행하세요 ^(PATH 갱신 필요^).
+            exit /b 0
+        ) else (
+            echo       설치 건너뜀. 수동 설치 후 setup.bat 재실행:
+            echo         winget install ffmpeg
+            exit /b 1
+        )
+    ) else (
+        echo       winget 이 없습니다. https://ffmpeg.org/download.html 에서
+        echo       다운로드 후 PATH 에 등록하고 setup.bat 를 재실행하세요.
+        exit /b 1
+    )
+) else (
+    echo [0/4] ffmpeg 확인 OK
+)
+echo.
+
 :: 1. venv 확인/생성
 if not exist ".venv\Scripts\python.exe" (
     echo [1/4] 가상환경 생성 중...

@@ -4,7 +4,7 @@ Step 2: 음성 인식 + 화자 분리 (Speaker Diarization).
 엔진 선택 우선순위 (`auto` 모드):
   1. NVIDIA GPU (CUDA) → **WhisperX** (Distil-Whisper + pyannote).
      청크 분할 처리로 VRAM ~6GB 에서 안정 동작.
-  2. Apple Silicon (M1~M4) → **MLX Whisper** (`gurunote.stt_mlx`).
+  2. Apple Silicon (M1~M5) → **MLX Whisper** (`gurunote.stt_mlx`).
      Metal/MPS 가속, pyannote 화자 분리도 MPS 에서 실행.
   3. 위 둘 다 안 되면 → **AssemblyAI Cloud API** 로 폴백.
 

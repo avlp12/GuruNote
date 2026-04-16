@@ -1,13 +1,18 @@
 """
-Step 4 & 5: 최종 GuruNote 마크다운 조립 + 파일명 sanitize.
+Step 4 & 5: 최종 GuruNote 마크다운 조립 + 파일명 sanitize + autosave.
 """
 
 from __future__ import annotations
 
 import re
+from datetime import datetime
+from pathlib import Path
 from typing import Iterable, Optional
 
 from gurunote.types import Transcript, _format_ts
+
+# autosave 기본 경로
+AUTOSAVE_DIR = Path.cwd() / "autosave"
 
 
 def sanitize_filename(name: str, max_len: int = 80) -> str:
@@ -115,3 +120,18 @@ def build_gurunote_markdown(
         "",
     ])
     return "\n".join(parts)
+
+
+def autosave_result(full_md: str, title: str, save_dir: Path | None = None) -> Path:
+    """
+    파이프라인 완료 후 full_md 를 autosave/ 폴더에 자동 저장.
+    파일명: GuruNote_<title>_<YYYYMMDD_HHMMSS>.md
+    Returns: 저장된 파일 경로.
+    """
+    out_dir = save_dir or AUTOSAVE_DIR
+    out_dir.mkdir(parents=True, exist_ok=True)
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    fname = f"GuruNote_{sanitize_filename(title)}_{ts}.md"
+    path = out_dir / fname
+    path.write_text(full_md, encoding="utf-8")
+    return path

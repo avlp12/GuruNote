@@ -34,7 +34,7 @@ from gurunote.audio import (
     is_probably_youtube_url,
     is_supported_local_file,
 )
-from gurunote.exporter import build_gurunote_markdown, sanitize_filename
+from gurunote.exporter import autosave_result, build_gurunote_markdown, sanitize_filename
 from gurunote.llm import LLMConfig, summarize_translation, test_connection, translate_transcript
 from gurunote.settings import save_settings
 from gurunote.history import (
@@ -237,6 +237,13 @@ class PipelineWorker:
                 full_md=full_md,
             )
             self._log("[Save] 히스토리에 저장됨")
+
+            # autosave
+            try:
+                saved = autosave_result(full_md, audio.video_title)
+                self._log(f"[Autosave] {saved}")
+            except Exception:  # noqa: BLE001
+                pass
 
             self.result_queue.put(
                 {
@@ -695,7 +702,7 @@ class GuruNoteApp(ctk.CTk):
             ).grid(row=2 + i, column=0, padx=10, pady=2, sticky="ew")
 
         ctk.CTkLabel(
-            sb, text="v0.4.1", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
+            sb, text="v0.5.0", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
         ).grid(row=6, column=0, padx=20, pady=(0, 16), sticky="sw")
 
     # ── 메인 영역 ────────────────────────────────────────────

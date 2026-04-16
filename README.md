@@ -21,7 +21,7 @@ GuruNote 는 해외 IT/AI 권위자(Guru)들의 유튜브 인터뷰/팟캐스트
   - 화자(Who) + 타임스탬프(When) + 내용(What) 을 동시 추출
   - IT/AI 도메인 핫워드 64 개 (Sam Altman, RLHF, Mixture of Experts …) 를 `context_info` 로 주입해 고유명사/약어 인식률 향상
   - GPU 미가용 환경에서는 **AssemblyAI Cloud API** 로 자동 폴백
-- 🌐 **IT/AI 전문 톤 한국어 번역** — OpenAI `gpt-4o` 또는 Anthropic `claude-3-5-sonnet`
+- 🌐 **IT/AI 전문 톤 한국어 번역** — OpenAI `gpt-5.4` 또는 Anthropic `claude-sonnet-4-6`
   - 화자 실명(진행자/게스트) 자동 추론
   - LLM / RAG / Fine-tuning 등 전문 용어 영문 병기
   - 구어체 추임새 정리, 가독성 높은 인터뷰 톤
@@ -47,7 +47,7 @@ GuruNote 는 해외 IT/AI 권위자(Guru)들의 유튜브 인터뷰/팟캐스트
    │          └ IT/AI 핫워드를 context_info 로 주입
    │          └ ⚠️ v0.1.0: 최대 60분 단일 패스 (초과 시 아래 참고)
    │
-   ▼  [Step 3] LLM 청크 분할 번역 (gpt-4o / claude-3.5-sonnet)
+   ▼  [Step 3] LLM 청크 분할 번역 (gpt-5.4 / claude-sonnet-4-6)
    │          └ 화자 라벨 + 타임스탬프 보존
    │
    ▼  [Step 4] LLM 요약본 생성 (GuruNote 스타일)
@@ -298,7 +298,7 @@ GuruNote/
 | UI | [Streamlit](https://streamlit.io/) |
 | 오디오 추출 | [yt-dlp](https://github.com/yt-dlp/yt-dlp) · ffmpeg |
 | STT + 화자 분리 | [Microsoft VibeVoice-ASR](https://github.com/microsoft/VibeVoice) (primary) · [AssemblyAI](https://www.assemblyai.com/) (fallback) |
-| 번역 / 요약 | [OpenAI](https://platform.openai.com/) `gpt-4o` · [Anthropic](https://docs.anthropic.com/) `claude-3-5-sonnet` |
+| 번역 / 요약 | [OpenAI](https://platform.openai.com/) `gpt-5.4` · [Anthropic](https://docs.anthropic.com/) `claude-sonnet-4-6` |
 | 환경 설정 | [python-dotenv](https://pypi.org/project/python-dotenv/) |
 
 ---

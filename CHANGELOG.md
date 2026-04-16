@@ -66,6 +66,12 @@
   - 실패 시 즉시 원인 출력 + 종료 코드 1 반환 (fail-fast)
 
 ### Changed
+- **LLM 기본 모델 최신화** — OpenAI `gpt-4o` → `gpt-5.4`, Anthropic
+  `claude-3-5-sonnet-latest` → `claude-sonnet-4-6`. 코드 기본값(`llm.py` 의
+  `openai`/`openai_compatible`/`anthropic` 3개 분기 모두), `.env.example`,
+  Streamlit Settings 탭 placeholder, README, app.py 사이드바 텍스트 일괄 변경.
+  기존 `.env` 에 `OPENAI_MODEL` / `ANTHROPIC_MODEL` 을 직접 설정한 사용자는
+  영향 없음.
 - **README 대폭 보강** — Gemini 리뷰 반영
   - GPU VRAM 요구사항 구체화 (최소 16GB VRAM / Apple Silicon 32GB+)
   - OS 별 ffmpeg 설치 명령어 (Mac/Windows/Ubuntu)

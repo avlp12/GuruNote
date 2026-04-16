@@ -128,62 +128,60 @@ class PipelineWorker:
             self._set_progress(0.02)
             # Step 1
             if self.youtube_url:
-                self._log("⬇️ [Step 1] 유튜브 오디오 추출 중…")
+                self._log("[Step 1] 유튜브 오디오 추출 중...")
                 audio = download_audio(self.youtube_url, tmp_dir)
             else:
-                self._log("🎵 [Step 1] 로컬 파일에서 오디오 추출 중…")
+                self._log("[Step 1] 로컬 파일에서 오디오 추출 중...")
                 audio = extract_audio_from_file(self.local_file, tmp_dir)
             audio_size = os.path.getsize(audio.audio_path) / (1024 * 1024)
             self._log(
-                f"✅ [Step 1] {audio.video_title} ({audio_size:.1f} MB, "
+                f"[Step 1] OK: {audio.video_title} ({audio_size:.1f} MB, "
                 f"{int(audio.duration_sec)}s)"
             )
             if audio.upload_date:
-                self._log(f"📅 게시일: {audio.upload_date}")
+                self._log(f"  > 게시일: {audio.upload_date}")
             if audio.chapters:
-                self._log(f"⏱️ 공식 챕터 {len(audio.chapters)}개 감지")
+                self._log(f"  > 공식 챕터 {len(audio.chapters)}개 감지")
             if audio.subtitles_text:
                 self._log(
-                    f"💬 기존 자막 감지 ({len(audio.subtitles_text):,} chars) — "
-                    "화자 이름/챕터 참고에 활용"
+                    f"  > 기존 자막 감지 ({len(audio.subtitles_text):,} chars)"
                 )
             video_ctx = audio.to_context_dict()
             self._set_progress(0.18)
             effective_engine = self.engine
             if audio.duration_sec > 3600 and self.engine == "auto":
                 effective_engine = "assemblyai"
-                self._log("ℹ️ 60분 초과 오디오는 auto 모드에서 AssemblyAI 로 자동 전환합니다.")
+                self._log("  > 60분 초과 -- auto 모드에서 AssemblyAI 로 전환")
             elif audio.duration_sec > 3600 and self.engine == "vibevoice":
                 self._log(
-                    "⚠️ VibeVoice 단일 패스는 최대 60분 처리에 최적화되어 있어 "
-                    "긴 영상은 일부만 전사될 수 있습니다."
+                    "  ! VibeVoice 단일 패스 최대 60분, 긴 영상은 일부만 전사될 수 있음"
                 )
 
             # Step 2
-            self._log("🎙️ [Step 2] 화자 분리 STT 중…")
+            self._log("[Step 2] 화자 분리 STT 중...")
             transcript = transcribe(
                 audio.audio_path,
                 engine=effective_engine,
                 progress=self._log,
             )
             self._log(
-                f"✅ [Step 2] {len(transcript.segments)} 세그먼트, "
+                f"[Step 2] OK: {len(transcript.segments)} 세그먼트, "
                 f"{len(transcript.speakers)} 화자, 엔진={transcript.engine}"
             )
             self._set_progress(0.55)
 
             # Step 3
-            self._log("🌐 [Step 3] LLM 한국어 번역 중…")
+            self._log("[Step 3] LLM 한국어 번역 중...")
             llm_cfg = LLMConfig.from_env(provider=self.provider)
             translated = translate_transcript(
                 transcript, config=llm_cfg, progress=self._log,
                 video_context=video_ctx,
             )
-            self._log(f"✅ [Step 3] 번역 완료 ({len(translated):,} chars)")
+            self._log(f"[Step 3] OK: 번역 완료 ({len(translated):,} chars)")
             self._set_progress(0.78)
 
             # Step 4
-            self._log("📝 [Step 4] GuruNote 요약본 생성 중…")
+            self._log("[Step 4] GuruNote 요약본 생성 중...")
             summary_md = summarize_translation(
                 translated,
                 title=audio.video_title,
@@ -191,11 +189,11 @@ class PipelineWorker:
                 progress=self._log,
                 video_context=video_ctx,
             )
-            self._log("✅ [Step 4] 요약 완료")
+            self._log("[Step 4] OK: 요약 완료")
             self._set_progress(0.90)
 
             # Step 5
-            self._log("📦 [Step 5] 마크다운 조립 중…")
+            self._log("[Step 5] 마크다운 조립 중...")
             full_md = build_gurunote_markdown(
                 title=audio.video_title,
                 webpage_url=audio.webpage_url,
@@ -208,7 +206,7 @@ class PipelineWorker:
                 chapters=audio.chapters,
                 subtitles_source=audio.subtitles_source,
             )
-            self._log("🎉 GuruNote 생성 완료!")
+            self._log("[Done] GuruNote 생성 완료")
             self._set_progress(1.0)
 
             # 히스토리에 자동 저장
@@ -223,7 +221,7 @@ class PipelineWorker:
                 num_speakers=len(transcript.speakers),
                 full_md=full_md,
             )
-            self._log("💾 히스토리에 저장됨")
+            self._log("[Save] 히스토리에 저장됨")
 
             self.result_queue.put(
                 {
@@ -236,7 +234,7 @@ class PipelineWorker:
                 }
             )
         except Exception as exc:
-            self.msg_queue.put(f"❌ 오류: {exc}")
+            self.msg_queue.put(f"[Error] {exc}")
             # 실패도 히스토리에 기록 (로그 파일은 이미 저장됨)
             save_job(
                 self.job_id,
@@ -278,7 +276,7 @@ class HistoryDialog(ctk.CTkToplevel):
 
     def __init__(self, parent: ctk.CTk) -> None:
         super().__init__(parent)
-        self.title("📂 GuruNote 히스토리")
+        self.title("GuruNote History")
         self.geometry("700x520")
         self.transient(parent)
         self.grab_set()
@@ -291,7 +289,7 @@ class HistoryDialog(ctk.CTkToplevel):
         top.pack(fill="x", padx=16, pady=(16, 8))
         ctk.CTkLabel(top, text="작업 히스토리",
                      font=ctk.CTkFont(size=16, weight="bold")).pack(side="left")
-        ctk.CTkButton(top, text="🔄 새로고침", width=100, height=28,
+        ctk.CTkButton(top, text="Refresh", width=100, height=28,
                       command=self._refresh).pack(side="right")
 
         self._scroll = ctk.CTkScrollableFrame(self)
@@ -337,14 +335,14 @@ class HistoryDialog(ctk.CTkToplevel):
         btn_frame.grid(row=0, column=2, padx=(4, 10), pady=8)
 
         if job.get("has_markdown"):
-            ctk.CTkButton(btn_frame, text="📥", width=32, height=28,
+            ctk.CTkButton(btn_frame, text="Save", width=42, height=28,
                           command=lambda jid=job_id, t=title: self._save_md(jid, t)
                           ).pack(side="left", padx=2)
-        ctk.CTkButton(btn_frame, text="📋", width=32, height=28,
+        ctk.CTkButton(btn_frame, text="Log", width=38, height=28,
                       fg_color="gray35",
                       command=lambda jid=job_id: self._show_log(jid)
                       ).pack(side="left", padx=2)
-        ctk.CTkButton(btn_frame, text="🗑", width=32, height=28,
+        ctk.CTkButton(btn_frame, text="Del", width=38, height=28,
                       fg_color="gray35", hover_color=C_DANGER,
                       command=lambda jid=job_id: self._delete(jid)
                       ).pack(side="left", padx=2)
@@ -367,7 +365,7 @@ class HistoryDialog(ctk.CTkToplevel):
     def _show_log(self, job_id: str) -> None:
         log = get_job_log(job_id) or "(로그 없음)"
         win = ctk.CTkToplevel(self)
-        win.title(f"📋 로그 — {job_id}")
+        win.title(f"Log - {job_id}")
         win.geometry("600x400")
         tb = ctk.CTkTextbox(win, font=ctk.CTkFont(size=12), wrap="word")
         tb.pack(fill="both", expand=True, padx=10, pady=10)
@@ -437,7 +435,7 @@ class SettingsDialog(ctk.CTkToplevel):
             if is_secret:
                 toggle_btn = ctk.CTkButton(
                     container,
-                    text="👁",
+                    text="Show",
                     width=36,
                     height=28,
                     command=lambda k=env_key: self._toggle_show(k),
@@ -454,14 +452,14 @@ class SettingsDialog(ctk.CTkToplevel):
 
         ctk.CTkButton(
             btn_frame,
-            text="💾 저장",
+            text="Save",
             width=120,
             font=ctk.CTkFont(weight="bold"),
             command=self._on_save,
         ).pack(side="right")
         ctk.CTkButton(
             btn_frame,
-            text="🧪 연결 테스트",
+            text="Test",
             width=120,
             fg_color="gray30",
             hover_color="gray40",
@@ -469,7 +467,7 @@ class SettingsDialog(ctk.CTkToplevel):
         ).pack(side="left")
         ctk.CTkButton(
             btn_frame,
-            text="🔄 업데이트",
+            text="Update",
             width=120,
             fg_color="gray30",
             hover_color="gray40",
@@ -562,28 +560,39 @@ class GuruNoteApp(ctk.CTk):
 
     # ── 사이드바 ─────────────────────────────────────────────
     def _build_sidebar(self):
-        sb = ctk.CTkFrame(self, fg_color=C_SIDEBAR, width=200, corner_radius=0)
+        sb = ctk.CTkFrame(self, fg_color=C_SIDEBAR, width=220, corner_radius=0)
         sb.grid(row=0, column=0, sticky="nsew")
         sb.grid_propagate(False)
-        sb.grid_rowconfigure(4, weight=1)
+        sb.grid_rowconfigure(5, weight=1)
         sb.grid_columnconfigure(0, weight=1)
-        brand = ctk.CTkFrame(sb, fg_color="transparent")
-        brand.grid(row=0, column=0, padx=16, pady=(24, 4), sticky="ew")
-        ctk.CTkLabel(brand, text="🎙️", font=ctk.CTkFont(size=32)).pack(side="left")
-        ctk.CTkLabel(brand, text=" GuruNote", font=ctk.CTkFont(size=20, weight="bold"),
-                     text_color=C_TEXT).pack(side="left", padx=(4, 0))
-        ctk.CTkLabel(sb, text="글로벌 IT/AI 구루의 인사이트",
-                     font=ctk.CTkFont(size=11), text_color=C_TEXT_DIM
-                     ).grid(row=1, column=0, padx=20, sticky="w", pady=(0, 20))
-        for i, (txt, cmd) in enumerate([("⚙️  설정", self._on_settings),
-                                         ("📂  히스토리", self._on_history),
-                                         ("🔄  업데이트", self._on_update_sb)]):
-            ctk.CTkButton(sb, text=txt, anchor="w", height=36, fg_color="transparent",
-                          hover_color=C_SURFACE_HI, text_color=C_TEXT_DIM,
-                          font=ctk.CTkFont(size=13), command=cmd
-                          ).grid(row=2 + i, column=0, padx=10, pady=2, sticky="ew")
-        ctk.CTkLabel(sb, text="v0.2.0", font=ctk.CTkFont(size=10),
-                     text_color=C_TEXT_DIM).grid(row=5, column=0, padx=20, pady=(0, 16), sticky="sw")
+
+        # 브랜드 — 세로 배치 (잘림 방지)
+        ctk.CTkLabel(
+            sb, text="GuruNote",
+            font=ctk.CTkFont(size=22, weight="bold"), text_color=C_TEXT,
+        ).grid(row=0, column=0, padx=20, pady=(28, 0), sticky="w")
+        ctk.CTkLabel(
+            sb, text="IT/AI Podcast Summarizer",
+            font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
+        ).grid(row=1, column=0, padx=20, sticky="w", pady=(2, 20))
+
+        # 네비게이션 — 이모지 대신 텍스트 prefix (Windows 호환)
+        nav_items = [
+            ("  Settings", self._on_settings),
+            ("  History", self._on_history),
+            ("  Update", self._on_update_sb),
+        ]
+        for i, (txt, cmd) in enumerate(nav_items):
+            ctk.CTkButton(
+                sb, text=txt, anchor="w", height=36,
+                fg_color="transparent", hover_color=C_SURFACE_HI,
+                text_color=C_TEXT_DIM, font=ctk.CTkFont(size=13),
+                command=cmd,
+            ).grid(row=2 + i, column=0, padx=10, pady=2, sticky="ew")
+
+        ctk.CTkLabel(
+            sb, text="v0.2.0", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
+        ).grid(row=6, column=0, padx=20, pady=(0, 16), sticky="sw")
 
     # ── 메인 영역 ────────────────────────────────────────────
     def _build_main(self):
@@ -601,11 +610,11 @@ class GuruNoteApp(ctk.CTk):
         c.grid_columnconfigure(1, weight=1)
         ctk.CTkLabel(c, text="오디오 소스", font=ctk.CTkFont(size=14, weight="bold"),
                      text_color=C_TEXT).grid(row=0, column=0, columnspan=4, padx=16, pady=(14, 8), sticky="w")
-        ctk.CTkButton(c, text="📁", width=40, height=40, corner_radius=8,
+        ctk.CTkButton(c, text="File", width=44, height=40, corner_radius=8,
                       fg_color=C_SURFACE_HI, hover_color=C_BORDER,
                       command=self._on_pick_file).grid(row=1, column=0, padx=(16, 6), pady=(0, 14))
         self._url_entry = ctk.CTkEntry(c, height=40, corner_radius=8,
-                                       placeholder_text="유튜브 URL 붙여넣기 또는 📁 로컬 파일 선택",
+                                       placeholder_text="유튜브 URL 붙여넣기 또는 File 버튼으로 로컬 파일 선택",
                                        fg_color=C_BG, border_color=C_BORDER, text_color=C_TEXT)
         self._url_entry.grid(row=1, column=1, padx=4, pady=(0, 14), sticky="ew")
         of = ctk.CTkFrame(c, fg_color="transparent")
@@ -664,7 +673,7 @@ class GuruNoteApp(ctk.CTk):
         top.grid_columnconfigure(0, weight=1)
         self._title_label = ctk.CTkLabel(top, text="결과", font=ctk.CTkFont(size=14, weight="bold"), text_color=C_TEXT)
         self._title_label.grid(row=0, column=0, sticky="w")
-        self._save_btn = ctk.CTkButton(top, text="📥 마크다운 저장", height=32, width=140, corner_radius=8,
+        self._save_btn = ctk.CTkButton(top, text="Save .md", height=32, width=120, corner_radius=8,
                                        fg_color=C_SURFACE_HI, hover_color=C_PRIMARY, state="disabled", command=self._on_save)
         self._save_btn.grid(row=0, column=1, sticky="e")
         self._tabview = ctk.CTkTabview(c, height=300, corner_radius=8, fg_color=C_SURFACE,
@@ -672,16 +681,16 @@ class GuruNoteApp(ctk.CTk):
                                        segmented_button_selected_color=C_PRIMARY,
                                        segmented_button_unselected_color=C_SURFACE_HI)
         self._tabview.grid(row=1, column=0, padx=12, pady=(0, 12), sticky="nsew")
-        self._tab_summary = self._tabview.add("📌 요약본")
-        self._tab_translated = self._tabview.add("🇰🇷 번역")
-        self._tab_original = self._tabview.add("🇺🇸 원문")
-        self._tab_log = self._tabview.add("📋 로그")
+        self._tab_summary = self._tabview.add("Summary")
+        self._tab_translated = self._tabview.add("Korean")
+        self._tab_original = self._tabview.add("English")
+        self._tab_log = self._tabview.add("Log")
         self._summary_text = self._make_tb(self._tab_summary)
         self._translated_text = self._make_tb(self._tab_translated)
         self._original_text = self._make_tb(self._tab_original)
         self._log_text = self._make_tb(self._tab_log)
         self._set_text(self._summary_text,
-                       "🎙️ 유튜브 URL 또는 로컬 파일을 선택하고\n"
+                       "유튜브 URL 또는 로컬 파일을 선택하고\n"
                        "'GuruNote 생성하기' 를 눌러주세요.\n\n"
                        "화자 분리된 한국어 요약본이 이 자리에 표시됩니다.")
 
@@ -732,7 +741,7 @@ class GuruNoteApp(ctk.CTk):
             return
         self._local_file_path = path
         self._url_entry.delete(0, "end")
-        self._url_entry.insert(0, f"📁 {Path(path).name}")
+        self._url_entry.insert(0, f"[File] {Path(path).name}")
 
     def _check_api_keys(self):
         prov = self._llm_var.get()
@@ -774,7 +783,7 @@ class GuruNoteApp(ctk.CTk):
             return False
         if choice:
             # 예 → 설치 시도
-            self._append_log("📦 VibeVoice-ASR 설치를 시작합니다…")
+            self._append_log("[Install] VibeVoice-ASR 설치를 시작합니다...")
             ok = install_vibevoice(progress=self._append_log)
             if ok:
                 return True
@@ -786,21 +795,21 @@ class GuruNoteApp(ctk.CTk):
             )
             if fallback:
                 self._stt_var.set("assemblyai")
-                self._append_log("🔄 STT 엔진을 AssemblyAI 로 전환했습니다.")
+                self._append_log("[Switch] STT -> AssemblyAI")
                 return True
             return False
         else:
             # 아니오 → AssemblyAI 전환
             self._stt_var.set("assemblyai")
-            self._append_log("🔄 STT 엔진을 AssemblyAI 로 전환했습니다.")
+            self._append_log("[Switch] STT -> AssemblyAI")
             return True
 
     def _on_run(self):
         txt = self._url_entry.get().strip()
         has_local = bool(self._local_file_path and is_supported_local_file(self._local_file_path))
-        use_local = has_local and txt.startswith("📁")
+        use_local = has_local and txt.startswith("[File]")
         if not use_local and not is_probably_youtube_url(txt):
-            messagebox.showwarning("소스 필요", "유튜브 URL 또는 📁 로컬 파일을 선택해주세요.")
+            messagebox.showwarning("소스 필요", "유튜브 URL 또는 [File] 로컬 파일을 선택해주세요.")
             return
         if not self._check_api_keys():
             return
@@ -850,7 +859,7 @@ class GuruNoteApp(ctk.CTk):
         self._run_btn.configure(state="normal", text="▶  GuruNote 생성하기")
         self._stop_btn.configure(state="disabled")
         if not result.get("ok"):
-            self._title_label.configure(text="❌ 오류 발생")
+            self._title_label.configure(text="[Error] 오류 발생")
             messagebox.showerror("오류", result.get("error", "알 수 없는 오류"))
             return
         self._result = result
@@ -862,15 +871,15 @@ class GuruNoteApp(ctk.CTk):
         self._set_text(self._translated_text, result["translated"])
         lines = [f"[{_format_ts(s.start)}] Speaker {s.speaker}: {s.text}" for s in transcript.segments]
         self._set_text(self._original_text, "\n\n".join(lines))
-        self._tabview.set("📌 요약본")
+        self._tabview.set("Summary")
         self._set_progress(1.0)
-        self._last_log_label.configure(text="🎉 GuruNote 생성 완료!")
+        self._last_log_label.configure(text="[Done] GuruNote 생성 완료")
 
     def _on_stop(self):
         if self._worker:
             self._worker.request_stop()
             self._stop_btn.configure(state="disabled")
-            self._append_log("⏹ 중지 요청됨")
+            self._append_log("[Stop] 중지 요청됨")
 
     def _on_save(self):
         if not self._result:

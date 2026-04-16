@@ -7,6 +7,15 @@
 
 ## [Unreleased]
 
+### Added
+- **macOS Apple Silicon 로컬 STT 준비 (Phase 1/3)** — 의존성 분리 + 설치 스크립트
+  플랫폼 분기. `requirements-mac.txt` (mlx-whisper, pyannote.audio, onnxruntime),
+  `requirements-gpu.txt` (whisperx) 신설. `requirements.txt` 는 공통 의존성만 유지.
+  `setup.sh` 가 `uname -s/-m` 으로 Darwin arm64 를 감지해 MLX 스택을 자동 설치
+  (NVIDIA → CUDA WhisperX, Apple Silicon → MLX, 기타 → AssemblyAI Cloud 만).
+  `setup.bat` 는 NVIDIA 감지 시에만 `requirements-gpu.txt` 추가 설치하도록 정리.
+  실제 STT 라우팅 코드는 Phase 2 에서 추가 예정.
+
 ## [0.5.0] - 2026-04-16
 
 ### Added

@@ -228,10 +228,12 @@ def _select_quantization() -> str:
         import torch
         if torch.cuda.is_available():
             vram_gb = torch.cuda.get_device_properties(0).total_mem / (1024 ** 3)
+            if vram_gb >= 80:
+                return "none"   # A100 80GB 등
             if vram_gb >= 48:
-                return "none"
-            if vram_gb >= 24:
-                return "8bit"
+                return "8bit"   # A6000, A100 40GB 등
+            # 32GB 이하 (RTX 5090/4090 포함) → 4-bit 필수
+            # 모델 ~4GB + 오디오 인코딩 + KV cache 가 32GB 를 쉽게 채움
     except Exception:  # noqa: BLE001
         pass
     return "4bit"

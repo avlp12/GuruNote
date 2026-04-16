@@ -7,6 +7,29 @@
 
 ## [Unreleased]
 
+### Added
+- **하드웨어 프리셋 자동 감지** (`gurunote/hardware.py` 신규) —
+  NVIDIA GPU VRAM (`torch.cuda.get_device_properties`) 와 Apple Silicon
+  Unified Memory (`sysctl hw.memsize`) 를 감지해 8개 프리셋 중 가장 적합한
+  것을 추천 (NVIDIA 24/12/8/6GB · Apple Silicon Ultra/Pro-Max/base · Cloud only).
+  각 프리셋이 WhisperX 모델/배치 크기, MLX 모델, LLM Temperature, 번역/요약
+  Max Tokens 를 권장값으로 묶어 제공.
+- **Settings 다이얼로그 하드웨어 프리셋 드롭다운** (`gui.py`) — 상단에 "하드웨어
+  프리셋" 드롭다운 추가. 선택 시 STT/LLM 필드 일괄 자동 채움. "자동 감지 (권장)"
+  또는 "직접 입력 (custom)" 옵션 지원. 현재 환경 감지 결과를 드롭다운 옆
+  라벨에 표시 (예: "Apple Silicon 감지됨 (Unified Memory ~128GB)"). 개별 필드는
+  드롭다운 이후에도 수동 override 가능.
+- **MLX Whisper 모델 설정 필드** (`gui.py`) — Apple Silicon 사용자를 위한
+  `MLX_WHISPER_MODEL` 환경변수를 Settings 다이얼로그에 추가. 기본값
+  `mlx-community/whisper-large-v3-mlx`.
+
+### Changed
+- **Settings 다이얼로그 LLM Provider 드롭다운화** (`gui.py`) — 이전엔 자유
+  텍스트 입력이었던 "LLM Provider" 를 CTkOptionMenu 로 변경해 오타/오설정을
+  방지. 선택지: `openai` / `anthropic` / `gemini` / `openai_compatible`.
+  `_entries` 딕셔너리가 CTkEntry 와 CTkOptionMenu(StringVar) 를 혼재하여 보관
+  하도록 타입 확장 (`.get()` 인터페이스 통일).
+
 ### Fixed
 - **ffmpeg/ffprobe 누락 감지 + 친절한 에러** (`gurunote/audio.py`,
   `setup.sh`, `setup.bat`) — yt-dlp 오디오 추출에 ffmpeg 가 필요하지만 macOS 기본

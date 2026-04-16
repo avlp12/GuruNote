@@ -15,6 +15,7 @@ import gc
 import os
 import platform
 import warnings
+from pathlib import Path
 
 # Windows HuggingFace 심볼릭 링크 문제 방지:
 # Developer Mode 미활성 시 symlink 생성이 실패(WinError 1314)하므로
@@ -83,17 +84,24 @@ def transcribe(
         _assert_transcript_not_empty(result)
         return result
 
-    # auto: WhisperX 우선, 실패 시 AssemblyAI 폴백
-    try:
-        log("[auto] WhisperX 로 전사를 시도합니다.")
-        result = _transcribe_whisperx(audio_path, log=log, hotwords=hotwords)
-        _assert_transcript_not_empty(result)
-        return result
-    except Exception as exc:  # noqa: BLE001
-        log(f"WhisperX 실패 ({exc}). AssemblyAI 로 폴백합니다.")
-        result = _transcribe_assemblyai(audio_path, log=log)
-        _assert_transcript_not_empty(result)
-        return result
+    # auto: GPU 있으면 WhisperX, 없으면 AssemblyAI 직행
+    if _check_cuda_ready():
+        try:
+            log("[auto] GPU 감지 — WhisperX 로 전사를 시도합니다.")
+            result = _transcribe_whisperx(audio_path, log=log, hotwords=hotwords)
+            _assert_transcript_not_empty(result)
+            return result
+        except Exception as exc:  # noqa: BLE001
+            log(f"WhisperX 실패 ({exc}). AssemblyAI 로 폴백합니다.")
+    else:
+        hint = ""
+        if _has_nvidia_gpu():
+            hint = " (CUDA PyTorch 미설치 — pip install torch --index-url https://download.pytorch.org/whl/cu128)"
+        log(f"[auto] GPU 미사용{hint} — AssemblyAI Cloud API 로 직행합니다.")
+
+    result = _transcribe_assemblyai(audio_path, log=log)
+    _assert_transcript_not_empty(result)
+    return result
 
 
 def _assert_transcript_not_empty(transcript: Transcript) -> None:
@@ -140,58 +148,130 @@ def install_whisperx(progress: Optional[ProgressFn] = None) -> bool:
         return False
 
 
+# faster-whisper 모델의 HuggingFace repo 매핑
+_WHISPER_REPO_MAP = {
+    "tiny": "Systran/faster-whisper-tiny",
+    "base": "Systran/faster-whisper-base",
+    "small": "Systran/faster-whisper-small",
+    "medium": "Systran/faster-whisper-medium",
+    "large-v2": "Systran/faster-whisper-large-v2",
+    "large-v3": "Systran/faster-whisper-large-v3",
+    "distil-large-v3": "Systran/faster-distil-whisper-large-v3",
+    "distil-large-v2": "Systran/faster-distil-whisper-large-v2",
+}
+
+_MODELS_DIR = Path.home() / ".gurunote" / "models"
+
+
+def _has_nvidia_gpu() -> bool:
+    """nvidia-smi 가 존재하면 NVIDIA GPU 가 있다고 판단."""
+    import shutil
+    return shutil.which("nvidia-smi") is not None
+
+
+def _check_cuda_ready() -> bool:
+    """torch.cuda 가 사용 가능한지 확인."""
+    try:
+        import torch
+        return torch.cuda.is_available()
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _ensure_model_local(model_name: str, log: ProgressFn) -> str:
+    """
+    WhisperX 모델을 symlink 없이 로컬 디렉토리에 다운로드.
+
+    Windows 의 HuggingFace 캐시 symlink 문제(WinError 1314)를 근본적으로 회피:
+    `snapshot_download(local_dir_use_symlinks=False)` 로 파일을 직접 복사.
+    이미 다운로드 완료된 경우 즉시 로컬 경로를 반환.
+
+    Returns:
+        모델이 저장된 로컬 디렉토리 경로 (WhisperX 에 model_path 로 전달)
+    """
+    repo_id = _WHISPER_REPO_MAP.get(model_name)
+    if not repo_id:
+        # 매핑에 없는 이름은 직접 경로 또는 커스텀 repo 로 간주
+        return model_name
+
+    local_dir = _MODELS_DIR / model_name
+    marker = local_dir / "config.json"
+
+    if marker.exists():
+        return str(local_dir)
+
+    # 최초 다운로드
+    log(f"모델 다운로드 중 ({repo_id} → {local_dir})...")
+    from huggingface_hub import snapshot_download  # type: ignore
+
+    snapshot_download(
+        repo_id,
+        local_dir=str(local_dir),
+        local_dir_use_symlinks=False,  # 핵심: symlink 대신 파일 복사
+    )
+    log("모델 다운로드 완료")
+    return str(local_dir)
+
+
 def _transcribe_whisperx(
     audio_path: str, log: ProgressFn, hotwords: List[str]
 ) -> Transcript:
     """WhisperX 로 전사 + 화자 분리."""
     import torch
 
-    # pyannote / torchcodec 의 무해한 경고 억제
+    # pyannote / torchcodec / huggingface 의 무해한 경고 억제
     warnings.filterwarnings("ignore", message=".*torchcodec.*")
     warnings.filterwarnings("ignore", message=".*symlink.*")
+    warnings.filterwarnings("ignore", message=".*hf_xet.*")
+    warnings.filterwarnings("ignore", category=UserWarning, module="pyannote")
+    warnings.filterwarnings("ignore", category=UserWarning, module="huggingface_hub")
 
     import whisperx  # type: ignore
 
-    # 디바이스 자동 감지
-    if torch.cuda.is_available():
-        device = "cuda"
-        compute_type = "float16"
-    else:
-        device = "cpu"
-        compute_type = "int8"
+    # GPU 확인 — CUDA 사용 불가면 WhisperX 를 건너뛰고 AssemblyAI 로 유도
+    if not torch.cuda.is_available():
+        hint = ""
+        if _has_nvidia_gpu():
+            hint = (
+                "\nNVIDIA GPU 가 있지만 PyTorch 가 CPU 버전입니다.\n"
+                "터미널에서 다음 명령 후 앱을 재시작하세요:\n"
+                "  pip install torch --index-url https://download.pytorch.org/whl/cu128"
+            )
+        raise RuntimeError(
+            f"WhisperX 는 GPU 가 필요합니다 (CPU 모드는 비실용적).{hint}\n"
+            "AssemblyAI Cloud API 를 사용하세요 (Settings 에서 ASSEMBLYAI_API_KEY 설정)."
+        )
+
+    device = "cuda"
+    compute_type = "float16"
 
     model_name = os.environ.get("WHISPERX_MODEL", "distil-large-v3")
     batch_size = int(os.environ.get("WHISPERX_BATCH_SIZE", "16"))
-
-    # 핫워드를 initial_prompt 로 주입 (Whisper 의 디코더 바이어스)
     initial_prompt = ", ".join(hotwords[:30]) if hotwords else None
+
+    # Windows symlink 문제 완전 우회:
+    # HuggingFace 기본 캐시(~/.cache/huggingface/)는 symlink 사용 → WinError 1314.
+    # 대신 ~/.gurunote/models/ 에 local_dir_use_symlinks=False 로 직접 다운로드하고
+    # 로컬 경로를 WhisperX 에 전달하면 symlink 을 아예 거치지 않는다.
+    model_path = _ensure_model_local(model_name, log)
+
+    # WhisperX 의 initial_prompt 는 load_model 의 asr_options 로 전달해야 함
+    # (transcribe() 에 직접 넣으면 FasterWhisperPipeline 이 거부)
+    asr_options = {}
+    if initial_prompt:
+        asr_options["initial_prompt"] = initial_prompt
 
     # 1. 전사
     log(f"WhisperX 모델 로딩 ({model_name}, {device}, {compute_type})...")
-    try:
-        model = whisperx.load_model(
-            model_name, device, compute_type=compute_type,
-            language="en",
-        )
-    except OSError as exc:
-        # Windows 심볼릭 링크 권한 에러 (WinError 1314)
-        if "1314" in str(exc) or "privilege" in str(exc).lower():
-            raise RuntimeError(
-                "Windows 에서 모델 캐시 생성 시 심볼릭 링크 권한이 부족합니다.\n\n"
-                "해결 방법 (택 1):\n"
-                "  1) Windows 설정 → 개발자 모드 활성화\n"
-                "     (설정 > 업데이트 및 보안 > 개발자용)\n"
-                "  2) GuruNote 를 관리자 권한으로 실행\n"
-                "  3) PowerShell(관리자): fsutil behavior set SymlinkEvaluation L2L:1"
-            ) from exc
-        raise
+    model = whisperx.load_model(
+        model_path, device, compute_type=compute_type,
+        language="en",
+        asr_options=asr_options,
+    )
 
     log("전사 중 (청크 분할 처리)...")
     audio = whisperx.load_audio(audio_path)
-    result = model.transcribe(
-        audio, batch_size=batch_size,
-        initial_prompt=initial_prompt,
-    )
+    result = model.transcribe(audio, batch_size=batch_size)
     log(f"전사 완료 — {len(result.get('segments', []))} 세그먼트")
 
     # 2. 워드 레벨 타임스탬프 정렬
@@ -268,7 +348,10 @@ def _transcribe_assemblyai(audio_path: str, log: ProgressFn) -> Transcript:
     import assemblyai as aai  # type: ignore
 
     aai.settings.api_key = api_key
-    config = aai.TranscriptionConfig(speaker_labels=True)
+    config = aai.TranscriptionConfig(
+        speaker_labels=True,
+        speech_model=aai.SpeechModel.best,
+    )
 
     log("AssemblyAI 에 업로드 후 화자 분리 전사 중...")
     transcriber = aai.Transcriber()

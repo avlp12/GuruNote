@@ -17,8 +17,14 @@ yt-dlp>=2024.3.10
 # Primary: WhisperX (Distil-Whisper + pyannote 화자 분리)
 #   청크 분할 처리로 VRAM ~6GB 에서 안정 동작.
 #   화자 분리에 pyannote 사용 (HuggingFace 토큰 필요).
+#
+# whisperx 가 torch + faster-whisper + pyannote 를 의존성으로 자동 설치.
+# GPU 없으면 AssemblyAI Cloud API 로 자동 라우팅됩니다.
+#
+# NVIDIA GPU 사용자: whisperx 설치 후 CUDA PyTorch 를 덮어쓰세요:
+#   pip install torch --index-url https://download.pytorch.org/whl/cu128
+#   (이미 CUDA torch 가 설치돼 있다면 이 단계 불필요)
 whisperx>=3.1
-torch>=2.2
 
 # Fallback: AssemblyAI Cloud API
 assemblyai>=0.26

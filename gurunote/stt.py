@@ -137,9 +137,14 @@ def transcribe(
 
     # auto: 하드웨어에 따라 최적 엔진 선택
     device = _detect_device()
-    if device == "cpu":
-        # CPU 에서 VibeVoice 7B 는 비실용적 (수십 분~수 시간 소요)
-        log("[auto] GPU 미감지 — AssemblyAI Cloud API 로 직행합니다.")
+    quant = _select_quantization()
+
+    if device == "cpu" or quant == "skip":
+        # CPU 또는 Apple Silicon 메모리 부족 → VibeVoice 건너뜀
+        reason = "GPU 미감지" if device == "cpu" else (
+            f"Apple Silicon 통합 메모리 부족 ({_get_system_memory_gb():.0f}GB < {_MPS_MIN_MEMORY_GB:.0f}GB)"
+        )
+        log(f"[auto] {reason} — AssemblyAI Cloud API 로 직행합니다.")
         result = _transcribe_assemblyai(audio_path, log=log)
         _assert_transcript_not_empty(result)
         return result
@@ -221,6 +226,39 @@ def _detect_device() -> str:
     return "cpu"
 
 
+def _get_system_memory_gb() -> float:
+    """
+    시스템 총 RAM(GB). Apple Silicon 의 통합 메모리 크기 판단에 사용.
+
+    macOS: sysctl hw.memsize
+    Linux: os.sysconf
+    Windows: 해당 없음 (CUDA VRAM 으로 별도 관리)
+    """
+    try:
+        if platform.system() == "Darwin":
+            import subprocess
+            r = subprocess.run(
+                ["sysctl", "-n", "hw.memsize"],
+                capture_output=True, text=True, timeout=5,
+            )
+            if r.returncode == 0 and r.stdout.strip():
+                return int(r.stdout.strip()) / (1024 ** 3)
+    except Exception:  # noqa: BLE001
+        pass
+    # Linux fallback (os.sysconf)
+    try:
+        pages = os.sysconf("SC_PHYS_PAGES")
+        page_size = os.sysconf("SC_PAGE_SIZE")
+        return (pages * page_size) / (1024 ** 3)
+    except Exception:  # noqa: BLE001
+        pass
+    return 0.0
+
+
+# VibeVoice 7B fp16 = ~14GB. 시스템 OS 가 ~4GB 사용하므로 최소 18GB 필요.
+_MPS_MIN_MEMORY_GB = 18.0
+
+
 def _select_quantization() -> str:
     """
     VRAM + 하드웨어에 맞는 양자화 레벨을 자동 선택한다.
@@ -232,11 +270,15 @@ def _select_quantization() -> str:
       - "auto"           : 하드웨어 기준 자동 (기본)
 
     자동 기준:
-      - Apple Silicon (MPS)  → "none" (bitsandbytes 미지원, fp16 로딩)
-      - CPU                  → "none" (양자화 불필요, CPU 추론 자체가 비권장)
-      - CUDA VRAM ≥ 80GB     → "none" (bf16)
-      - CUDA VRAM ≥ 48GB     → "8bit"
-      - CUDA 기타            → "4bit"
+      - Apple Silicon (MPS) 통합 메모리 < 18GB → "skip" (VibeVoice 불가)
+      - Apple Silicon (MPS) 통합 메모리 ≥ 18GB → "none" (fp16, bitsandbytes 미지원)
+      - CPU → "none" (CPU 추론 자체가 비권장)
+      - CUDA VRAM ≥ 80GB → "none" (bf16)
+      - CUDA VRAM ≥ 48GB → "8bit"
+      - CUDA 기타 → "4bit"
+
+    Returns:
+      "none", "4bit", "8bit", 또는 "skip" (VibeVoice 사용 불가)
     """
     user = os.environ.get("VIBEVOICE_QUANTIZATION", "auto").lower().strip()
     if user in ("none", "bf16"):
@@ -250,8 +292,14 @@ def _select_quantization() -> str:
 
     device = _detect_device()
 
-    # MPS / CPU → bitsandbytes 가 지원하지 않으므로 양자화 불가
-    if device != "cuda":
+    if device == "mps":
+        # Apple Silicon — 통합 메모리 크기로 판단
+        mem_gb = _get_system_memory_gb()
+        if mem_gb < _MPS_MIN_MEMORY_GB:
+            return "skip"  # fp16 7B (~14GB) + OS (~4GB) = 최소 18GB 필요
+        return "none"  # fp16 (bitsandbytes 미지원)
+
+    if device == "cpu":
         return "none"
 
     # CUDA: VRAM 감지
@@ -283,6 +331,13 @@ def _load_vibevoice():
     model_id = os.environ.get("VIBEVOICE_MODEL_ID", "microsoft/VibeVoice-ASR")
     device = _detect_device()
     quant = _select_quantization()
+
+    if quant == "skip":
+        raise RuntimeError(
+            f"Apple Silicon 통합 메모리({_get_system_memory_gb():.0f}GB)가 "
+            f"VibeVoice 7B 실행에 부족합니다 (최소 {_MPS_MIN_MEMORY_GB:.0f}GB 필요).\n"
+            "STT 엔진을 'assemblyai' 로 변경해주세요."
+        )
 
     # 디바이스별 attention 구현 선택
     if device == "cuda":
@@ -545,13 +600,17 @@ def _normalize_vibevoice_segments(raw_segments, raw_text: str) -> List[Segment]:
 
 
 def _get_gpu_info() -> str:
-    """현재 GPU 이름과 VRAM 을 사람이 읽을 수 있는 문자열로 반환."""
+    """현재 GPU/디바이스 정보를 사람이 읽을 수 있는 문자열로 반환."""
+    device = _detect_device()
     try:
         import torch
-        if torch.cuda.is_available():
+        if device == "cuda" and torch.cuda.is_available():
             name = torch.cuda.get_device_name(0)
             total = torch.cuda.get_device_properties(0).total_mem / (1024 ** 3)
-            return f"{name}, {total:.1f} GB"
+            return f"{name}, {total:.1f} GB VRAM"
+        if device == "mps":
+            mem = _get_system_memory_gb()
+            return f"Apple Silicon MPS, {mem:.0f} GB 통합 메모리"
     except Exception:  # noqa: BLE001
         pass
     return "정보 없음"

@@ -15,6 +15,10 @@ import os
 import re
 from typing import Callable, List, Optional
 
+# PyTorch CUDA 메모리 단편화 방지 — OOM 에러 메시지에서도 권장하는 설정.
+# torch import 전에 설정해야 효과가 있다.
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+
 from gurunote.types import Segment, Transcript
 
 # 진행 상태 콜백 시그니처: (메시지: str) -> None
@@ -165,21 +169,22 @@ def _load_vibevoice():
 def _transcribe_vibevoice(
     audio_path: str, log: ProgressFn, hotwords: List[str]
 ) -> Transcript:
-    """VibeVoice-ASR 로 전사."""
+    """VibeVoice-ASR 로 전사. CUDA OOM 발생 시 토큰 수를 줄여 재시도."""
     import torch
 
     log("📦 VibeVoice 모델 로딩 중 (최초 1회는 수 GB 다운로드 필요)…")
     model, processor, device = _load_vibevoice()
     log(f"✅ 모델 로딩 완료 (device={device})")
 
+    # 추론 전 GPU 캐시 정리 — 이전 실행 잔여 메모리 반환
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
     log("🎧 오디오 인코딩 중…")
-    # 핫워드를 VibeVoice 의 `context_info` 로 주입 — 프로세서가 user prompt 의
-    # "extra info" 자리에 그대로 흘려보내 도메인 용어/고유명사 인식률을 끌어올린다.
     context_info = _build_context_info(hotwords)
     if context_info:
         log(f"🧠 도메인 핫워드 {len(hotwords)} 개를 컨텍스트로 주입합니다.")
 
-    # processor 가 파일 경로 리스트를 받아 자동으로 디코딩한다.
     inputs = processor(
         audio=[audio_path],
         sampling_rate=None,
@@ -193,26 +198,71 @@ def _transcribe_vibevoice(
         for k, v in inputs.items()
     }
 
-    log("🧠 VibeVoice 추론 중 (긴 영상은 수 분 소요)…")
-    with torch.no_grad():
-        output_ids = model.generate(
-            **inputs,
-            max_new_tokens=32768,
-            do_sample=False,
-            num_beams=1,
-            pad_token_id=processor.pad_id,
-            eos_token_id=processor.tokenizer.eos_token_id,
-        )
+    # OOM 방어: 처음 32768 토큰으로 시도 → 실패 시 16384 → 8192 순으로 축소 재시도.
+    # 토큰 수를 줄이면 긴 영상의 후반부가 잘릴 수 있지만 전체 크래시보다 낫다.
+    token_attempts = [32768, 16384, 8192]
+    raw_text = ""
+    for attempt_idx, max_tokens in enumerate(token_attempts):
+        try:
+            if attempt_idx > 0:
+                log(f"🔄 max_new_tokens={max_tokens} 으로 재시도합니다…")
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
 
-    input_length = inputs["input_ids"].shape[1]
-    generated = output_ids[0, input_length:]
-    eos_pos = (generated == processor.tokenizer.eos_token_id).nonzero(as_tuple=True)[0]
-    if len(eos_pos) > 0:
-        generated = generated[: eos_pos[0] + 1]
-    raw_text = processor.decode(generated, skip_special_tokens=True)
+            log(f"🧠 VibeVoice 추론 중 (max_tokens={max_tokens})…")
+            with torch.no_grad():
+                output_ids = model.generate(
+                    **inputs,
+                    max_new_tokens=max_tokens,
+                    do_sample=False,
+                    num_beams=1,
+                    pad_token_id=processor.pad_id,
+                    eos_token_id=processor.tokenizer.eos_token_id,
+                )
 
-    # 추론 완료 후 GPU 메모리 즉시 반환 — OOM 위험을 줄인다.
-    del inputs, output_ids, generated
+            input_length = inputs["input_ids"].shape[1]
+            generated = output_ids[0, input_length:]
+            eos_pos = (generated == processor.tokenizer.eos_token_id).nonzero(as_tuple=True)[0]
+            if len(eos_pos) > 0:
+                generated = generated[: eos_pos[0] + 1]
+            raw_text = processor.decode(generated, skip_special_tokens=True)
+
+            # 성공 시 GPU 메모리 반환
+            del output_ids, generated
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            break  # 성공 — 루프 탈출
+
+        except RuntimeError as exc:
+            # CUDA OOM 인지 확인
+            if "out of memory" not in str(exc).lower():
+                raise  # OOM 이 아닌 다른 RuntimeError 는 즉시 전파
+            # OOM 발생 — 텐서 정리 후 다음 시도
+            log(f"⚠️ CUDA OOM 발생 (max_tokens={max_tokens})")
+            # output_ids 가 할당되기 전 실패할 수 있어 safe delete
+            for var_name in ("output_ids", "generated"):
+                if var_name in dir():
+                    try:
+                        exec(f"del {var_name}")  # noqa: S102
+                    except Exception:  # noqa: BLE001
+                        pass
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            if attempt_idx == len(token_attempts) - 1:
+                # 모든 시도 실패
+                raise RuntimeError(
+                    f"CUDA 메모리 부족: GPU VRAM({_get_gpu_info()})으로는 이 영상을 "
+                    "VibeVoice 로 처리할 수 없습니다.\n\n"
+                    "해결 방법:\n"
+                    "  1) STT 엔진을 'auto' 또는 'assemblyai' 로 변경\n"
+                    "  2) 더 짧은 영상으로 시도\n"
+                    "  3) 다른 GPU 프로세스를 종료해 VRAM 확보"
+                ) from exc
+
+    # inputs 정리
+    del inputs
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
 
@@ -254,6 +304,19 @@ def _normalize_vibevoice_segments(raw_segments, raw_text: str) -> List[Segment]:
     if not segments and raw_text.strip():
         segments.append(Segment(speaker="1", start=0.0, end=0.0, text=raw_text.strip()))
     return segments
+
+
+def _get_gpu_info() -> str:
+    """현재 GPU 이름과 VRAM 을 사람이 읽을 수 있는 문자열로 반환."""
+    try:
+        import torch
+        if torch.cuda.is_available():
+            name = torch.cuda.get_device_name(0)
+            total = torch.cuda.get_device_properties(0).total_mem / (1024 ** 3)
+            return f"{name}, {total:.1f} GB"
+    except Exception:  # noqa: BLE001
+        pass
+    return "정보 없음"
 
 
 def _build_context_info(hotwords: Optional[List[str]]) -> Optional[str]:

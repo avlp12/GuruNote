@@ -74,9 +74,14 @@ def transcribe(
     hotwords = hotwords if hotwords is not None else IT_AI_HOTWORDS
 
     if engine == "vibevoice":
-        result = _transcribe_vibevoice(audio_path, log=log, hotwords=hotwords)
-        _assert_transcript_not_empty(result)
-        return result
+        try:
+            result = _transcribe_vibevoice(audio_path, log=log, hotwords=hotwords)
+            _assert_transcript_not_empty(result)
+            return result
+        except Exception:
+            # 강제 모드에서도 실패 시 GPU 메모리 해제 후 에러 전파
+            _unload_vibevoice()
+            raise
 
     if engine == "assemblyai":
         result = _transcribe_assemblyai(audio_path, log=log)
@@ -90,7 +95,9 @@ def transcribe(
         _assert_transcript_not_empty(result)
         return result
     except Exception as exc:  # noqa: BLE001
-        log(f"⚠️ VibeVoice 사용 불가 ({exc}). AssemblyAI 로 폴백합니다…")
+        # 폴백 전에 VibeVoice 모델을 GPU 에서 내려 AssemblyAI 에 영향 없게
+        log(f"⚠️ VibeVoice 사용 불가 ({exc}). 모델 언로드 후 AssemblyAI 로 폴백합니다…")
+        _unload_vibevoice()
         result = _transcribe_assemblyai(audio_path, log=log)
         _assert_transcript_not_empty(result)
         return result
@@ -113,6 +120,36 @@ def _assert_transcript_not_empty(transcript: Transcript) -> None:
 # VibeVoice-ASR 엔진 (오픈소스, GPU 권장)
 # =============================================================================
 _VIBEVOICE_SINGLETON: dict = {}  # 모델은 한번만 로드해 캐시
+
+
+def _unload_vibevoice() -> None:
+    """
+    VibeVoice 모델을 GPU 에서 완전히 내린다.
+
+    OOM/에러 발생 후 GPU 메모리가 계속 점유되는 문제를 해결:
+      1. 싱글톤 캐시에서 model/processor 참조 제거
+      2. Python GC 로 참조 카운트 정리 (del 만으로는 부족)
+      3. torch.cuda.empty_cache() 로 PyTorch 캐시 블록 반환
+    이 세 단계를 모두 거쳐야 OS 레벨의 GPU 메모리가 실제로 해제된다.
+    """
+    import gc
+
+    model = _VIBEVOICE_SINGLETON.pop("model", None)
+    _VIBEVOICE_SINGLETON.pop("processor", None)
+    _VIBEVOICE_SINGLETON.pop("device", None)
+    _VIBEVOICE_SINGLETON.pop("ready", None)
+
+    if model is not None:
+        del model
+
+    gc.collect()
+
+    try:
+        import torch
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _load_vibevoice():
@@ -249,14 +286,18 @@ def _transcribe_vibevoice(
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
             if attempt_idx == len(token_attempts) - 1:
-                # 모든 시도 실패
+                # 모든 시도 실패 — 모델을 GPU 에서 완전히 내려 메모리 반환
+                log("🧹 GPU 메모리 해제를 위해 VibeVoice 모델을 언로드합니다…")
+                del inputs
+                _unload_vibevoice()
                 raise RuntimeError(
                     f"CUDA 메모리 부족: GPU VRAM({_get_gpu_info()})으로는 이 영상을 "
                     "VibeVoice 로 처리할 수 없습니다.\n\n"
                     "해결 방법:\n"
                     "  1) STT 엔진을 'auto' 또는 'assemblyai' 로 변경\n"
                     "  2) 더 짧은 영상으로 시도\n"
-                    "  3) 다른 GPU 프로세스를 종료해 VRAM 확보"
+                    "  3) 다른 GPU 프로세스를 종료해 VRAM 확보\n\n"
+                    "GPU 메모리는 이미 해제되었습니다."
                 ) from exc
 
     # inputs 정리

@@ -8,6 +8,21 @@ GuruNote 데스크톱 배포 패키징 도우미.
 사용 예시:
     python scripts/package_desktop.py --target windows
     python scripts/package_desktop.py --target macos --formats dmg pkg
+
+⚠️ 번들 STT 엔진 정책:
+  PyInstaller 번들에는 **공통 의존성(requirements.txt) 만** 포함되며 로컬 GPU
+  STT 엔진(WhisperX / mlx-whisper / pyannote) 은 의도적으로 제외된다. 사유:
+    - WhisperX(+CUDA PyTorch) ~3GB / MLX+pyannote+torch ~2GB 의 native binary
+    - CUDA 빌드는 GPU 러너 필요 (GitHub Actions 표준 러너 미제공)
+    - PyInstaller --onefile 로 묶으면 다운로드/시동 비용 비현실적
+  → 번들 패키지는 UI + AssemblyAI Cloud STT 만 동작. 로컬 GPU STT 가 필요한
+    사용자는 README 의 "🚀 설치" 섹션을 따라 소스에서 `bash setup.sh` 후
+    `python gui.py` 로 실행해야 한다.
+
+CI 아티팩트 명명:
+  로컬 빌드는 `dist/GuruNote.exe` / `dist/GuruNote.dmg` 등 generic 이름을 쓰고,
+  GitHub Actions(`.github/workflows/release-desktop.yml`) 가 Release 업로드 시
+  `GuruNote-Windows.exe` / `GuruNote-macOS.dmg` 등 플랫폼 suffix 를 추가한다.
 """
 
 from __future__ import annotations

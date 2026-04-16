@@ -174,6 +174,23 @@ source .venv/bin/activate          # Windows: .venv\Scripts\activate
 bash setup.sh        # macOS / Linux  (Windows 는 setup.bat)
 ```
 
+### 📦 데스크톱 패키지 vs 소스 실행
+
+| | 데스크톱 패키지 (.exe / .dmg / .pkg) | 소스 실행 (`bash setup.sh`) |
+|---|---|---|
+| **포함 STT 엔진** | AssemblyAI (클라우드만) | WhisperX (NVIDIA) / MLX (Apple Silicon) / AssemblyAI |
+| **로컬 GPU 가속** | ❌ (PyInstaller 번들 한계) | ✅ |
+| **인터넷 필요** | STT 마다 필요 | 로컬 STT 는 최초 모델 다운로드만 |
+| **설치 난이도** | 더블클릭 | 가상환경 + setup 스크립트 |
+| **추천 대상** | 클라우드 STT 만 쓰는 사용자 | 로컬 GPU 보유 사용자, 개발자 |
+
+> 🔍 **왜 번들에 로컬 STT 가 빠지나요?**
+> WhisperX(+CUDA PyTorch) ~3GB, MLX(+pyannote+torch) ~2GB 의 native binary 가
+> 필요하고, CUDA 빌드는 GPU 러너가 있어야 합니다. 단일 실행 파일로 묶으면
+> 다운로드 크기가 비현실적이고 시작 시간도 길어집니다. 번들된 venv 는
+> 사후 `pip install` 도 불가능하므로, 로컬 GPU STT 가 필요하면 소스에서
+> 실행하는 것이 현실적인 유일한 선택지입니다.
+
 ---
 
 ## 🔑 환경변수 설정

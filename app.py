@@ -35,7 +35,7 @@ from gurunote.audio import (
 from gurunote.exporter import build_gurunote_markdown, sanitize_filename
 from gurunote.llm import LLMConfig, summarize_translation, test_connection, translate_transcript
 from gurunote.settings import save_settings
-from gurunote.stt import transcribe
+from gurunote.stt import install_vibevoice, is_vibevoice_installed, transcribe
 from gurunote.types import Transcript, _format_ts
 from gurunote.updater import check_updates, update_project
 
@@ -432,12 +432,35 @@ def main() -> None:
                 "GuruNote 생성하기", type="primary", key="btn_local"
             )
 
+        # VibeVoice 미설치 감지 + 안내
+        engine_to_use = settings["engine"]
+        if yt_submitted or local_submitted:
+            if engine_to_use in ("vibevoice", "auto") and not is_vibevoice_installed():
+                st.warning(
+                    "VibeVoice-ASR 패키지가 설치되어 있지 않습니다. "
+                    "아래에서 설치하거나 AssemblyAI 로 전환하세요."
+                )
+                col_install, col_switch, _ = st.columns([1, 1, 2])
+                if col_install.button("📦 VibeVoice 설치", key="btn_install_vv"):
+                    with st.status("VibeVoice 설치 중…", expanded=True):
+                        ok = install_vibevoice(progress=lambda m: st.write(m))
+                    if ok:
+                        st.success("설치 완료! 다시 'GuruNote 생성하기' 를 눌러주세요.")
+                    else:
+                        st.error("설치 실패. AssemblyAI 로 전환하거나 수동 설치를 시도해주세요.")
+                    st.stop()
+                if col_switch.button("🔄 AssemblyAI 사용", key="btn_switch_aai"):
+                    engine_to_use = "assemblyai"
+                    st.info("STT 엔진을 AssemblyAI 로 전환합니다.")
+                else:
+                    st.stop()
+
         if yt_submitted:
             if not is_probably_youtube_url(url):
                 st.error("올바른 유튜브 URL 을 입력해주세요.")
             else:
                 run_pipeline(
-                    engine=settings["engine"],
+                    engine=engine_to_use,
                     provider=settings["provider"],
                     youtube_url=url,
                 )
@@ -446,13 +469,12 @@ def main() -> None:
             if not uploaded:
                 st.error("파일을 먼저 업로드해주세요.")
             else:
-                # Streamlit UploadedFile → 임시 파일로 저장
                 tmp_upload = tempfile.mkdtemp(prefix="gurunote_upload_")
                 local_path = os.path.join(tmp_upload, uploaded.name)
                 with open(local_path, "wb") as f:
                     f.write(uploaded.getbuffer())
                 run_pipeline(
-                    engine=settings["engine"],
+                    engine=engine_to_use,
                     provider=settings["provider"],
                     local_file_path=local_path,
                 )

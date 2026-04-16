@@ -16,20 +16,20 @@ fi
 PIP=".venv/bin/pip"
 PYTHON=".venv/bin/python"
 
-# 2. GPU 감지
+# 2. 패키지 설치 (whisperx 가 CPU torch 를 설치)
+echo ""
+echo "[2/4] GuruNote 패키지 설치 중..."
+$PIP install -r requirements.txt
+
+# 3. GPU 감지 → CUDA torch 덮어쓰기 (반드시 whisperx 이후!)
 echo ""
 if command -v nvidia-smi &> /dev/null; then
-    echo "[2/4] NVIDIA GPU 감지됨 — CUDA PyTorch 설치"
-    $PIP install torch torchaudio --index-url https://download.pytorch.org/whl/cu128
+    echo "[3/4] NVIDIA GPU 감지됨 — CUDA PyTorch 로 교체"
+    $PIP install torch torchaudio --index-url https://download.pytorch.org/whl/cu128 --force-reinstall
 else
-    echo "[2/4] NVIDIA GPU 미감지 — CPU PyTorch 로 진행"
+    echo "[3/4] NVIDIA GPU 미감지 — CPU PyTorch 유지"
     echo "      (STT 는 AssemblyAI Cloud API 사용)"
 fi
-
-# 3. 패키지 설치
-echo ""
-echo "[3/4] GuruNote 패키지 설치 중..."
-$PIP install -r requirements.txt
 
 # 4. 검증
 echo ""

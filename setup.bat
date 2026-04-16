@@ -18,22 +18,21 @@ if not exist ".venv\Scripts\python.exe" (
 set PIP=.venv\Scripts\pip.exe
 set PYTHON=.venv\Scripts\python.exe
 
-:: 2. NVIDIA GPU 감지
+:: 2. 패키지 설치 (whisperx 가 CPU torch 를 가져옴)
+echo.
+echo [2/4] GuruNote 패키지 설치 중...
+%PIP% install -r requirements.txt
+
+:: 3. NVIDIA GPU 감지 → CUDA torch 덮어쓰기 (whisperx 가 CPU 를 깔았으므로 이후에!)
 echo.
 nvidia-smi >nul 2>&1
 if %errorlevel%==0 (
-    echo [2/4] NVIDIA GPU 감지됨 — CUDA PyTorch 를 설치합니다.
-    echo       (이미 설치돼 있으면 건너뜁니다)
-    %PIP% install torch torchaudio --index-url https://download.pytorch.org/whl/cu128
+    echo [3/4] NVIDIA GPU 감지됨 — CUDA PyTorch 로 교체합니다.
+    %PIP% install torch torchaudio --index-url https://download.pytorch.org/whl/cu128 --force-reinstall
 ) else (
-    echo [2/4] NVIDIA GPU 미감지 — CPU PyTorch 로 진행합니다.
-    echo       (STT 는 AssemblyAI Cloud API 를 사용합니다)
+    echo [3/4] NVIDIA GPU 미감지 — CPU PyTorch 유지.
+    echo       STT 는 AssemblyAI Cloud API 를 사용합니다.
 )
-
-:: 3. 패키지 설치
-echo.
-echo [3/4] GuruNote 패키지 설치 중...
-%PIP% install -r requirements.txt
 
 :: 4. 검증
 echo.

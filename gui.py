@@ -41,7 +41,7 @@ from gurunote.history import (
     JobLogger, delete_job, get_job_log, get_job_markdown,
     load_index, new_job_id, save_job,
 )
-from gurunote.stt import install_vibevoice, is_vibevoice_installed, transcribe
+from gurunote.stt import install_whisperx, is_whisperx_installed, transcribe
 from gurunote.types import _format_ts
 from gurunote.updater import check_updates, update_project
 
@@ -58,7 +58,7 @@ APP_TITLE = "GuruNote"
 WINDOW_WIDTH = 1200
 WINDOW_HEIGHT = 820
 
-STT_OPTIONS = ["auto", "vibevoice", "assemblyai"]
+STT_OPTIONS = ["auto", "whisperx", "assemblyai"]
 LLM_OPTIONS = ["openai", "openai_compatible", "anthropic"]
 
 # ── 브랜드 컬러 팔레트 ──
@@ -155,22 +155,14 @@ class PipelineWorker:
             video_ctx = audio.to_context_dict()
             self._set_progress(0.18)
             effective_engine = self.engine
-            if audio.duration_sec > 3600 and self.engine == "auto":
-                effective_engine = "assemblyai"
-                self._log("  > 60분 초과 -- auto 모드에서 AssemblyAI 로 전환")
-            elif audio.duration_sec > 3600 and self.engine == "vibevoice":
-                self._log(
-                    "  ! VibeVoice 단일 패스 최대 60분, 긴 영상은 일부만 전사될 수 있음"
-                )
 
             # Step 2 — 서브스텝 진행률 매핑
             # stt 모듈이 _log() 를 호출할 때 메시지 내용으로 서브 진행률 추정
             _stt_substeps = {
                 "모델 로딩": 0.22,
-                "모델 로딩 완료": 0.30,
-                "오디오 인코딩": 0.33,
-                "핫워드": 0.35,
-                "VibeVoice 추론 중": 0.38,
+                "전사 중": 0.30,
+                "타임스탬프 정렬": 0.40,
+                "화자 분리": 0.48,
                 "AssemblyAI": 0.30,
             }
             def _stt_progress(msg: str) -> None:
@@ -289,8 +281,9 @@ _SETTINGS_FIELDS = [
     ("LLM_TRANSLATION_MAX_TOKENS", "번역 Max Tokens", False),
     ("LLM_SUMMARY_MAX_TOKENS", "요약 Max Tokens", False),
     ("ASSEMBLYAI_API_KEY", "AssemblyAI API Key (폴백용)", True),
-    ("VIBEVOICE_MODEL_ID", "VibeVoice 모델 ID", False),
-    ("HUGGINGFACE_TOKEN", "HuggingFace 토큰 (선택)", True),
+    ("WHISPERX_MODEL", "WhisperX 모델", False),
+    ("WHISPERX_BATCH_SIZE", "WhisperX 배치 사이즈", False),
+    ("HUGGINGFACE_TOKEN", "HuggingFace 토큰 (화자 분리용)", True),
 ]
 
 
@@ -452,7 +445,8 @@ class SettingsDialog(ctk.CTkToplevel):
                 "LLM_TEMPERATURE": "0.2",
                 "LLM_TRANSLATION_MAX_TOKENS": "8192",
                 "LLM_SUMMARY_MAX_TOKENS": "4096",
-                "VIBEVOICE_MODEL_ID": "microsoft/VibeVoice-ASR",
+                "WHISPERX_MODEL": "distil-large-v3",
+                "WHISPERX_BATCH_SIZE": "16",
             }
             ph = "미설정" if is_secret else _placeholders.get(env_key, "")
             entry = ctk.CTkEntry(
@@ -626,7 +620,7 @@ class GuruNoteApp(ctk.CTk):
             ).grid(row=2 + i, column=0, padx=10, pady=2, sticky="ew")
 
         ctk.CTkLabel(
-            sb, text="v0.3.0", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
+            sb, text="v0.4.0", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
         ).grid(row=6, column=0, padx=20, pady=(0, 16), sticky="sw")
 
     # ── 메인 영역 ────────────────────────────────────────────
@@ -793,40 +787,31 @@ class GuruNoteApp(ctk.CTk):
             SettingsDialog(self)
         return False
 
-    def _check_vibevoice_available(self) -> bool:
-        """
-        VibeVoice 가 필요한 엔진(vibevoice/auto) 선택 시, 패키지 미설치면
-        사용자에게 설치 / AssemblyAI 전환 / 취소 중 선택하게 한다.
-        Returns True 면 진행 가능, False 면 중단.
-        """
+    def _check_whisperx_available(self) -> bool:
+        """WhisperX 미설치 시 설치/AssemblyAI 전환/취소 선택."""
         engine = self._stt_var.get()
         if engine == "assemblyai":
-            return True  # VibeVoice 필요 없음
-        if is_vibevoice_installed():
+            return True
+        if is_whisperx_installed():
             return True
 
-        # VibeVoice 미설치 — 3가지 선택지 제공
         choice = messagebox.askyesnocancel(
-            "VibeVoice-ASR 미설치",
-            "VibeVoice-ASR 패키지가 설치되어 있지 않습니다.\n\n"
-            "  [예]    → VibeVoice 를 지금 설치 (git+https, 수 분 소요)\n"
-            "  [아니오] → AssemblyAI 클라우드 API 로 전환해서 진행\n"
+            "WhisperX 미설치",
+            "WhisperX 패키지가 설치되어 있지 않습니다.\n\n"
+            "  [예]    → WhisperX 를 지금 설치 (pip, 수 분 소요)\n"
+            "  [아니오] → AssemblyAI 클라우드 API 로 전환\n"
             "  [취소]  → 작업 취소",
         )
         if choice is None:
-            # 취소
             return False
         if choice:
-            # 예 → 설치 시도
-            self._append_log("[Install] VibeVoice-ASR 설치를 시작합니다...")
-            ok = install_vibevoice(progress=self._append_log)
+            self._append_log("[Install] WhisperX 설치 중...")
+            ok = install_whisperx(progress=self._append_log)
             if ok:
                 return True
-            # 설치 실패 — AssemblyAI 로 전환 제안
             fallback = messagebox.askyesno(
                 "설치 실패",
-                "VibeVoice 설치에 실패했습니다.\n"
-                "AssemblyAI 로 전환해서 진행할까요?",
+                "WhisperX 설치에 실패했습니다.\nAssemblyAI 로 전환할까요?",
             )
             if fallback:
                 self._stt_var.set("assemblyai")
@@ -834,7 +819,6 @@ class GuruNoteApp(ctk.CTk):
                 return True
             return False
         else:
-            # 아니오 → AssemblyAI 전환
             self._stt_var.set("assemblyai")
             self._append_log("[Switch] STT -> AssemblyAI")
             return True
@@ -848,7 +832,7 @@ class GuruNoteApp(ctk.CTk):
             return
         if not self._check_api_keys():
             return
-        if not self._check_vibevoice_available():
+        if not self._check_whisperx_available():
             return
         self._run_btn.configure(state="disabled", text="처리 중…")
         self._stop_btn.configure(state="normal")

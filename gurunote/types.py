@@ -1,7 +1,7 @@
 """
 파이프라인의 모든 단계 사이에서 공유되는 데이터 타입.
 
-STT 엔진(VibeVoice / AssemblyAI)의 결과를 동일한 `Transcript` 형태로 정규화해
+STT 엔진(WhisperX / AssemblyAI)의 결과를 동일한 `Transcript` 형태로 정규화해
 LLM 단계와 마크다운 내보내기 단계에서 엔진에 종속되지 않게 한다.
 """
 
@@ -39,7 +39,7 @@ class Transcript:
 
     segments: List[Segment] = field(default_factory=list)
     language: Optional[str] = None
-    engine: str = ""              # 어떤 엔진이 만든 결과인지 (vibevoice / assemblyai)
+    engine: str = ""              # 어떤 엔진이 만든 결과인지 (whisperx / assemblyai)
     raw: Optional[dict] = None    # 디버깅용 원본 응답
 
     @property

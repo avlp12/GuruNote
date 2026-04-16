@@ -3,7 +3,7 @@
 # -----------------------------------------------------------------------------
 # 시스템 의존성:
 #   - ffmpeg (yt-dlp 의 mp3 변환)
-#   - CUDA / MPS / XPU (VibeVoice-ASR 추론 시 권장, CPU 도 동작은 함)
+#   - GPU 권장 (WhisperX 추론, CPU 도 동작)
 # =============================================================================
 
 # --- UI ---
@@ -14,20 +14,13 @@ customtkinter>=5.2
 yt-dlp>=2024.3.10
 
 # --- STT (Step 2) ---
-# Primary: VibeVoice-ASR (Microsoft, MIT License)
-#   화자 분리 + 타임스탬프 + 도메인 핫워드까지 단일 패스 지원.
-#   GitHub source 설치만 가능 (PyPI 미배포).
-vibevoice @ git+https://github.com/microsoft/VibeVoice.git
+# Primary: WhisperX (Distil-Whisper + pyannote 화자 분리)
+#   청크 분할 처리로 VRAM ~6GB 에서 안정 동작.
+#   화자 분리에 pyannote 사용 (HuggingFace 토큰 필요).
+whisperx>=3.1
 torch>=2.2
-torchaudio>=2.2
-transformers>=4.45
-accelerate>=0.30
-bitsandbytes>=0.43
-soundfile>=0.12
-librosa>=0.10
-numpy>=1.26
 
-# Fallback: AssemblyAI Cloud API (GPU 없는 환경용)
+# Fallback: AssemblyAI Cloud API
 assemblyai>=0.26
 
 # --- LLM (Step 3~4) ---

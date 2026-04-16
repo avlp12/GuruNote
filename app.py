@@ -77,10 +77,13 @@ def render_sidebar() -> dict:
         st.divider()
 
         st.subheader("⚙️ 설정")
+        stt_options = ["auto", "vibevoice", "assemblyai"]
+        env_stt = os.environ.get("GURUNOTE_STT_ENGINE", "auto").lower().strip()
+        stt_default = stt_options.index(env_stt) if env_stt in stt_options else 0
         engine_label = st.selectbox(
             "STT 엔진",
-            options=["auto", "vibevoice", "assemblyai"],
-            index=0,
+            options=stt_options,
+            index=stt_default,
             help=(
                 "auto: VibeVoice 가 가능하면 사용, 안되면 AssemblyAI 폴백 (권장).\n"
                 "vibevoice: 항상 VibeVoice-ASR (오픈소스, GPU 권장).\n"

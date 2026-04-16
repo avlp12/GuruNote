@@ -19,7 +19,6 @@ import os
 import queue
 import tempfile
 import threading
-import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox
 from typing import Optional
@@ -29,7 +28,6 @@ from dotenv import load_dotenv
 
 from gurunote.audio import (
     SUPPORTED_EXTS,
-    AudioDownloadResult,
     cleanup_dir,
     download_audio,
     extract_audio_from_file,
@@ -40,7 +38,7 @@ from gurunote.exporter import build_gurunote_markdown, sanitize_filename
 from gurunote.llm import LLMConfig, summarize_translation, test_connection, translate_transcript
 from gurunote.settings import save_settings
 from gurunote.stt import transcribe
-from gurunote.types import Transcript, _format_ts
+from gurunote.types import _format_ts
 from gurunote.updater import check_updates, update_project
 
 # 환경변수 로드
@@ -474,7 +472,7 @@ class GuruNoteApp(ctk.CTk):
         of.grid(row=2, column=0, columnspan=2, padx=16, pady=(0, 14), sticky="ew")
         of.grid_columnconfigure(4, weight=1)
         ctk.CTkLabel(of, text="STT", text_color=C_TEXT_DIM, font=ctk.CTkFont(size=12)).grid(row=0, column=0, padx=(0, 6))
-        self._stt_var = ctk.StringVar(value="auto")
+        self._stt_var = ctk.StringVar(value=os.environ.get("GURUNOTE_STT_ENGINE", "auto"))
         ctk.CTkOptionMenu(of, variable=self._stt_var, values=STT_OPTIONS, width=130, height=32,
                           corner_radius=8, fg_color=C_SURFACE_HI, button_color=C_BORDER).grid(row=0, column=1, padx=(0, 16))
         ctk.CTkLabel(of, text="LLM", text_color=C_TEXT_DIM, font=ctk.CTkFont(size=12)).grid(row=0, column=2, padx=(0, 6))

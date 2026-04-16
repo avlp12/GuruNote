@@ -54,7 +54,14 @@ if "%STT_PROFILE%"=="gpu" (
 echo.
 echo ================================================
 echo     설정 완료!
-echo     실행: .venv\Scripts\python.exe gui.py
+echo.
+echo     실행 (권장 -- venv activate 불필요):
+echo       run_desktop.bat        (데스크톱 앱)
+echo       run_web.bat            (웹 앱 Streamlit)
+echo.
+echo     직접 실행:
+echo       .venv\Scripts\python.exe gui.py
+echo       .venv\Scripts\streamlit.exe run app.py
 echo ================================================
 echo.
 pause

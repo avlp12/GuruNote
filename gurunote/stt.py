@@ -84,17 +84,29 @@ def transcribe(
         _assert_transcript_not_empty(result)
         return result
 
-    # auto: WhisperX 우선, 실패 시 AssemblyAI 폴백
-    try:
-        log("[auto] WhisperX 로 전사를 시도합니다.")
-        result = _transcribe_whisperx(audio_path, log=log, hotwords=hotwords)
-        _assert_transcript_not_empty(result)
-        return result
-    except Exception as exc:  # noqa: BLE001
-        log(f"WhisperX 실패 ({exc}). AssemblyAI 로 폴백합니다.")
-        result = _transcribe_assemblyai(audio_path, log=log)
-        _assert_transcript_not_empty(result)
-        return result
+    # auto: GPU+CUDA → WhisperX, 아니면 AssemblyAI 직행
+    if _check_cuda_ready():
+        try:
+            log("[auto] GPU(CUDA) 감지 — WhisperX 로 전사합니다.")
+            result = _transcribe_whisperx(audio_path, log=log, hotwords=hotwords)
+            _assert_transcript_not_empty(result)
+            return result
+        except Exception as exc:  # noqa: BLE001
+            log(f"WhisperX 실패 ({exc}). AssemblyAI 로 폴백합니다.")
+    else:
+        hint = ""
+        if _has_nvidia_gpu():
+            hint = (
+                "\n  NVIDIA GPU 있지만 CUDA PyTorch 미설치."
+                "\n  setup.bat 을 실행하거나:"
+                "\n  .venv\\Scripts\\pip install torch --index-url"
+                " https://download.pytorch.org/whl/cu128"
+            )
+        log(f"[auto] GPU 미사용 — AssemblyAI Cloud API 로 직행합니다.{hint}")
+
+    result = _transcribe_assemblyai(audio_path, log=log)
+    _assert_transcript_not_empty(result)
+    return result
 
 
 def _assert_transcript_not_empty(transcript: Transcript) -> None:
@@ -162,50 +174,13 @@ def _has_nvidia_gpu() -> bool:
     return shutil.which("nvidia-smi") is not None
 
 
-# PyTorch CUDA 최신 안정 버전 (2026-04 기준)
-_TORCH_CUDA_INDEX = "https://download.pytorch.org/whl/cu128"
-
-
-def ensure_cuda_torch(log: Optional[ProgressFn] = None) -> bool:
-    """
-    NVIDIA GPU 가 있는데 PyTorch 가 CPU 버전이면 CUDA 버전을 자동 설치.
-    GPU 가 없으면 아무것도 하지 않음 (CPU torch 유지).
-
-    Returns:
-        True 면 CUDA 사용 가능, False 면 CPU 모드.
-    """
-    _log = log or (lambda _: None)
-    import torch
-
-    # 이미 CUDA 사용 가능
-    if torch.cuda.is_available():
-        return True
-
-    # GPU 자체가 없으면 CPU 모드로 정상
-    if not _has_nvidia_gpu():
-        return False
-
-    # GPU 있지만 torch 가 CPU 버전 → CUDA 버전 자동 설치
-    _log(f"NVIDIA GPU 감지됨, PyTorch CUDA 버전 설치 중 ({_TORCH_CUDA_INDEX})...")
-    import subprocess
-    import sys
-
+def _check_cuda_ready() -> bool:
+    """torch.cuda 가 사용 가능한지 확인."""
     try:
-        result = subprocess.run(
-            [
-                sys.executable, "-m", "pip", "install",
-                "torch", "--index-url", _TORCH_CUDA_INDEX,
-                "--force-reinstall", "--no-deps",
-            ],
-            capture_output=True, text=True, timeout=600,
-        )
-        if result.returncode == 0:
-            _log("PyTorch CUDA 설치 완료. 앱을 재시작하면 GPU 가 활성화됩니다.")
-            return False  # 재시작 필요하므로 이번 세션은 CPU
-        _log(f"PyTorch CUDA 설치 실패: {result.stderr[:200]}")
-    except Exception as exc:  # noqa: BLE001
-        _log(f"PyTorch CUDA 설치 실패: {exc}")
-    return False
+        import torch
+        return torch.cuda.is_available()
+    except Exception:  # noqa: BLE001
+        return False
 
 
 def _ensure_model_local(model_name: str, log: ProgressFn) -> str:
@@ -258,27 +233,23 @@ def _transcribe_whisperx(
 
     import whisperx  # type: ignore
 
-    # 디바이스 자동 감지 — GPU 있는데 CPU torch 면 자동 설치 시도
+    # GPU(CUDA) 필수 — CPU whisperx 는 비실용적
     if not torch.cuda.is_available():
-        ensure_cuda_torch(log)
-        # 설치 직후에는 재시작 필요하므로 이번 세션은 CPU
-        import importlib
-        importlib.reload(torch)  # 재로드 시도
-
-    if torch.cuda.is_available():
-        device = "cuda"
-        compute_type = "float16"
-    else:
-        device = "cpu"
-        compute_type = "int8"
-        # NVIDIA GPU 는 있는데 PyTorch 가 CPU 버전인 경우 안내
+        hint = ""
         if _has_nvidia_gpu():
-            log(
-                "! NVIDIA GPU 가 감지되었지만 PyTorch 가 CPU 버전입니다.\n"
-                "  GPU 를 사용하려면 다음 명령을 실행하세요:\n"
-                "  pip install torch --index-url https://download.pytorch.org/whl/cu124\n"
-                "  현재는 CPU 모드로 진행합니다 (느림)."
+            hint = (
+                "\nNVIDIA GPU 감지됨, CUDA PyTorch 가 필요합니다."
+                "\nsetup.bat 실행 또는:"
+                "\n  .venv\\Scripts\\pip install torch torchaudio"
+                " --index-url https://download.pytorch.org/whl/cu128"
             )
+        raise RuntimeError(
+            f"WhisperX 는 GPU(CUDA) 가 필요합니다.{hint}\n"
+            "GPU 없이 쓰려면 STT 엔진을 'auto' 또는 'assemblyai' 로 변경하세요."
+        )
+
+    device = "cuda"
+    compute_type = "float16"
 
     model_name = os.environ.get("WHISPERX_MODEL", "distil-large-v3")
     batch_size = int(os.environ.get("WHISPERX_BATCH_SIZE", "16"))
@@ -383,7 +354,10 @@ def _transcribe_assemblyai(audio_path: str, log: ProgressFn) -> Transcript:
     import assemblyai as aai  # type: ignore
 
     aai.settings.api_key = api_key
-    config = aai.TranscriptionConfig(speaker_labels=True)
+    config = aai.TranscriptionConfig(
+        speaker_labels=True,
+        speech_model=aai.SpeechModel.best,
+    )
 
     log("AssemblyAI 에 업로드 후 화자 분리 전사 중...")
     transcriber = aai.Transcriber()

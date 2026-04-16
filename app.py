@@ -70,7 +70,7 @@ def render_sidebar() -> dict:
         st.header("✨ GuruNote 란?")
         st.markdown(
             "- **STT + 화자 분리** — Microsoft VibeVoice-ASR (오픈소스)\n"
-            "- **IT/AI 전문 톤 한국어 번역** — gpt-4o / claude-3.5-sonnet\n"
+            "- **IT/AI 전문 톤 한국어 번역** — gpt-5.4 / claude-sonnet-4-6\n"
             "- **인사이트 / 타임라인 / 전체 스크립트** 마크다운 요약\n"
             "- 결과를 `.md` 파일로 다운로드"
         )
@@ -134,7 +134,7 @@ def render_settings_tab(default_provider: str) -> None:
         )
         openai_model = st.text_input(
             "OpenAI/Compatible Model",
-            value=os.environ.get("OPENAI_MODEL", "gpt-4o"),
+            value=os.environ.get("OPENAI_MODEL", "gpt-5.4"),
         )
         anthropic_key = st.text_input(
             "Anthropic API Key",
@@ -143,7 +143,7 @@ def render_settings_tab(default_provider: str) -> None:
         )
         anthropic_model = st.text_input(
             "Anthropic Model",
-            value=os.environ.get("ANTHROPIC_MODEL", "claude-3-5-sonnet-latest"),
+            value=os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6"),
         )
         c1, c2, _ = st.columns([1, 1, 2])
         temperature = c1.number_input(

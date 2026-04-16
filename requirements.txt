@@ -29,6 +29,7 @@ assemblyai>=0.26
 # --- LLM (Step 3~4) ---
 openai>=1.30
 anthropic>=0.25
+google-genai>=1.0
 
 # --- 환경 설정 ---
 python-dotenv>=1.0

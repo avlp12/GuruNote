@@ -32,7 +32,7 @@ from gurunote.audio import (
     extract_audio_from_file,
     is_probably_youtube_url,
 )
-from gurunote.exporter import build_gurunote_markdown, sanitize_filename
+from gurunote.exporter import autosave_result, build_gurunote_markdown, sanitize_filename
 from gurunote.llm import LLMConfig, summarize_translation, test_connection, translate_transcript
 from gurunote.settings import save_settings
 from gurunote.history import (
@@ -410,6 +410,13 @@ def run_pipeline(
             full_md=full_md,
         )
         log("💾 히스토리에 저장됨")
+
+        # autosave
+        try:
+            saved = autosave_result(full_md, audio.video_title)
+            log(f"💾 Autosave: {saved}")
+        except Exception:  # noqa: BLE001
+            pass
 
         # 세션 상태에 저장 → 탭 렌더링에서 사용
         st.session_state["result"] = {

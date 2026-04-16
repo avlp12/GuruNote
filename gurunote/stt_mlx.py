@@ -1,5 +1,5 @@
 """
-Apple Silicon (M1/M2/M3/M4) GPU 로컬 STT 엔진.
+Apple Silicon (M1/M2/M3/M4/M5) GPU 로컬 STT 엔진.
 
 `mlx-whisper` (Apple MLX 프레임워크) 로 Whisper 추론을 수행하고,
 `pyannote.audio` 화자 분리 파이프라인을 MPS(Metal Performance Shaders)
@@ -34,7 +34,7 @@ DEFAULT_DIARIZATION_MODEL = "pyannote/speaker-diarization-3.1"
 # 환경 검사 헬퍼
 # =============================================================================
 def is_apple_silicon() -> bool:
-    """macOS arm64 (M1/M2/M3/M4) 여부."""
+    """macOS arm64 (M1/M2/M3/M4/M5) 여부."""
     return platform.system() == "Darwin" and platform.machine() == "arm64"
 
 
@@ -117,7 +117,7 @@ def transcribe_mlx(
     """
     if not is_apple_silicon():
         raise RuntimeError(
-            "MLX 엔진은 macOS Apple Silicon (M1/M2/M3/M4) 에서만 동작합니다."
+            "MLX 엔진은 macOS Apple Silicon (M1/M2/M3/M4/M5) 에서만 동작합니다."
         )
     if not is_mlx_whisper_available():
         raise RuntimeError(

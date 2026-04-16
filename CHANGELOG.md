@@ -7,6 +7,20 @@
 
 ## [Unreleased]
 
+### Fixed
+- **업데이트 다이얼로그 NameError** (`gui.py`) — `SettingsDialog._on_update` 가
+  import 되지 않은 `check_updates(...)` 를 호출해 NameError 발생. 다른 위치
+  (`_on_update_sb`) 와 동일하게 `check_for_update()` 호출 후 `info["message"]`
+  사용하도록 수정. 사이드바 ⚙️ 설정 다이얼로그에서 "업데이트 확인" 버튼이 정상
+  동작.
+
+### Changed
+- **README VibeVoice 잔재 정리** — STT 섹션, 파이프라인 다이어그램, 60분 제한
+  안내, GPU/VRAM 요구사항 표, 환경변수 예시, 사용 흐름, 최초 실행 안내, 프로젝트
+  구조, FAQ 4개 항목 등 ~15곳을 현재 코드 (WhisperX + MLX + AssemblyAI 라우터)
+  와 일치시킴. v0.4.x 의 WhisperX 전환 + v0.6.0 의 MLX 추가가 README 에 누락돼
+  있던 부분을 일괄 갱신.
+
 ## [0.6.0] - 2026-04-16
 
 ### Added

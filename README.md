@@ -27,10 +27,8 @@ $ streamlit run app.py             # 웹 앱 실행
 ## ⚡ 빠른 시작 (3단계)
 
 ```bash
-# 1. 설치
+# 1. 설치 (플랫폼 자동 감지 + STT 엔진 자동 설치 + .venv 자동 생성)
 git clone https://github.com/avlp12/GuruNote.git && cd GuruNote
-python -m venv .venv && source .venv/bin/activate
-
 bash setup.sh        # macOS / Linux  (Windows 는 setup.bat)
 # 자동 감지 + 설치:
 #   - NVIDIA GPU (Linux/Windows) → CUDA PyTorch + WhisperX
@@ -41,11 +39,16 @@ bash setup.sh        # macOS / Linux  (Windows 는 setup.bat)
 cp .env.example .env
 # .env 를 열어 OPENAI_API_KEY=sk-... 입력
 
-# 3. 실행
-python gui.py          # 데스크톱 앱
-# 또는
-streamlit run app.py   # 웹 앱
+# 3. 실행 (venv activate 불필요 — 래퍼 스크립트가 .venv 의 Python/Streamlit 을 직접 호출)
+bash run_desktop.sh      # 데스크톱 앱 (macOS/Linux)
+bash run_web.sh          # 웹 앱   (macOS/Linux)
+# Windows: run_desktop.bat / run_web.bat
 ```
+
+> 💡 **macOS 주의**: macOS 12+ 는 `python` 명령이 없고 `python3` 만 있습니다.
+> 또한 venv 를 activate 하지 않으면 `streamlit` 같은 venv 전용 명령은
+> `command not found` 로 실패합니다. 위 래퍼 스크립트를 쓰면 이런 문제가
+> 발생하지 않습니다.
 
 > 앱 안의 **⚙️ 설정** 에서도 API 키를 입력할 수 있어 `.env` 를 직접 편집하지 않아도 됩니다.
 
@@ -220,6 +223,14 @@ GURUNOTE_STT_ENGINE=auto
 ### 데스크톱 앱 (권장)
 
 ```bash
+# macOS / Linux
+bash run_desktop.sh
+
+# Windows
+run_desktop.bat
+
+# 또는 venv activate 후 직접 실행
+source .venv/bin/activate     # Windows: .venv\Scripts\activate
 python gui.py
 ```
 
@@ -235,6 +246,14 @@ python gui.py
 ### 웹 앱 (Streamlit)
 
 ```bash
+# macOS / Linux
+bash run_web.sh
+
+# Windows
+run_web.bat
+
+# 또는 venv activate 후 직접 실행
+source .venv/bin/activate
 streamlit run app.py
 ```
 
@@ -366,6 +385,7 @@ GuruNote/
 
 | 질문 | 답변 |
 |---|---|
+| **`command not found: python` / `streamlit` (macOS)** | macOS 12+ 는 `python` 명령이 없고 `python3` 만 있으며, `streamlit` 은 venv 내부에만 설치됩니다. `bash run_desktop.sh` / `bash run_web.sh` 를 쓰면 venv activate 없이 실행됩니다. 직접 실행하려면 먼저 `source .venv/bin/activate` 로 venv 를 활성화하세요. |
 | **GPU 없이 쓸 수 있나요?** | `.env` 에서 `GURUNOTE_STT_ENGINE=assemblyai` 로 설정하면 클라우드 API 로 동작합니다 (AssemblyAI 키 필요). |
 | **Apple Silicon Mac (M1~M4) 에서 GPU 로컬 STT 가 되나요?** | 네. v0.6.0 부터 `setup.sh` 가 Apple Silicon 을 자동 감지해 `mlx-whisper` + `pyannote.audio` 를 설치합니다. STT 엔진을 `auto` 로 두면 Metal/MPS GPU 가속으로 로컬 전사 + 화자 분리가 동작합니다. 화자 분리에는 `HUGGINGFACE_TOKEN` + [pyannote 모델 동의](https://huggingface.co/pyannote/speaker-diarization-3.1) 가 필요합니다. |
 | **1시간 넘는 영상은?** | WhisperX / MLX 모두 청크 분할 처리라 길이 제한이 없습니다. AssemblyAI 도 길이 제한 없음. |

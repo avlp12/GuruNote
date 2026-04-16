@@ -7,6 +7,16 @@
 
 ## [Unreleased]
 
+### Added
+- **실행 래퍼 스크립트** — `run_desktop.sh` / `run_web.sh` (macOS/Linux) +
+  `run_desktop.bat` / `run_web.bat` (Windows). `.venv` 를 activate 없이 직접
+  호출해 macOS 의 `command not found: python` / `streamlit` 문제를 근본 차단.
+  `.venv` 미존재 시 친절한 에러 메시지로 `setup.sh` 실행 안내. setup.sh/bat
+  의 최종 메시지도 래퍼 스크립트를 1순위로 안내하도록 갱신.
+- **README Troubleshooting FAQ** — macOS 에서 `python` / `streamlit` 명령을
+  찾지 못하는 상황과 해결법 명시. "▶️ 실행" 섹션에 래퍼 스크립트 + venv
+  activate 대안을 모두 제시.
+
 ### Changed
 - **데스크톱 배포 패키지 OS별 분리 + CI 의존성 정합성 수정**
   (`.github/workflows/release-desktop.yml`, `scripts/package_desktop.py`,

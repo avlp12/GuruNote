@@ -13,6 +13,16 @@ from __future__ import annotations
 
 import gc
 import os
+import platform
+import warnings
+
+# Windows HuggingFace 심볼릭 링크 문제 방지:
+# Developer Mode 미활성 시 symlink 생성이 실패(WinError 1314)하므로
+# HF Hub 가 symlink 대신 파일 복사를 사용하도록 강제한다.
+if platform.system() == "Windows":
+    os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
+    # huggingface_hub >= 0.23 에서 symlink 실패 시 자동 복사 폴백을 활성화
+    os.environ.setdefault("HUGGINGFACE_HUB_SYMLINK_WARNING", "0")
 from typing import Callable, List, Optional
 
 from gurunote.types import Segment, Transcript
@@ -135,6 +145,11 @@ def _transcribe_whisperx(
 ) -> Transcript:
     """WhisperX 로 전사 + 화자 분리."""
     import torch
+
+    # pyannote / torchcodec 의 무해한 경고 억제
+    warnings.filterwarnings("ignore", message=".*torchcodec.*")
+    warnings.filterwarnings("ignore", message=".*symlink.*")
+
     import whisperx  # type: ignore
 
     # 디바이스 자동 감지
@@ -153,10 +168,23 @@ def _transcribe_whisperx(
 
     # 1. 전사
     log(f"WhisperX 모델 로딩 ({model_name}, {device}, {compute_type})...")
-    model = whisperx.load_model(
-        model_name, device, compute_type=compute_type,
-        language="en",
-    )
+    try:
+        model = whisperx.load_model(
+            model_name, device, compute_type=compute_type,
+            language="en",
+        )
+    except OSError as exc:
+        # Windows 심볼릭 링크 권한 에러 (WinError 1314)
+        if "1314" in str(exc) or "privilege" in str(exc).lower():
+            raise RuntimeError(
+                "Windows 에서 모델 캐시 생성 시 심볼릭 링크 권한이 부족합니다.\n\n"
+                "해결 방법 (택 1):\n"
+                "  1) Windows 설정 → 개발자 모드 활성화\n"
+                "     (설정 > 업데이트 및 보안 > 개발자용)\n"
+                "  2) GuruNote 를 관리자 권한으로 실행\n"
+                "  3) PowerShell(관리자): fsutil behavior set SymlinkEvaluation L2L:1"
+            ) from exc
+        raise
 
     log("전사 중 (청크 분할 처리)...")
     audio = whisperx.load_audio(audio_path)

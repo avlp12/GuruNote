@@ -52,6 +52,49 @@ IT_AI_HOTWORDS: List[str] = [
 
 
 # =============================================================================
+# VibeVoice 설치 감지 + 설치
+# =============================================================================
+def is_vibevoice_installed() -> bool:
+    """VibeVoice 패키지가 import 가능한지 확인."""
+    try:
+        import vibevoice  # type: ignore  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+def install_vibevoice(progress: Optional[ProgressFn] = None) -> bool:
+    """
+    pip 로 VibeVoice 를 설치한다.
+
+    Returns:
+        True 면 설치 성공, False 면 실패.
+    """
+    import subprocess
+    import sys
+
+    log = progress or (lambda _msg: None)
+    log("📦 VibeVoice-ASR 설치 중 (git+https, 수 분 소요 가능)…")
+
+    try:
+        result = subprocess.run(
+            [
+                sys.executable, "-m", "pip", "install",
+                "vibevoice @ git+https://github.com/microsoft/VibeVoice.git",
+            ],
+            capture_output=True, text=True, timeout=600,
+        )
+        if result.returncode == 0:
+            log("✅ VibeVoice 설치 완료!")
+            return True
+        log(f"❌ VibeVoice 설치 실패:\n{result.stderr[:300]}")
+        return False
+    except Exception as exc:  # noqa: BLE001
+        log(f"❌ VibeVoice 설치 실패: {exc}")
+        return False
+
+
+# =============================================================================
 # Public API
 # =============================================================================
 def transcribe(

@@ -163,12 +163,28 @@ class PipelineWorker:
                     "  ! VibeVoice 단일 패스 최대 60분, 긴 영상은 일부만 전사될 수 있음"
                 )
 
-            # Step 2
+            # Step 2 — 서브스텝 진행률 매핑
+            # stt 모듈이 _log() 를 호출할 때 메시지 내용으로 서브 진행률 추정
+            _stt_substeps = {
+                "모델 로딩": 0.22,
+                "모델 로딩 완료": 0.30,
+                "오디오 인코딩": 0.33,
+                "핫워드": 0.35,
+                "VibeVoice 추론 중": 0.38,
+                "AssemblyAI": 0.30,
+            }
+            def _stt_progress(msg: str) -> None:
+                self._log(msg)
+                for keyword, pct in _stt_substeps.items():
+                    if keyword in msg:
+                        self._set_progress(pct)
+                        break
+
             self._log("[Step 2] 화자 분리 STT 중...")
             transcript = transcribe(
                 audio.audio_path,
                 engine=effective_engine,
-                progress=self._log,
+                progress=_stt_progress,
                 stop_event=self._stop_event,
             )
             self._log(

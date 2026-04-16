@@ -41,6 +41,13 @@ from gurunote.history import (
     JobLogger, delete_job, get_job_log, get_job_markdown,
     load_index, new_job_id, save_job,
 )
+from gurunote.hardware import (
+    AUTO_KEY, CUSTOM_KEY, PRESETS,
+    detect_description, detect_recommended_preset,
+    dropdown_options as hw_dropdown_options,
+    key_to_label as hw_key_to_label,
+    label_to_key as hw_label_to_key,
+)
 from gurunote.stt import install_whisperx, is_whisperx_installed, transcribe
 from gurunote.stt_mlx import is_apple_silicon
 from gurunote.types import _format_ts
@@ -277,9 +284,16 @@ class PipelineWorker:
 # =============================================================================
 # 설정 다이얼로그 (API 키 관리)
 # =============================================================================
+# LLM Provider 드롭다운 선택지
+_LLM_PROVIDERS = ["openai", "anthropic", "gemini", "openai_compatible"]
+
 # 설정 필드 정의: (환경변수명, 라벨, 마스킹 여부)
+# `LLM_PROVIDER` 는 CTkOptionMenu 로 렌더링되고, 나머지는 CTkEntry.
+# 하드웨어 프리셋이 아래 필드들의 값을 일괄 채운다:
+#   WHISPERX_MODEL, WHISPERX_BATCH_SIZE, MLX_WHISPER_MODEL,
+#   LLM_TEMPERATURE, LLM_TRANSLATION_MAX_TOKENS, LLM_SUMMARY_MAX_TOKENS
 _SETTINGS_FIELDS = [
-    ("LLM_PROVIDER", "LLM Provider (openai/anthropic/gemini/openai_compatible)", False),
+    ("LLM_PROVIDER", "LLM Provider", False),
     ("OPENAI_API_KEY", "OpenAI API Key", True),
     ("OPENAI_BASE_URL", "OpenAI Base URL (Local/Compatible)", False),
     ("OPENAI_MODEL", "OpenAI 모델", False),
@@ -291,8 +305,9 @@ _SETTINGS_FIELDS = [
     ("LLM_TRANSLATION_MAX_TOKENS", "번역 Max Tokens", False),
     ("LLM_SUMMARY_MAX_TOKENS", "요약 Max Tokens", False),
     ("ASSEMBLYAI_API_KEY", "AssemblyAI API Key (폴백용)", True),
-    ("WHISPERX_MODEL", "WhisperX 모델", False),
-    ("WHISPERX_BATCH_SIZE", "WhisperX 배치 사이즈", False),
+    ("WHISPERX_MODEL", "WhisperX 모델 (NVIDIA)", False),
+    ("WHISPERX_BATCH_SIZE", "WhisperX 배치 사이즈 (NVIDIA)", False),
+    ("MLX_WHISPER_MODEL", "MLX Whisper 모델 (Apple Silicon)", False),
     ("HUGGINGFACE_TOKEN", "HuggingFace 토큰 (화자 분리용)", True),
 ]
 
@@ -477,17 +492,33 @@ class UpdateProgressDialog(ctk.CTkToplevel):
 
 
 class SettingsDialog(ctk.CTkToplevel):
-    """API 키와 모델 설정을 입력/저장하는 모달 다이얼로그."""
+    """API 키와 모델 설정을 입력/저장하는 모달 다이얼로그.
+
+    하드웨어 프리셋 드롭다운을 상단에 두고, 선택 시 STT/LLM 관련 필드를 일괄
+    채운다. LLM Provider 는 드롭다운으로 선택하며, 나머지 필드는 여전히 수동
+    수정 가능.
+    """
+
+    # 하드웨어 프리셋이 자동으로 채워주는 필드 목록
+    _PRESET_DRIVEN_FIELDS = (
+        "LLM_TEMPERATURE",
+        "LLM_TRANSLATION_MAX_TOKENS",
+        "LLM_SUMMARY_MAX_TOKENS",
+        "WHISPERX_MODEL",
+        "WHISPERX_BATCH_SIZE",
+        "MLX_WHISPER_MODEL",
+    )
 
     def __init__(self, parent: ctk.CTk) -> None:
         super().__init__(parent)
         self.title("⚙️ GuruNote 설정")
-        self.geometry("620x560")
+        self.geometry("620x640")
         self.resizable(False, False)
         self.transient(parent)
         self.grab_set()
 
-        self._entries: dict[str, ctk.CTkEntry] = {}
+        # _entries 는 CTkEntry 또는 CTkOptionMenu (둘 다 .get() / .set() 지원) 보관.
+        self._entries: dict[str, object] = {}
         self._show_vars: dict[str, bool] = {}
 
         self._build_ui()
@@ -512,25 +543,67 @@ class SettingsDialog(ctk.CTkToplevel):
             text_color="gray55",
         ).grid(row=1, column=0, columnspan=3, sticky="w", pady=(0, 12))
 
-        for idx, (env_key, label, is_secret) in enumerate(_SETTINGS_FIELDS, start=2):
+        # --- 하드웨어 프리셋 섹션 ---
+        ctk.CTkLabel(
+            container,
+            text=f"하드웨어 프리셋  ·  {detect_description()}",
+            font=ctk.CTkFont(size=13, weight="bold"),
+        ).grid(row=2, column=0, columnspan=3, sticky="w", pady=(8, 4))
+
+        self._preset_var = ctk.StringVar(value=hw_key_to_label(AUTO_KEY))
+        preset_menu = ctk.CTkOptionMenu(
+            container,
+            variable=self._preset_var,
+            values=hw_dropdown_options(),
+            width=580,
+            command=self._on_preset_change,
+        )
+        preset_menu.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(0, 4))
+
+        ctk.CTkLabel(
+            container,
+            text="프리셋을 고르면 STT/LLM 관련 아래 필드가 자동으로 채워집니다. "
+                 "'직접 입력' 또는 개별 필드 수정으로 override 가능.",
+            font=ctk.CTkFont(size=10),
+            text_color="gray55",
+        ).grid(row=4, column=0, columnspan=3, sticky="w", pady=(0, 12))
+
+        # --- 일반 필드 (LLM Provider 는 드롭다운, 그 외 Entry) ---
+        _placeholders = {
+            "OPENAI_MODEL": "gpt-5.4",
+            "OPENAI_BASE_URL": "http://127.0.0.1:8000/v1",
+            "ANTHROPIC_MODEL": "claude-sonnet-4-6",
+            "GEMINI_MODEL": "gemini-2.5-flash",
+            "LLM_TEMPERATURE": "0.2",
+            "LLM_TRANSLATION_MAX_TOKENS": "8192",
+            "LLM_SUMMARY_MAX_TOKENS": "4096",
+            "WHISPERX_MODEL": "distil-large-v3",
+            "WHISPERX_BATCH_SIZE": "16",
+            "MLX_WHISPER_MODEL": "mlx-community/whisper-large-v3-mlx",
+        }
+
+        for idx, (env_key, label, is_secret) in enumerate(_SETTINGS_FIELDS, start=5):
             ctk.CTkLabel(
                 container, text=label, font=ctk.CTkFont(size=13)
             ).grid(row=idx, column=0, sticky="w", padx=(0, 10), pady=6)
 
             current_val = os.environ.get(env_key, "")
-            # 비밀 필드가 아닌 경우 .env.example 기본값을 placeholder 로 표시
-            _placeholders = {
-                "LLM_PROVIDER": "openai",
-                "OPENAI_MODEL": "gpt-5.4",
-                "OPENAI_BASE_URL": "http://127.0.0.1:8000/v1",
-                "ANTHROPIC_MODEL": "claude-sonnet-4-6",
-                "GEMINI_MODEL": "gemini-2.5-flash",
-                "LLM_TEMPERATURE": "0.2",
-                "LLM_TRANSLATION_MAX_TOKENS": "8192",
-                "LLM_SUMMARY_MAX_TOKENS": "4096",
-                "WHISPERX_MODEL": "distil-large-v3",
-                "WHISPERX_BATCH_SIZE": "16",
-            }
+
+            if env_key == "LLM_PROVIDER":
+                # 드롭다운 특수 처리
+                default_provider = current_val if current_val in _LLM_PROVIDERS else "openai"
+                provider_var = ctk.StringVar(value=default_provider)
+                menu = ctk.CTkOptionMenu(
+                    container,
+                    variable=provider_var,
+                    values=_LLM_PROVIDERS,
+                    width=300,
+                )
+                menu.grid(row=idx, column=1, sticky="ew", pady=6)
+                # _entries 에는 StringVar 를 보관하여 .get()/.set() 인터페이스 통일
+                self._entries[env_key] = provider_var
+                continue
+
             ph = "미설정" if is_secret else _placeholders.get(env_key, "")
             entry = ctk.CTkEntry(
                 container,
@@ -553,6 +626,10 @@ class SettingsDialog(ctk.CTkToplevel):
                     command=lambda k=env_key: self._toggle_show(k),
                 )
                 toggle_btn.grid(row=idx, column=2, padx=(4, 0), pady=6)
+
+        # 다이얼로그 오픈 시 auto-detect 프리셋 적용 (사용자가 아직 .env 에 값이
+        # 없는 필드에만 기본값을 채워주기 위해).
+        self._apply_preset(AUTO_KEY, only_empty=True)
 
         # 하단 버튼 바
         btn_frame = ctk.CTkFrame(self, fg_color="transparent")
@@ -591,6 +668,53 @@ class SettingsDialog(ctk.CTkToplevel):
         entry = self._entries[env_key]
         entry.configure(show="" if self._show_vars[env_key] else "•")
 
+    # -------------------------------------------------------------------------
+    # 하드웨어 프리셋
+    # -------------------------------------------------------------------------
+    def _on_preset_change(self, label: str) -> None:
+        """프리셋 드롭다운 선택 시 필드 일괄 갱신."""
+        key = hw_label_to_key(label)
+        if key == CUSTOM_KEY:
+            return  # 사용자가 직접 입력 — 아무것도 안 건드림
+        self._apply_preset(key, only_empty=False)
+
+    def _apply_preset(self, key: str, only_empty: bool) -> None:
+        """프리셋 값을 `_PRESET_DRIVEN_FIELDS` 에 채워 넣는다.
+
+        Args:
+            key: PRESETS 의 키 또는 AUTO_KEY (자동 감지)
+            only_empty: True 면 이미 값이 있는 필드는 건드리지 않음 (다이얼로그
+                첫 오픈 시 기존 .env 값 보존). False 면 모두 덮어씀 (사용자가
+                드롭다운을 명시적으로 바꾼 경우).
+        """
+        if key == AUTO_KEY:
+            key = detect_recommended_preset()
+        profile = PRESETS.get(key)
+        if profile is None:
+            return
+
+        values = {
+            "LLM_TEMPERATURE": str(profile.llm_temperature),
+            "LLM_TRANSLATION_MAX_TOKENS": str(profile.translation_max_tokens),
+            "LLM_SUMMARY_MAX_TOKENS": str(profile.summary_max_tokens),
+            "WHISPERX_MODEL": profile.whisperx_model,
+            "WHISPERX_BATCH_SIZE": str(profile.whisperx_batch),
+            "MLX_WHISPER_MODEL": profile.mlx_model,
+        }
+        for env_key in self._PRESET_DRIVEN_FIELDS:
+            widget = self._entries.get(env_key)
+            if widget is None:
+                continue
+            # CTkEntry 만 덮어씀 (LLM_PROVIDER 는 _PRESET_DRIVEN_FIELDS 에 없음)
+            current = widget.get().strip()
+            if only_empty and current:
+                continue
+            widget.delete(0, "end")
+            widget.insert(0, values[env_key])
+
+    # -------------------------------------------------------------------------
+    # Save / Test / Update
+    # -------------------------------------------------------------------------
     def _on_save(self) -> None:
         payload = {
             key: self._entries[key].get().strip()

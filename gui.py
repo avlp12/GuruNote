@@ -62,6 +62,12 @@ from gurunote.pdf_export import (
     markdown_to_pdf,
     missing_packages_hint as pdf_missing_hint,
 )
+from gurunote.obsidian import (
+    is_obsidian_vault,
+    resolve_subfolder as obsidian_subfolder,
+    resolve_vault_path as obsidian_vault,
+    save_to_vault as obsidian_save,
+)
 from gurunote.types import _format_ts
 from gurunote.updater import check_for_update, update_project
 
@@ -353,6 +359,9 @@ _SETTINGS_FIELDS = [
     ("WHISPERX_BATCH_SIZE", "WhisperX 배치 사이즈 (NVIDIA)", False),
     ("MLX_WHISPER_MODEL", "MLX Whisper 모델 (Apple Silicon)", False),
     ("HUGGINGFACE_TOKEN", "HuggingFace 토큰 (화자 분리용)", True),
+    # Phase D — Obsidian vault 연동
+    ("OBSIDIAN_VAULT_PATH", "Obsidian Vault 경로", False),
+    ("OBSIDIAN_SUBFOLDER", "Obsidian 하위 폴더 (기본 GuruNote)", False),
 ]
 
 
@@ -648,20 +657,25 @@ class HistoryDialog(ctk.CTkToplevel):
         job_id = job.get("job_id", "")
         if job.get("has_markdown"):
             ctk.CTkButton(
-                btn_row, text=".md", width=42, height=28,
+                btn_row, text=".md", width=38, height=28,
                 command=lambda jid=job_id, t=title: self._save_md(jid, t),
             ).pack(side="left", padx=(0, 2))
             ctk.CTkButton(
-                btn_row, text="PDF", width=42, height=28,
+                btn_row, text="PDF", width=38, height=28,
                 command=lambda jid=job_id, t=title: self._save_pdf(jid, t),
             ).pack(side="left", padx=2)
+            ctk.CTkButton(
+                btn_row, text="Obs", width=38, height=28,
+                fg_color=C_PRIMARY, hover_color=C_PRIMARY_HO,
+                command=lambda jid=job_id, t=title: self._save_obsidian(jid, t),
+            ).pack(side="left", padx=2)
         ctk.CTkButton(
-            btn_row, text="Log", width=44, height=28,
+            btn_row, text="Log", width=38, height=28,
             fg_color="gray35",
             command=lambda jid=job_id: self._show_log(jid),
         ).pack(side="left", padx=2)
         ctk.CTkButton(
-            btn_row, text="Del", width=44, height=28,
+            btn_row, text="Del", width=38, height=28,
             fg_color="gray35", hover_color=C_DANGER,
             command=lambda jid=job_id: self._delete(jid),
         ).pack(side="right", padx=2)
@@ -795,6 +809,37 @@ class HistoryDialog(ctk.CTkToplevel):
             messagebox.showinfo("완료", f"PDF 저장됨:\n{path}")
         except Exception as e:  # noqa: BLE001
             messagebox.showerror("PDF 저장 실패", str(e))
+
+    def _save_obsidian(self, job_id: str, title: str) -> None:
+        """저장된 마크다운을 Obsidian vault 로 전송 (Phase D)."""
+        md = get_job_markdown(job_id)
+        if not md:
+            messagebox.showinfo("없음", "마크다운 파일이 없습니다.")
+            return
+        vault = obsidian_vault()
+        if vault is None:
+            messagebox.showwarning(
+                "Obsidian 미설정",
+                "Settings 다이얼로그에서 `OBSIDIAN_VAULT_PATH` 를 지정해주세요.",
+            )
+            return
+        if not is_obsidian_vault(vault):
+            if not messagebox.askyesno(
+                "Obsidian vault 확인",
+                f"경로에 `.obsidian/` 폴더가 없습니다:\n{vault}\n\n"
+                "그래도 이 폴더에 저장할까요?",
+            ):
+                return
+        from gurunote.exporter import sanitize_filename
+        filename = f"GuruNote_{sanitize_filename(title)}.md"
+        try:
+            out = obsidian_save(
+                md, filename=filename, vault_path=vault,
+                subfolder=obsidian_subfolder(),
+            )
+            messagebox.showinfo("Obsidian 저장 완료", f"{out}")
+        except Exception as e:  # noqa: BLE001
+            messagebox.showerror("Obsidian 저장 실패", str(e))
 
     def _show_log(self, job_id: str) -> None:
         log = get_job_log(job_id) or "(로그 없음)"
@@ -973,6 +1018,8 @@ class SettingsDialog(ctk.CTkToplevel):
             "WHISPERX_MODEL": "distil-large-v3",
             "WHISPERX_BATCH_SIZE": "16",
             "MLX_WHISPER_MODEL": "mlx-community/whisper-large-v3-mlx",
+            "OBSIDIAN_VAULT_PATH": "/Users/me/Documents/MyVault",
+            "OBSIDIAN_SUBFOLDER": "GuruNote",
         }
 
         for idx, (env_key, label, is_secret) in enumerate(_SETTINGS_FIELDS, start=5):
@@ -1268,7 +1315,7 @@ class GuruNoteApp(ctk.CTk):
             ).grid(row=2 + i, column=0, padx=10, pady=2, sticky="ew")
 
         ctk.CTkLabel(
-            sb, text="v0.6.0.7", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
+            sb, text="v0.6.0.8", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
         ).grid(row=6, column=0, padx=20, pady=(0, 16), sticky="sw")
 
     # ── 메인 영역 ────────────────────────────────────────────
@@ -1353,13 +1400,17 @@ class GuruNoteApp(ctk.CTk):
         top.grid_columnconfigure(0, weight=1)
         self._title_label = ctk.CTkLabel(top, text="결과", font=ctk.CTkFont(size=14, weight="bold"), text_color=C_TEXT)
         self._title_label.grid(row=0, column=0, sticky="w")
-        self._save_btn = ctk.CTkButton(top, text="Save .md", height=32, width=110, corner_radius=8,
+        self._save_btn = ctk.CTkButton(top, text="Save .md", height=32, width=90, corner_radius=8,
                                        fg_color=C_SURFACE_HI, hover_color=C_PRIMARY, state="disabled", command=self._on_save)
-        self._save_btn.grid(row=0, column=1, sticky="e", padx=(0, 6))
-        self._save_pdf_btn = ctk.CTkButton(top, text="Save PDF", height=32, width=110, corner_radius=8,
+        self._save_btn.grid(row=0, column=1, sticky="e", padx=(0, 4))
+        self._save_pdf_btn = ctk.CTkButton(top, text="Save PDF", height=32, width=90, corner_radius=8,
                                            fg_color=C_SURFACE_HI, hover_color=C_PRIMARY, state="disabled",
                                            command=self._on_save_pdf)
-        self._save_pdf_btn.grid(row=0, column=2, sticky="e")
+        self._save_pdf_btn.grid(row=0, column=2, sticky="e", padx=(0, 4))
+        self._save_obsidian_btn = ctk.CTkButton(top, text="→ Obsidian", height=32, width=110, corner_radius=8,
+                                                fg_color=C_SURFACE_HI, hover_color=C_PRIMARY, state="disabled",
+                                                command=self._on_save_obsidian)
+        self._save_obsidian_btn.grid(row=0, column=3, sticky="e")
         self._tabview = ctk.CTkTabview(c, height=300, corner_radius=8, fg_color=C_SURFACE,
                                        segmented_button_fg_color=C_SURFACE_HI,
                                        segmented_button_selected_color=C_PRIMARY,
@@ -1513,6 +1564,7 @@ class GuruNoteApp(ctk.CTk):
         self._stop_btn.configure(state="normal")
         self._save_btn.configure(state="disabled")
         self._save_pdf_btn.configure(state="disabled")
+        self._save_obsidian_btn.configure(state="disabled")
         self._clear_log()
         self._clear_results()
         self._title_label.configure(text="파이프라인 실행 중…")
@@ -1565,6 +1617,7 @@ class GuruNoteApp(ctk.CTk):
         self._title_label.configure(text=f"🎉 {audio.video_title}")
         self._save_btn.configure(state="normal")
         self._save_pdf_btn.configure(state="normal")
+        self._save_obsidian_btn.configure(state="normal")
         self._set_text(self._summary_text, result["summary_md"])
         self._set_text(self._translated_text, result["translated"])
         lines = [f"[{_format_ts(s.start)}] Speaker {s.speaker}: {s.text}" for s in transcript.segments]
@@ -1613,6 +1666,38 @@ class GuruNoteApp(ctk.CTk):
             messagebox.showinfo("완료", f"PDF 저장됨:\n{path}")
         except Exception as e:  # noqa: BLE001
             messagebox.showerror("PDF 저장 실패", str(e))
+
+    def _on_save_obsidian(self):
+        """결과 마크다운을 Obsidian vault 로 직접 저장 (Phase D)."""
+        if not self._result:
+            return
+        vault = obsidian_vault()
+        if vault is None:
+            messagebox.showwarning(
+                "Obsidian 미설정",
+                "Settings 다이얼로그에서 `OBSIDIAN_VAULT_PATH` 를 지정해주세요.\n"
+                "(Obsidian 앱의 vault 폴더 루트 경로 — `.obsidian/` 폴더가 있는 곳)",
+            )
+            return
+        if not is_obsidian_vault(vault):
+            if not messagebox.askyesno(
+                "Obsidian vault 확인",
+                f"경로에 `.obsidian/` 폴더가 없습니다:\n{vault}\n\n"
+                "그래도 이 폴더에 저장할까요?",
+            ):
+                return
+        title = self._result["audio"].video_title
+        filename = f"GuruNote_{sanitize_filename(title)}.md"
+        try:
+            out = obsidian_save(
+                self._result["full_md"],
+                filename=filename,
+                vault_path=vault,
+                subfolder=obsidian_subfolder(),
+            )
+            messagebox.showinfo("Obsidian 저장 완료", f"{out}")
+        except Exception as e:  # noqa: BLE001
+            messagebox.showerror("Obsidian 저장 실패", str(e))
 
     # ── 유틸 ─────────────────────────────────────────────────
     def _append_log(self, msg):

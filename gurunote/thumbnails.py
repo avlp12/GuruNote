@@ -24,8 +24,9 @@ THUMBNAIL_DIR = Path.home() / ".gurunote" / "thumbnails"
 #   - https://www.youtube.com/embed/XXXXXXXXXXX
 #   - https://www.youtube.com/v/XXXXXXXXXXX
 #   - https://www.youtube.com/shorts/XXXXXXXXXXX
+#   - https://www.youtube.com/live/XXXXXXXXXXX   (라이브 스트림 replay)
 _YT_ID_RE = re.compile(
-    r"(?:v=|youtu\.be/|/embed/|/v/|/shorts/)([A-Za-z0-9_-]{11})"
+    r"(?:v=|youtu\.be/|/embed/|/v/|/shorts/|/live/)([A-Za-z0-9_-]{11})"
 )
 
 

@@ -7,6 +7,34 @@
 
 ## [Unreleased]
 
+## [0.6.0.13] - 2026-04-17
+
+### Fixed
+- **YouTube `/live/` URL 썸네일 지원** (`gurunote/thumbnails.py`) —
+  라이브 스트림 replay 영상 (`https://www.youtube.com/live/<id>`) 이
+  `extract_youtube_id` 정규식에서 매치되지 않아 History 카드에 🎙️ placeholder
+  아이콘만 뜨던 문제. `_YT_ID_RE` 에 `/live/` 패턴 추가.
+- **`history.json` 원자적 write** (`gurunote/history.py::_write_index_atomic`) —
+  `save_job` 이 인덱스를 쓰는 도중 `HistoryDialog.load_index()` 가 동시 실행
+  되면 partial file 을 읽어 `JSONDecodeError` 로 떨어지던 race window 제거.
+  임시 파일에 쓰고 `os.replace` 로 대체하는 atomic rename 패턴. POSIX 는
+  커널 단 원자성, Windows 는 sector-level 원자성 보장. `save_job` + `delete_job`
+  양쪽 호출 경로에서 같은 헬퍼 사용.
+- **썸네일/Notion poll 의 TclError 방어** (`gui.py`) — `HistoryDialog` 가
+  destroyed 된 뒤에도 pending `after()` 콜백이 한 번 더 실행되며
+  `winfo_children` / `configure` 가 `_tkinter.TclError` 를 던지던 엣지케이스.
+  `_poll_thumb_queue` 와 `_poll_notion_from_history` 본문을 try/except 로
+  감싸 조용히 종료.
+
+### Verified (no fix needed)
+- **pyannote.audio 4.x API 호환성** — 릴리스 노트 조사 결과 우리가 쓰는
+  API (`Pipeline.from_pretrained(..., token=...)`, `.to(torch.device("mps"))`,
+  `pipeline(audio_path)` string input, `itertracks(yield_label=True)` 3-tuple)
+  모두 4.0 에서 breaking change 없음. `DEFAULT_DIARIZATION_MODEL` 은 기존
+  `pyannote/speaker-diarization-3.1` 유지 (사용자가 이미 terms 동의). 4.x 의
+  새 권장 모델 `pyannote/speaker-diarization-community-1` (VBx clustering)
+  은 `PYANNOTE_DIARIZATION_MODEL` 환경변수로 선택 가능.
+
 ## [0.6.0.12] - 2026-04-17
 
 ### Fixed
@@ -584,7 +612,8 @@ bash run_desktop.sh
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.6.0.12...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.6.0.13...HEAD
+[0.6.0.13]: https://github.com/avlp12/GuruNote/compare/v0.6.0.12...v0.6.0.13
 [0.6.0.12]: https://github.com/avlp12/GuruNote/compare/v0.6.0.11...v0.6.0.12
 [0.6.0.11]: https://github.com/avlp12/GuruNote/compare/v0.6.0.10...v0.6.0.11
 [0.6.0.10]: https://github.com/avlp12/GuruNote/compare/v0.6.0.9...v0.6.0.10

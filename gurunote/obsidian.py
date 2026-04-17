@@ -38,6 +38,101 @@ def is_obsidian_vault(path: Path) -> bool:
         return False
 
 
+def find_vault_candidates(max_depth: int = 2, max_results: int = 20) -> list[Path]:
+    """흔히 쓰이는 경로들을 스캔해 Obsidian vault 후보를 반환.
+
+    사용자가 경로를 직접 입력하지 않아도 UI 가 "자동 감지된 vault" 목록을
+    곧바로 보여줄 수 있게 한다.
+
+    탐색 루트 (OS 별):
+      - macOS: ~/Documents, ~/iCloud Drive (Archive),
+        ~/Library/Mobile Documents/iCloud~md~obsidian/Documents
+        (Obsidian Sync 기본 경로)
+      - Linux: ~/Documents, ~, ~/Notes
+      - Windows: ~/Documents, ~/OneDrive/Documents
+
+    Args:
+        max_depth: 각 루트 아래 몇 단계까지 하위 폴더를 조사할지 (기본 2).
+        max_results: 반환할 최대 후보 수 (기본 20, 과도한 스캔 방지).
+
+    Returns:
+        `.obsidian/` 폴더가 확인된 절대 경로 리스트. 수정일 내림차순 정렬
+        (최근 사용한 vault 가 먼저).
+    """
+    import platform
+
+    home = Path.home()
+    roots: list[Path] = []
+    system = platform.system()
+
+    if system == "Darwin":
+        roots += [
+            home / "Documents",
+            home / "iCloud Drive (Archive)",
+            home / "Library" / "Mobile Documents" / "iCloud~md~obsidian" / "Documents",
+            home,
+        ]
+    elif system == "Windows":
+        roots += [
+            home / "Documents",
+            home / "OneDrive" / "Documents",
+            home,
+        ]
+    else:  # Linux / other
+        roots += [
+            home / "Documents",
+            home / "Notes",
+            home,
+        ]
+
+    found: list[Path] = []
+    seen: set[Path] = set()
+
+    def _walk(node: Path, depth: int) -> None:
+        if len(found) >= max_results or depth > max_depth:
+            return
+        try:
+            if not node.is_dir():
+                return
+        except Exception:  # noqa: BLE001
+            return
+        if is_obsidian_vault(node):
+            resolved = node.resolve()
+            if resolved not in seen:
+                seen.add(resolved)
+                found.append(resolved)
+            return  # vault 내부는 더 들어가지 않음
+        if depth == max_depth:
+            return
+        try:
+            for child in node.iterdir():
+                # 숨김/시스템 폴더 제외 (macOS Library, .Trash 등)
+                if child.name.startswith("."):
+                    continue
+                _walk(child, depth + 1)
+                if len(found) >= max_results:
+                    return
+        except (PermissionError, OSError):
+            return
+
+    for root in roots:
+        try:
+            if root.exists():
+                _walk(root, depth=0)
+        except Exception:  # noqa: BLE001
+            continue
+
+    # 최근 수정된 vault 가 먼저 오도록 정렬
+    def _mtime(p: Path) -> float:
+        try:
+            return (p / ".obsidian").stat().st_mtime
+        except Exception:  # noqa: BLE001
+            return 0.0
+
+    found.sort(key=_mtime, reverse=True)
+    return found
+
+
 def resolve_vault_path() -> Optional[Path]:
     """`OBSIDIAN_VAULT_PATH` 환경변수 → 절대 Path. 미설정/무효 시 None.
 

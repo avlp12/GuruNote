@@ -435,7 +435,7 @@ GuruNote/
 주요 변경 사항은 [CHANGELOG.md](./CHANGELOG.md) 에 [Keep a Changelog](https://keepachangelog.com/)
 형식으로 기록되며 버전은 [Semantic Versioning](https://semver.org/) 을 따릅니다.
 
-현재 버전: **v0.7.0.4** — PDF 출력 패키지 기본 포함 + 미설치 시 자동 설치 다이얼로그.
+현재 버전: **v0.7.0.5** — Obsidian 연동 간편 설정 (자동 감지 + 폴더 피커 + 유효성 chip).
 
 ---
 

@@ -395,7 +395,7 @@ GuruNote/
 주요 변경 사항은 [CHANGELOG.md](./CHANGELOG.md) 에 [Keep a Changelog](https://keepachangelog.com/)
 형식으로 기록되며 버전은 [Semantic Versioning](https://semver.org/) 을 따릅니다.
 
-현재 버전: **v0.6.0.6** — Phase B: History 카드 그리드 뷰 + 필터/정렬 + YouTube 썸네일.
+현재 버전: **v0.6.0.7** — Phase C: 깔끔한 PDF 출력 (markdown + weasyprint, 한국어 친화 타이포그래피).
 
 ---
 

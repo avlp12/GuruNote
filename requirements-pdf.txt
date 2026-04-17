@@ -1,0 +1,20 @@
+# =============================================================================
+# GuruNote PDF 출력 의존성 (선택 설치)
+# -----------------------------------------------------------------------------
+# 시스템 의존성 (weasyprint):
+#   macOS:   brew install cairo pango gdk-pixbuf libffi
+#            (Korean 폰트: brew install --cask font-noto-sans-cjk-kr)
+#   Ubuntu:  sudo apt install libpango-1.0-0 libpangoft2-1.0-0 fonts-noto-cjk
+#
+# 한국어 렌더링은 시스템에 Noto Sans KR / Apple SD Gothic Neo / 맑은 고딕 중
+# 하나 이상이 설치되어 있어야 정상 동작. 폰트 미설치 시 박스(tofu) 로 렌더링됨.
+#
+# 설치:
+#   pip install -r requirements-pdf.txt
+#
+# GUI / CLI 에서 PDF 저장 버튼 사용 시에만 필요. 기본 .md 저장은 이 패키지
+# 없이 동작한다.
+# =============================================================================
+
+markdown>=3.5
+weasyprint>=60

@@ -435,7 +435,7 @@ GuruNote/
 주요 변경 사항은 [CHANGELOG.md](./CHANGELOG.md) 에 [Keep a Changelog](https://keepachangelog.com/)
 형식으로 기록되며 버전은 [Semantic Versioning](https://semver.org/) 을 따릅니다.
 
-현재 버전: **v0.6.0.11** — Phase F: 저장된 노트 본문 전문 검색 (HistoryDialog 본문 포함 토글 + 스니펫 미리보기).
+현재 버전: **v0.6.0.12** — pyannote.audio 4.0+ 요구 (torchaudio AudioMetaData 제거 이슈 해결).
 
 ---
 

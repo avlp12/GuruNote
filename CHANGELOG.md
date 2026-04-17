@@ -28,8 +28,17 @@
   - HF 토큰 미설정 경고는 1회만 표시 (중복 억제)
   - ANSI 컬러 escape 제거, 500ms 스로틀링으로 GUI 로그 flood 방지
 
-  Streamlit(`app.py`) 에서는 별도 `st.empty()` 슬롯에 최신 상태 라인을
-  overwrite 하여 전체 로그 섹션을 오염시키지 않음.
+  **Streamlit(`app.py`) 에는 적용하지 않음** — `st.empty()` 등 Streamlit
+  위젯은 `ScriptRunContext` 가 바인딩된 메인 스레드에서만 안전하게 업데이트
+  가능하고, 백엔드 워커(mlx-whisper, whisperx)가 stderr 로 tqdm 을 찍는
+  스레드에서 위젯 업데이트 콜백이 호출되면 `MissingScriptRunContext` 경고가
+  발생하며 최악의 경우 경고 메시지 자체가 tee 로 재유입되는 재귀 위험이
+  있어서. Streamlit 은 Step 완료마다 `st.write` 로 표시되므로 실용상 충분.
+  데스크톱 GUI 에만 tee 적용.
+
+  **방어적 restore** — `install_tee` 종료 시 `sys.stderr is tee_err` 인 경우
+  에만 원본 복원해서, nested 컨텍스트 엣지케이스에서 stderr 가 영구 오염되는
+  footgun 방지.
 
 ## [0.6.0.4] - 2026-04-17
 

@@ -37,7 +37,6 @@ from gurunote.llm import (
     LLMConfig, extract_metadata, summarize_translation,
     test_connection, translate_transcript,
 )
-from gurunote.progress_tee import install_tee
 from gurunote.settings import save_settings
 from gurunote.history import (
     JobLogger, get_job_log, get_job_markdown,
@@ -294,15 +293,13 @@ def run_pipeline(
         import time as _time
         _pipeline_start = _time.monotonic()
 
-        # stderr tee — tqdm 백엔드 진행률을 Streamlit 로그에 축약 전달
-        _log_status = st.empty()
-
-        def _tee_log(line: str) -> None:
-            _log_status.text(line)
-
-        with install_tee(_tee_log), st.status(
-            "GuruNote 파이프라인 실행 중...", expanded=True
-        ) as status:
+        # stderr tee 는 Streamlit 에서는 사용하지 않음 — Streamlit 위젯 업데이트는
+        # ScriptRunContext 가 바인딩된 메인 스레드에서만 안전하고, 백엔드 워커
+        # 스레드(mlx-whisper 등)가 stderr 로 tqdm 을 찍으면 그 콜백이 워커
+        # 스레드에서 실행돼 `MissingScriptRunContext` 경고 + 최악의 경우 tee 재귀.
+        # 데스크톱 GUI 에만 적용 (gui.py). Streamlit 은 각 Step 완료 시 st.write
+        # 로 진행 상황 확인 가능.
+        with st.status("GuruNote 파이프라인 실행 중...", expanded=True) as status:
             progress_bar = st.progress(0, text="진행률 0%")
 
             def set_progress(pct: int, label: str) -> None:

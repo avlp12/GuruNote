@@ -1,5 +1,15 @@
 # Claude Code 작업 규칙
 
+## 검색 도구 규칙
+
+사용자가 검색을 요청하면 **[insane-search](https://github.com/avlp12/insane-search)**
+플러그인을 사용한다. WAF/CAPTCHA/로그인 월/빈 SPA 를 Phase 0→3 적응형 스케줄러로
+우회하며, WebFetch → Jina Reader → TLS impersonation → Playwright 순으로 에스컬레이션.
+
+- 일반 웹 검색, 소셜/뉴스/커머스/비디오 플랫폼 콘텐츠 수집은 insane-search 로 처리
+- 별도 API 키 / 회원가입 불필요, 필요한 의존성(curl_cffi, feedparser, yt-dlp)은 자동 설치
+- 사용 예: "Reddit 트렌딩 가져와줘", "유료 기사 내용 요약해줘" 등 자연어로 요청
+
 ## 버전 정책 (Semantic Versioning + Revision)
 
 [Semantic Versioning 2.0.0](https://semver.org/) 의 `MAJOR.MINOR.PATCH` 에

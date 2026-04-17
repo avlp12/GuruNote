@@ -7,6 +7,29 @@
 
 ## [Unreleased]
 
+## [0.7.0.4] - 2026-04-17
+
+### Changed
+- **PDF 출력 패키지 기본 설치 포함** (`requirements.txt`) — `markdown` +
+  `weasyprint` 를 기본 요구 패키지로 승격. 신규 설치 시 `bash setup.sh` /
+  `pip install -r requirements.txt` 한 번이면 PDF 출력 준비 완료.
+  `requirements-pdf.txt` 는 레거시 호환용으로 유지.
+
+### Added
+- **PDF 미설치 시 자동 설치 다이얼로그** (`gurunote/pdf_installer.py` 신규,
+  `gui.py` `PDFInstallDialog`) — 이전엔 `Save PDF` 클릭 시 경고문만 띄우고
+  사용자가 수동 설치를 해야 했던 플로우를 대폭 개선.
+  - `is_python_deps_ok()` / `plan_installation()` 로 현재 상태 감지 후
+    OS 별 설치 플랜 (pip / brew / sudo-apt) 생성.
+  - macOS + Homebrew 환경: `brew install cairo pango gdk-pixbuf libffi` +
+    `pip install` 자동 실행 (사용자 yes/no 확인 후).
+  - Linux (sudo 필요) / Homebrew 미설치 macOS: 수동 명령을 다이얼로그에
+    안내만 하고 자동 실행 스킵.
+  - Windows: pip 만 자동 실행 (weasyprint wheel 에 DLL 포함).
+  - 설치 성공 시 원래 "Save PDF" 플로우를 자동으로 이어 실행해, 다시 클릭할
+    필요 없음.
+  - 진행 로그 스트리밍 (CTkTextbox), 실패 시 에러 표시.
+
 ## [0.7.0.3] - 2026-04-17
 
 ### Fixed
@@ -806,7 +829,8 @@ bash run_desktop.sh
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.7.0.3...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.7.0.4...HEAD
+[0.7.0.4]: https://github.com/avlp12/GuruNote/compare/v0.7.0.3...v0.7.0.4
 [0.7.0.3]: https://github.com/avlp12/GuruNote/compare/v0.7.0.2...v0.7.0.3
 [0.7.0.2]: https://github.com/avlp12/GuruNote/compare/v0.7.0.1...v0.7.0.2
 [0.7.0.1]: https://github.com/avlp12/GuruNote/compare/v0.7.0.0...v0.7.0.1

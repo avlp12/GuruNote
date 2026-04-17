@@ -81,6 +81,9 @@ from gurunote.search import (
 from gurunote.stats import compute_stats, render_report
 from gurunote import semantic as semantic_search
 from gurunote.nav_tree import FacetNode, compute_facets, default_expand_state
+from gurunote.ui_state import (
+    get_nav_expand, load_ui_state, save_ui_state, set_nav_expand,
+)
 from gurunote.types import _format_ts
 from gurunote.updater import check_for_update, update_project
 
@@ -823,9 +826,14 @@ class HistoryDialog(ctk.CTkToplevel):
         self._search_body_var = ctk.BooleanVar(value=False)
         # Step 3.4 — 의미 검색 토글 (semantic/embedding 기반)
         self._search_semantic_var = ctk.BooleanVar(value=False)
-        # Phase 1 트리 내비게이션 — 노드 클릭 시 facet job_ids 로 필터
-        self._nav_filter: Optional[dict] = None  # {"facet": "field"|"person"|"title", "label": str, "job_ids": set[str]}
-        self._nav_expand: dict[str, bool] = default_expand_state()
+        # Phase 1/2 트리 내비게이션 — 노드 클릭 시 facet job_ids 로 필터
+        self._nav_filter: Optional[dict] = None  # {"facet": str, "label": str, "job_ids": set[str]}
+        # Phase 2: 영속 상태 로드 (없거나 실패하면 기본값)
+        self._ui_state: dict = load_ui_state()
+        persisted = get_nav_expand(self._ui_state)
+        self._nav_expand: dict[str, bool] = {**default_expand_state(), **persisted}
+        # 트리 내 노드 검색 — 세션마다 초기화 (영속 X)
+        self._nav_search_var = ctk.StringVar(value="")
         self._nav_body: Optional[ctk.CTkScrollableFrame] = None
         self._nav_chip: Optional[ctk.CTkLabel] = None
         self._nav_clear_btn: Optional[ctk.CTkButton] = None
@@ -952,14 +960,27 @@ class HistoryDialog(ctk.CTkToplevel):
         nav_panel = ctk.CTkFrame(body, fg_color=C_SURFACE, corner_radius=8)
         nav_panel.grid(row=0, column=1, rowspan=2, sticky="nsew")
         nav_panel.grid_columnconfigure(0, weight=1)
-        nav_panel.grid_rowconfigure(1, weight=1)
+        nav_panel.grid_rowconfigure(2, weight=1)
         ctk.CTkLabel(
             nav_panel, text="내비게이션",
             font=ctk.CTkFont(size=13, weight="bold"),
         ).grid(row=0, column=0, padx=12, pady=(10, 4), sticky="w")
+        # 노드 라벨 서브스트링 검색 (세션 단위 — 영속 X)
+        nav_search = ctk.CTkEntry(
+            nav_panel, textvariable=self._nav_search_var,
+            placeholder_text="트리 내 검색…",
+            height=28,
+        )
+        nav_search.grid(row=1, column=0, sticky="ew", padx=10, pady=(0, 6))
+        self._nav_search_var.trace_add(
+            "write", lambda *_: self._render_nav_tree(),
+        )
         self._nav_body = ctk.CTkScrollableFrame(nav_panel, fg_color="transparent")
-        self._nav_body.grid(row=1, column=0, sticky="nsew", padx=6, pady=(0, 10))
+        self._nav_body.grid(row=2, column=0, sticky="nsew", padx=6, pady=(0, 10))
         self._nav_body.grid_columnconfigure(0, weight=1)
+
+        # Phase 2: 창 닫힐 때 expand 상태 저장
+        self.protocol("WM_DELETE_WINDOW", self._on_history_close)
 
         self._reload_and_refresh()
 
@@ -1000,10 +1021,11 @@ class HistoryDialog(ctk.CTkToplevel):
         ("field", "주제 (분야)"),
         ("person", "인물 (업로더)"),
         ("title", "제목 (첫글자)"),
+        ("tag", "태그"),
     ]
 
     def _render_nav_tree(self) -> None:
-        """우측 패널에 3-facet 트리 재렌더."""
+        """우측 패널에 4-facet 트리 재렌더 (서브스트링 검색 반영)."""
         if self._nav_body is None:
             return
         for w in self._nav_body.winfo_children():
@@ -1017,6 +1039,7 @@ class HistoryDialog(ctk.CTkToplevel):
             ).grid(row=0, column=0, padx=8, pady=12, sticky="ew")
             return
 
+        query = self._nav_search_var.get().strip().lower()
         facets = compute_facets(self._all_jobs)
         row = 0
         for key, title in self._FACET_HEADERS:
@@ -1036,9 +1059,12 @@ class HistoryDialog(ctk.CTkToplevel):
                 continue
 
             nodes: list[FacetNode] = facets.get(key, [])
+            if query:
+                nodes = [n for n in nodes if query in n.label.lower()]
             if not nodes:
+                msg = "  (검색 결과 없음)" if query else "  (비어 있음)"
                 ctk.CTkLabel(
-                    self._nav_body, text="  (비어 있음)",
+                    self._nav_body, text=msg,
                     text_color="gray55", font=ctk.CTkFont(size=11),
                 ).grid(row=row, column=0, sticky="w", padx=14)
                 row += 1
@@ -1065,6 +1091,14 @@ class HistoryDialog(ctk.CTkToplevel):
                 )
                 btn.grid(row=row, column=0, sticky="ew", padx=14, pady=0)
                 row += 1
+
+    def _on_history_close(self) -> None:
+        """창 닫기 시 expand 상태 저장 → destroy."""
+        try:
+            save_ui_state(set_nav_expand(self._ui_state, self._nav_expand))
+        except Exception:
+            pass
+        self.destroy()
 
     def _toggle_facet(self, key: str) -> None:
         self._nav_expand[key] = not self._nav_expand.get(key, True)
@@ -2139,7 +2173,7 @@ class GuruNoteApp(ctk.CTk):
             ).grid(row=2 + i, column=0, padx=10, pady=2, sticky="ew")
 
         ctk.CTkLabel(
-            sb, text="v0.7.0.0", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
+            sb, text="v0.7.0.1", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
         ).grid(row=7, column=0, padx=20, pady=(0, 16), sticky="sw")
 
     # ── 메인 영역 ────────────────────────────────────────────

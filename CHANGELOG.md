@@ -7,6 +7,20 @@
 
 ## [Unreleased]
 
+## [0.7.0.1] - 2026-04-17
+
+### Added
+- **트리 내비게이션 Phase 2** (`gurunote/nav_tree.py`, `gurunote/ui_state.py` 신규,
+  `gui.py` HistoryDialog) — Phase 1 의 3-facet 에 확장 3종.
+  - **Tag facet** 추가 (`태그`) — 한 잡이 여러 태그에 속할 수 있으므로
+    각 태그 버킷에 중복 append. count 내림차순 정렬.
+  - **트리 내 노드 검색 박스** — 패널 상단 `트리 내 검색…` Entry.
+    입력 시 모든 facet 의 노드를 라벨 서브스트링으로 실시간 필터.
+    세션 단위 (영속 X).
+  - **Expand 상태 영속** (`~/.gurunote/ui_state.json`) — 헤더 ▾/▸ 토글
+    상태를 atomic write 로 저장. HistoryDialog 열 때 로드, 닫을 때 저장
+    (`WM_DELETE_WINDOW` protocol). 파싱/쓰기 실패는 silent fallback.
+
 ## [0.7.0.0] - 2026-04-17
 
 ### Added
@@ -761,7 +775,8 @@ bash run_desktop.sh
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.7.0.0...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.7.0.1...HEAD
+[0.7.0.1]: https://github.com/avlp12/GuruNote/compare/v0.7.0.0...v0.7.0.1
 [0.7.0.0]: https://github.com/avlp12/GuruNote/compare/v0.6.0.19...v0.7.0.0
 [0.6.0.19]: https://github.com/avlp12/GuruNote/compare/v0.6.0.18...v0.6.0.19
 [0.6.0.18]: https://github.com/avlp12/GuruNote/compare/v0.6.0.17...v0.6.0.18

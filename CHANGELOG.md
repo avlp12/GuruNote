@@ -7,6 +7,27 @@
 
 ## [Unreleased]
 
+## [0.6.0.18] - 2026-04-17
+
+### Added
+- **Semantic 인덱스 incremental 갱신** (`gurunote/semantic.py::update_job_in_index`,
+  `gui.py` 파이프라인 + NoteEditorDialog 저장 hook) — 인덱스가 이미 빌드된
+  상태에서 새 작업을 저장하거나 기존 노트를 편집하면 백그라운드에서 해당
+  job 의 chunk 만 재계산해 인덱스에 incremental append. 사용자가 Dashboard
+  의 "Semantic Rebuild" 를 매번 눌러야 하던 부담 제거.
+  - 인덱스 미빌드 / `sentence-transformers` 미설치 시 silent no-op
+  - 같은 `job_id` 의 기존 chunk 모두 제거 후 새 본문으로 교체 (편집/재저장 대응)
+  - 본문이 비면 cleanup 만 수행 (vectors 에서 해당 잡 제거)
+  - 모든 예외 swallow — 파이프라인/저장 흐름을 절대 막지 않음
+- **NoteEditorDialog 마크다운 분할 프리뷰** (`gui.py`) — 좌: raw textbox,
+  우: 렌더링된 preview (`👁 Preview` 토글로 우측 숨김 가능, 숨기면 textbox
+  가 전체 폭 차지). 250ms debounce 로 키 입력 후 자동 갱신.
+  - YAML frontmatter 자동 제외 (preview 노이즈 방지)
+  - Block: H1/H2/H3, 인용 (│ ...), 불릿 (• ...), 번호 리스트, 수평선, 코드블록
+  - Inline: `**bold**` / `*italic*` / `` `code` `` / `[link](url)` 모두 Tk Text
+    `tag_config` 로 스타일링 (markdown 라이브러리 의존성 없음)
+  - 다이얼로그 폭 900 → 1200px 로 확장
+
 ## [0.6.0.17] - 2026-04-17
 
 ### Added
@@ -710,7 +731,8 @@ bash run_desktop.sh
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.6.0.17...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.6.0.18...HEAD
+[0.6.0.18]: https://github.com/avlp12/GuruNote/compare/v0.6.0.17...v0.6.0.18
 [0.6.0.17]: https://github.com/avlp12/GuruNote/compare/v0.6.0.16...v0.6.0.17
 [0.6.0.16]: https://github.com/avlp12/GuruNote/compare/v0.6.0.15...v0.6.0.16
 [0.6.0.15]: https://github.com/avlp12/GuruNote/compare/v0.6.0.14...v0.6.0.15

@@ -308,6 +308,17 @@ class PipelineWorker:
             )
             self._log("[Save] 히스토리에 저장됨")
 
+            # Semantic index incremental update (best-effort, 백그라운드).
+            # 인덱스가 이미 빌드돼 있을 때만 — 아직이면 silent no-op.
+            try:
+                semantic_search.update_job_in_index(
+                    self.job_id, full_md,
+                    title=metadata.get("organized_title") or audio.video_title,
+                    log=self._log,
+                )
+            except Exception:  # noqa: BLE001 — 어떤 에러도 파이프라인 막지 않음
+                pass
+
             # autosave
             try:
                 saved = autosave_result(full_md, audio.video_title)
@@ -540,16 +551,22 @@ class NoteEditorDialog(ctk.CTkToplevel):
     ) -> None:
         super().__init__(parent)
         self.title(f"편집 — {title[:60]}")
-        self.geometry("900x680")
+        self.geometry("1200x680")
         self.transient(parent)
         self.grab_set()
         self._job_id = job_id
+        self._original_title = title
         self._initial_md = initial_md
         self._on_saved = on_saved
+        # Preview 토글 + 입력 debounce 핸들
+        self._preview_visible = True
+        self._preview_after_id: Optional[str] = None
         self._build_ui()
         # 닫기(X) 도 dirty 체크 거치도록
         self.protocol("WM_DELETE_WINDOW", self._on_close_attempt)
         self.after(100, self.focus_force)
+        # 첫 렌더
+        self._schedule_preview_refresh(delay_ms=0)
 
     def _build_ui(self) -> None:
         # 헤더
@@ -569,6 +586,13 @@ class NoteEditorDialog(ctk.CTkToplevel):
             fg_color="gray35", hover_color="gray45",
             command=self._on_close_attempt,
         ).pack(side="right", padx=6)
+        # 프리뷰 토글
+        self._preview_btn = ctk.CTkButton(
+            header, text="👁 Preview ▼", width=110, height=32,
+            fg_color="gray35", hover_color="gray45",
+            command=self._toggle_preview,
+        )
+        self._preview_btn.pack(side="right", padx=6)
 
         # 안내
         ctk.CTkLabel(
@@ -579,20 +603,156 @@ class NoteEditorDialog(ctk.CTkToplevel):
             anchor="w", justify="left",
         ).pack(fill="x", padx=16, pady=(0, 8))
 
-        # Textbox
+        # 분할 영역 — 왼쪽 raw editor, 오른쪽 rendered preview
+        body = ctk.CTkFrame(self, fg_color="transparent")
+        body.pack(fill="both", expand=True, padx=16, pady=(0, 16))
+        body.grid_rowconfigure(0, weight=1)
+        body.grid_columnconfigure(0, weight=1, uniform="split")
+        body.grid_columnconfigure(1, weight=1, uniform="split")
+        self._body_frame = body
+
         self._tb = ctk.CTkTextbox(
-            self, wrap="word",
+            body, wrap="word",
             font=ctk.CTkFont(family="Menlo", size=12),
             fg_color=C_BG, text_color=C_TEXT,
             corner_radius=8,
         )
-        self._tb.pack(fill="both", expand=True, padx=16, pady=(0, 16))
+        self._tb.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
         self._tb.insert("1.0", self._initial_md)
+        self._tb.bind("<KeyRelease>", lambda _e: self._schedule_preview_refresh())
+
+        self._preview = ctk.CTkTextbox(
+            body, wrap="word",
+            font=ctk.CTkFont(size=13),
+            fg_color=C_BG, text_color=C_TEXT,
+            corner_radius=8, state="disabled",
+        )
+        self._preview.grid(row=0, column=1, sticky="nsew", padx=(6, 0))
+        self._configure_preview_tags()
 
         # 키 바인딩: Cmd/Ctrl+S 로 저장
         import platform as _p
         save_key = "<Command-s>" if _p.system() == "Darwin" else "<Control-s>"
         self.bind(save_key, lambda _e: self._on_save_click())
+
+    def _configure_preview_tags(self) -> None:
+        """렌더링 스타일 — Tk Text tag_configure 로 헤더/볼드/이탤릭/코드/인용 지정."""
+        tb = self._preview
+        tb.tag_config("h1", font=ctk.CTkFont(size=20, weight="bold"))
+        tb.tag_config("h2", font=ctk.CTkFont(size=16, weight="bold"))
+        tb.tag_config("h3", font=ctk.CTkFont(size=14, weight="bold"))
+        tb.tag_config("bold", font=ctk.CTkFont(size=13, weight="bold"))
+        tb.tag_config("italic", font=ctk.CTkFont(size=13, slant="italic"))
+        tb.tag_config(
+            "code",
+            font=ctk.CTkFont(family="Menlo", size=11),
+            background="#2a2a3e",
+        )
+        tb.tag_config("quote", foreground="#a78bfa", lmargin1=20, lmargin2=20)
+        tb.tag_config("hr", foreground="#555")
+        tb.tag_config("link", foreground="#7c3aed", underline=True)
+        tb.tag_config("bullet", lmargin1=14, lmargin2=28)
+
+    # -------------------------------------------------------------------------
+    # Preview 렌더링
+    # -------------------------------------------------------------------------
+    def _schedule_preview_refresh(self, delay_ms: int = 250) -> None:
+        """Debounce: 마지막 키 입력 후 delay_ms 만 미루어 1회 re-render."""
+        if not self._preview_visible:
+            return
+        if self._preview_after_id is not None:
+            try:
+                self.after_cancel(self._preview_after_id)
+            except Exception:  # noqa: BLE001
+                pass
+        self._preview_after_id = self.after(delay_ms, self._render_preview)
+
+    def _render_preview(self) -> None:
+        """현재 textbox 내용을 마크다운으로 파싱 → preview tag 입력."""
+        import re as _re
+        md = self._current_md()
+        # frontmatter 제거 — 메타는 안내문이라 preview 에 노이즈
+        md = _re.sub(r"^---\s*\n.*?\n---\s*\n", "", md, count=1, flags=_re.DOTALL)
+
+        tb = self._preview
+        tb.configure(state="normal")
+        tb.delete("1.0", "end")
+
+        inline_re = _re.compile(r"(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`|\[[^\]]+\]\([^)]+\))")
+
+        def _insert_inline(text: str) -> None:
+            for piece in inline_re.split(text):
+                if not piece:
+                    continue
+                if piece.startswith("**") and piece.endswith("**") and len(piece) > 4:
+                    tb.insert("end", piece[2:-2], "bold")
+                elif piece.startswith("`") and piece.endswith("`") and len(piece) > 2:
+                    tb.insert("end", piece[1:-1], "code")
+                elif piece.startswith("*") and piece.endswith("*") and len(piece) > 2:
+                    tb.insert("end", piece[1:-1], "italic")
+                elif piece.startswith("[") and "](" in piece and piece.endswith(")"):
+                    label = piece[1:piece.index("](")]
+                    tb.insert("end", label, "link")
+                else:
+                    tb.insert("end", piece)
+
+        in_code_block = False
+        for raw in md.splitlines():
+            stripped = raw.strip()
+            if stripped.startswith("```"):
+                in_code_block = not in_code_block
+                tb.insert("end", "─" * 40 + "\n", "hr")
+                continue
+            if in_code_block:
+                tb.insert("end", raw + "\n", "code")
+                continue
+            if not stripped:
+                tb.insert("end", "\n")
+                continue
+            if stripped in ("---", "***", "___"):
+                tb.insert("end", "─" * 60 + "\n", "hr")
+                continue
+            m = _re.match(r"^(#{1,3})\s+(.+)", stripped)
+            if m:
+                level = len(m.group(1))
+                tag = {1: "h1", 2: "h2", 3: "h3"}[level]
+                tb.insert("end", m.group(2) + "\n", tag)
+                continue
+            if stripped.startswith("> "):
+                tb.insert("end", "│ ", "quote")
+                _insert_inline(stripped[2:])
+                tb.insert("end", "\n")
+                continue
+            if stripped.startswith(("- ", "* ")):
+                tb.insert("end", "  • ", "bullet")
+                _insert_inline(stripped[2:])
+                tb.insert("end", "\n")
+                continue
+            num_m = _re.match(r"^(\d+)\.\s+(.+)", stripped)
+            if num_m:
+                tb.insert("end", f"  {num_m.group(1)}. ", "bullet")
+                _insert_inline(num_m.group(2))
+                tb.insert("end", "\n")
+                continue
+            _insert_inline(raw)
+            tb.insert("end", "\n")
+
+        tb.configure(state="disabled")
+
+    def _toggle_preview(self) -> None:
+        if self._preview_visible:
+            self._preview.grid_remove()
+            self._body_frame.grid_columnconfigure(1, weight=0)
+            self._body_frame.grid_columnconfigure(0, weight=1)
+            self._preview_btn.configure(text="👁 Preview ▶")
+            self._preview_visible = False
+        else:
+            self._body_frame.grid_columnconfigure(0, weight=1, uniform="split")
+            self._body_frame.grid_columnconfigure(1, weight=1, uniform="split")
+            self._preview.grid(row=0, column=1, sticky="nsew", padx=(6, 0))
+            self._preview_btn.configure(text="👁 Preview ▼")
+            self._preview_visible = True
+            self._render_preview()
 
     def _current_md(self) -> str:
         return self._tb.get("1.0", "end-1c")
@@ -619,6 +779,13 @@ class NoteEditorDialog(ctk.CTkToplevel):
         except Exception as exc:  # noqa: BLE001
             messagebox.showerror("저장 실패", str(exc))
             return
+        # Semantic index incremental update — best-effort, no-op if 미빌드
+        try:
+            semantic_search.update_job_in_index(
+                self._job_id, new_md, title=self._original_title,
+            )
+        except Exception:  # noqa: BLE001
+            pass
         self._initial_md = new_md
         messagebox.showinfo("저장 완료", "노트가 업데이트됐습니다.")
         if self._on_saved is not None:
@@ -1805,7 +1972,7 @@ class GuruNoteApp(ctk.CTk):
             ).grid(row=2 + i, column=0, padx=10, pady=2, sticky="ew")
 
         ctk.CTkLabel(
-            sb, text="v0.6.0.17", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
+            sb, text="v0.6.0.18", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
         ).grid(row=7, column=0, padx=20, pady=(0, 16), sticky="sw")
 
     # ── 메인 영역 ────────────────────────────────────────────

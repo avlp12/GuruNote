@@ -110,7 +110,7 @@ def build_windows_installer(exe_path: Path) -> Path | None:
     exe_path_escaped = str(exe_path).replace("\\", "\\\\")
     script = f"""
 #define MyAppName "{APP_NAME}"
-#define MyAppVersion "0.6.0.18"
+#define MyAppVersion "0.6.0.19"
 #define MyAppPublisher "GuruNote"
 #define MyAppExeName "{exe_path.name}"
 
@@ -228,7 +228,7 @@ def build_macos_pkg(app_path: Path) -> Path | None:
             "--identifier",
             "com.gurunote.desktop",
             "--version",
-            "0.6.0.18",
+            "0.6.0.19",
             str(pkg_path),
         ]
     )

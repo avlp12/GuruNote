@@ -395,7 +395,7 @@ GuruNote/
 주요 변경 사항은 [CHANGELOG.md](./CHANGELOG.md) 에 [Keep a Changelog](https://keepachangelog.com/)
 형식으로 기록되며 버전은 [Semantic Versioning](https://semver.org/) 을 따릅니다.
 
-현재 버전: **v0.6.0.1** — macOS 설치/실행 UX 개선 묶음 (ffmpeg pre-flight, run 래퍼, 하드웨어 프리셋, README 정합성).
+현재 버전: **v0.6.0.2** — macOS 입력 창 Cmd+V 붙여넣기 수정.
 
 ---
 

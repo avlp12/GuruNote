@@ -395,7 +395,7 @@ GuruNote/
 주요 변경 사항은 [CHANGELOG.md](./CHANGELOG.md) 에 [Keep a Changelog](https://keepachangelog.com/)
 형식으로 기록되며 버전은 [Semantic Versioning](https://semver.org/) 을 따릅니다.
 
-현재 버전: **v0.6.0.3** — Phase A 지식 증류기 메타데이터 (정리 제목 / 분야 / 태그 5개 + Obsidian 호환 YAML frontmatter).
+현재 버전: **v0.6.0.4** — Phase A 후속 수정 (태그 타입 필터 + config 연동 max_tokens).
 
 ---
 

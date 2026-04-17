@@ -592,12 +592,15 @@ def extract_metadata(
     )
 
     log("🏷️  메타데이터(제목/분야/태그) 추출 중…")
+    # JSON 은 짧지만 한국어 제목/태그가 길 수 있으므로 config.summary_max_tokens 를
+    # 기준으로 여유를 두되, 하한 1024 로 최소 응답 공간 보장.
+    metadata_max_tokens = max(1024, (config.summary_max_tokens or 4096) // 4)
     try:
         raw = _call_llm(
             config,
             system=METADATA_SYSTEM_PROMPT,
             user=user,
-            max_tokens=512,
+            max_tokens=metadata_max_tokens,
         )
         return _parse_metadata_json(raw)
     except Exception as exc:  # noqa: BLE001
@@ -637,12 +640,17 @@ def _parse_metadata_json(raw: str) -> dict:
         return {}
 
     # 스키마 검증 + 정규화
-    title = (data.get("organized_title") or "").strip()
-    field = (data.get("field") or "").strip()
+    title_raw = data.get("organized_title")
+    field_raw = data.get("field")
+    title = title_raw.strip() if isinstance(title_raw, str) else ""
+    field = field_raw.strip() if isinstance(field_raw, str) else ""
+
     tags_raw = data.get("tags") or []
     if not isinstance(tags_raw, list):
         tags_raw = []
-    tags = [str(t).strip() for t in tags_raw if str(t).strip()][:5]
+    # 문자열만 허용 — `None` / `{}` / 숫자 등이 `str(None)` 거쳐 "None" 같은
+    # 쓰레기 태그로 저장되는 것을 방지.
+    tags = [t.strip() for t in tags_raw if isinstance(t, str) and t.strip()][:5]
 
     if not (title or field or tags):
         return {}

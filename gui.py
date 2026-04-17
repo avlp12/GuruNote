@@ -54,6 +54,9 @@ from gurunote.hardware import (
 )
 from gurunote.stt import install_whisperx, is_whisperx_installed, transcribe
 from gurunote.stt_mlx import is_apple_silicon
+from gurunote.thumbnails import (
+    cached_thumbnail_path, download_thumbnail_async, extract_youtube_id,
+)
 from gurunote.types import _format_ts
 from gurunote.updater import check_for_update, update_project
 
@@ -349,81 +352,403 @@ _SETTINGS_FIELDS = [
 
 
 class HistoryDialog(ctk.CTkToplevel):
-    """완료/실패 작업 목록 + 마크다운 다운로드 + 로그 확인."""
+    """완료/실패 작업 목록 — 필터바 + 카드 그리드 (Phase B)."""
+
+    # 카드 레이아웃
+    _COLUMNS = 3
+    _THUMB_W, _THUMB_H = 256, 144  # mqdefault 비율 유지 (16:9)
+    _CARD_W = 280
 
     def __init__(self, parent: ctk.CTk) -> None:
         super().__init__(parent)
         self.title("GuruNote History")
-        self.geometry("700x520")
+        self.geometry("960x660")
         self.transient(parent)
         self.grab_set()
         self._parent = parent
+
+        # 데이터 모델 + 필터 상태
+        self._all_jobs: list[dict] = []
+        self._filtered_jobs: list[dict] = []
+        self._search_var = ctk.StringVar(value="")
+        self._field_var = ctk.StringVar(value="모든 분야")
+        self._sort_var = ctk.StringVar(value="최신순")
+
+        # PIL 이미지 참조 유지 (GC 방지) + 렌더링 중 썸네일 요청 중복 방지
+        self._thumb_refs: dict[str, object] = {}
+        self._pending_thumb_ids: set[str] = set()
+        # 메인 스레드에서 받아 처리할 썸네일 완성 알림
+        self._thumb_queue: queue.Queue[tuple[str, object]] = queue.Queue()
+        # 검색 debounce — 다량 히스토리에서 키 입력마다 full re-render 방지
+        self._search_after_id: Optional[str] = None
+
         self._build_ui()
         self.after(100, self.focus_force)
+        self.after(120, self._poll_thumb_queue)
 
+    # =========================================================================
+    # UI
+    # =========================================================================
     def _build_ui(self) -> None:
-        top = ctk.CTkFrame(self, fg_color="transparent")
-        top.pack(fill="x", padx=16, pady=(16, 8))
-        ctk.CTkLabel(top, text="작업 히스토리",
-                     font=ctk.CTkFont(size=16, weight="bold")).pack(side="left")
-        ctk.CTkButton(top, text="Refresh", width=100, height=28,
-                      command=self._refresh).pack(side="right")
+        # 상단 헤더
+        header = ctk.CTkFrame(self, fg_color="transparent")
+        header.pack(fill="x", padx=16, pady=(16, 4))
+        ctk.CTkLabel(
+            header, text="작업 히스토리",
+            font=ctk.CTkFont(size=18, weight="bold"),
+        ).pack(side="left")
+        ctk.CTkButton(
+            header, text="Refresh", width=90, height=28,
+            command=self._reload_and_refresh,
+        ).pack(side="right")
+        self._count_label = ctk.CTkLabel(
+            header, text="", text_color=C_TEXT_DIM, font=ctk.CTkFont(size=11),
+        )
+        self._count_label.pack(side="right", padx=(0, 12))
 
-        self._scroll = ctk.CTkScrollableFrame(self)
+        # 필터 바
+        fbar = ctk.CTkFrame(self, fg_color=C_SURFACE, corner_radius=8)
+        fbar.pack(fill="x", padx=16, pady=(4, 8))
+
+        ctk.CTkLabel(fbar, text="검색", font=ctk.CTkFont(size=12)).pack(
+            side="left", padx=(12, 6), pady=10)
+        search_entry = ctk.CTkEntry(
+            fbar, textvariable=self._search_var, width=200,
+            placeholder_text="제목 / 업로더",
+        )
+        search_entry.pack(side="left", pady=10)
+        # 검색 debounce: 200ms 간격으로만 re-render — 빠른 타이핑 중 UI 프리즈 방지
+        self._search_var.trace_add("write", lambda *_: self._schedule_refresh())
+
+        ctk.CTkLabel(fbar, text="분야", font=ctk.CTkFont(size=12)).pack(
+            side="left", padx=(16, 6), pady=10)
+        self._field_menu = ctk.CTkOptionMenu(
+            fbar, variable=self._field_var, values=["모든 분야"],
+            width=150, command=lambda _: self._refresh_grid(),
+        )
+        self._field_menu.pack(side="left", pady=10)
+
+        ctk.CTkLabel(fbar, text="정렬", font=ctk.CTkFont(size=12)).pack(
+            side="left", padx=(16, 6), pady=10)
+        ctk.CTkOptionMenu(
+            fbar, variable=self._sort_var,
+            values=["최신순", "오래된순", "길이 긴 순", "길이 짧은 순", "제목 A-Z"],
+            width=130, command=lambda _: self._refresh_grid(),
+        ).pack(side="left", pady=10)
+
+        ctk.CTkButton(
+            fbar, text="필터 초기화", width=90, height=28,
+            fg_color="gray35", hover_color="gray45",
+            command=self._reset_filters,
+        ).pack(side="right", padx=12, pady=10)
+
+        # 그리드 스크롤 영역
+        # 컬럼 minsize 로 고정 폭 보장 — 카드는 grid_propagate 로 높이 자동화.
+        self._scroll = ctk.CTkScrollableFrame(self, fg_color=C_BG)
         self._scroll.pack(fill="both", expand=True, padx=16, pady=(0, 16))
-        self._scroll.grid_columnconfigure(0, weight=1)
-        self._refresh()
+        for c in range(self._COLUMNS):
+            self._scroll.grid_columnconfigure(
+                c, weight=1, minsize=self._CARD_W, uniform="card"
+            )
 
-    def _refresh(self) -> None:
+        self._reload_and_refresh()
+
+    # =========================================================================
+    # Data flow
+    # =========================================================================
+    def _reload_and_refresh(self) -> None:
+        """인덱스 재로드 + 분야 드롭다운 재구성 + 그리드 재렌더."""
+        self._all_jobs = load_index()
+
+        # 분야 드롭다운 재구성
+        fields = sorted({
+            (j.get("field") or "").strip()
+            for j in self._all_jobs if (j.get("field") or "").strip()
+        })
+        self._field_menu.configure(values=["모든 분야", *fields])
+        if self._field_var.get() not in ["모든 분야", *fields]:
+            self._field_var.set("모든 분야")
+
+        self._refresh_grid()
+
+    def _refresh_grid(self) -> None:
+        # 기존 카드 제거
         for w in self._scroll.winfo_children():
             w.destroy()
-        jobs = load_index()
-        if not jobs:
-            ctk.CTkLabel(self._scroll, text="아직 작업 기록이 없습니다.",
-                         text_color="gray55").grid(row=0, column=0, pady=40)
+
+        filtered = self._apply_filters(self._all_jobs)
+        self._filtered_jobs = filtered
+        self._count_label.configure(
+            text=f"{len(filtered)} / {len(self._all_jobs)} 건"
+        )
+
+        if not filtered:
+            ctk.CTkLabel(
+                self._scroll,
+                text="조건에 맞는 작업이 없습니다." if self._all_jobs
+                     else "아직 작업 기록이 없습니다.",
+                text_color="gray55",
+            ).grid(row=0, column=0, columnspan=self._COLUMNS, pady=60)
             return
-        for i, job in enumerate(jobs):
-            self._render_job_row(i, job)
 
-    def _render_job_row(self, row: int, job: dict) -> None:
+        for i, job in enumerate(filtered):
+            r, c = divmod(i, self._COLUMNS)
+            self._render_card(r, c, job)
+
+    def _apply_filters(self, jobs: list[dict]) -> list[dict]:
+        """검색어 + 분야 + 정렬 적용."""
+        q = self._search_var.get().strip().lower()
+        field = self._field_var.get().strip()
+
+        def matches(j: dict) -> bool:
+            if field and field != "모든 분야" and (j.get("field") or "") != field:
+                return False
+            if q:
+                hay = " ".join([
+                    j.get("organized_title") or "",
+                    j.get("title") or "",
+                    j.get("uploader") or "",
+                    " ".join(j.get("tags") or []),
+                ]).lower()
+                if q not in hay:
+                    return False
+            return True
+
+        out = [j for j in jobs if matches(j)]
+
+        sort_mode = self._sort_var.get()
+        if sort_mode == "최신순":
+            out.sort(key=lambda j: j.get("created_at") or "", reverse=True)
+        elif sort_mode == "오래된순":
+            out.sort(key=lambda j: j.get("created_at") or "")
+        elif sort_mode == "길이 긴 순":
+            out.sort(key=lambda j: j.get("duration_sec") or 0, reverse=True)
+        elif sort_mode == "길이 짧은 순":
+            out.sort(key=lambda j: j.get("duration_sec") or 0)
+        elif sort_mode == "제목 A-Z":
+            out.sort(key=lambda j: (j.get("organized_title") or j.get("title") or "").lower())
+        return out
+
+    def _reset_filters(self) -> None:
+        # trace 가 발동해 _schedule_refresh 가 예약되므로 직접 호출은 불필요
+        self._search_var.set("")
+        self._field_var.set("모든 분야")
+        self._sort_var.set("최신순")
+        self._refresh_grid()
+
+    def _schedule_refresh(self) -> None:
+        """debounce: 타이핑이 빠르면 이전 예약을 취소하고 마지막 키 이후 200ms 에만 re-render."""
+        if self._search_after_id is not None:
+            try:
+                self.after_cancel(self._search_after_id)
+            except Exception:  # noqa: BLE001
+                pass
+        self._search_after_id = self.after(200, self._refresh_grid)
+
+    # =========================================================================
+    # Card rendering
+    # =========================================================================
+    def _render_card(self, row: int, col: int, job: dict) -> None:
+        # 카드 크기는 grid 의 컬럼 minsize 로 보장 — grid_propagate 를 풀어
+        # 길이 다른 제목/태그에서도 클리핑 없이 높이가 자연스럽게 확장되게.
+        card = ctk.CTkFrame(
+            self._scroll, fg_color=C_SURFACE, corner_radius=10,
+            border_width=1, border_color=C_BORDER,
+        )
+        card.grid(row=row, column=col, padx=8, pady=8, sticky="nsew")
+        card.grid_columnconfigure(0, weight=1)
+
+        # 썸네일 자리 (비동기 로딩)
+        thumb_holder = ctk.CTkFrame(
+            card, fg_color=C_BG, corner_radius=6,
+            width=self._THUMB_W, height=self._THUMB_H,
+        )
+        thumb_holder.grid(row=0, column=0, padx=10, pady=(10, 6), sticky="ew")
+        thumb_holder.grid_propagate(False)
+        self._attach_thumbnail(thumb_holder, job)
+
+        # 상태 뱃지 (좌상단 오버레이 대신 제목 옆 아이콘으로)
         status = job.get("status", "unknown")
-        icon = "✅" if status == "completed" else "❌"
-        title = job.get("title", "제목 없음")
-        created = (job.get("created_at") or "")[:16].replace("T", " ")
-        engine = job.get("stt_engine", "")
-        job_id = job.get("job_id", "")
+        status_icon = "✅" if status == "completed" else "❌"
 
-        frame = ctk.CTkFrame(self._scroll, fg_color=C_SURFACE, corner_radius=8)
-        frame.grid(row=row, column=0, sticky="ew", pady=3)
-        frame.grid_columnconfigure(1, weight=1)
+        # 제목 (정리된 제목 우선)
+        title = job.get("organized_title") or job.get("title") or "제목 없음"
+        ctk.CTkLabel(
+            card, text=f"{status_icon}  {title}",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            anchor="w", justify="left", wraplength=self._CARD_W - 30,
+            text_color=C_TEXT,
+        ).grid(row=1, column=0, padx=10, pady=(2, 2), sticky="w")
 
-        ctk.CTkLabel(frame, text=icon, font=ctk.CTkFont(size=14)).grid(
-            row=0, column=0, padx=(10, 6), pady=8)
-        info = f"{title}\n{created}  ·  {engine}"
+        # 메타 라인 1: 업로더 · 날짜
+        uploader = (job.get("uploader") or "").strip()
+        created = (job.get("created_at") or "")[:10]
+        upload_date = (job.get("upload_date") or "").strip()
+        date_part = upload_date or created
+        meta1 = " · ".join(filter(None, [uploader, date_part]))
+        if meta1:
+            ctk.CTkLabel(
+                card, text=meta1, font=ctk.CTkFont(size=11),
+                anchor="w", text_color=C_TEXT_DIM,
+                wraplength=self._CARD_W - 30,
+            ).grid(row=2, column=0, padx=10, pady=0, sticky="w")
+
+        # 메타 라인 2: 길이 · STT 엔진 · 화자 수
+        dur_s = job.get("duration_sec") or 0
+        if dur_s:
+            h, rem = divmod(int(dur_s), 3600)
+            m, s = divmod(rem, 60)
+            dur_str = f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
+        else:
+            dur_str = ""
+        n_sp = job.get("num_speakers") or 0
+        engine = job.get("stt_engine") or ""
+        meta2 = " · ".join(filter(None, [
+            dur_str, engine, f"화자 {n_sp}" if n_sp else "",
+        ]))
+        if meta2:
+            ctk.CTkLabel(
+                card, text=meta2, font=ctk.CTkFont(size=11),
+                anchor="w", text_color=C_TEXT_DIM,
+            ).grid(row=3, column=0, padx=10, pady=(0, 2), sticky="w")
+
+        # 분야 + 태그
+        field = (job.get("field") or "").strip()
+        tags = job.get("tags") or []
+        badge_line = ""
+        if field:
+            badge_line += f"📁 {field}"
+        if tags:
+            badge_line += ("   " if badge_line else "") + " ".join(f"#{t}" for t in tags[:5])
+        if badge_line:
+            ctk.CTkLabel(
+                card, text=badge_line, font=ctk.CTkFont(size=10),
+                anchor="w", text_color=C_PRIMARY,
+                wraplength=self._CARD_W - 30, justify="left",
+            ).grid(row=4, column=0, padx=10, pady=(2, 4), sticky="w")
+
+        # 실패 시 에러 메시지
         if status == "failed":
-            err = job.get("error_message", "")
+            err = (job.get("error_message") or "").strip()
             if err:
-                info += f"\n❌ {err[:80]}"
-        ctk.CTkLabel(frame, text=info, font=ctk.CTkFont(size=12),
-                     anchor="w", justify="left").grid(
-            row=0, column=1, sticky="w", padx=4, pady=8)
+                ctk.CTkLabel(
+                    card, text=f"❌ {err[:120]}",
+                    font=ctk.CTkFont(size=10), text_color=C_DANGER,
+                    wraplength=self._CARD_W - 30, anchor="w", justify="left",
+                ).grid(row=5, column=0, padx=10, pady=(2, 4), sticky="w")
 
-        btn_frame = ctk.CTkFrame(frame, fg_color="transparent")
-        btn_frame.grid(row=0, column=2, padx=(4, 10), pady=8)
-
+        # 액션 버튼 바
+        btn_row = ctk.CTkFrame(card, fg_color="transparent")
+        btn_row.grid(row=6, column=0, padx=8, pady=(4, 10), sticky="ew")
+        job_id = job.get("job_id", "")
         if job.get("has_markdown"):
-            ctk.CTkButton(btn_frame, text="Save", width=42, height=28,
-                          command=lambda jid=job_id, t=title: self._save_md(jid, t)
-                          ).pack(side="left", padx=2)
-        ctk.CTkButton(btn_frame, text="Log", width=38, height=28,
-                      fg_color="gray35",
-                      command=lambda jid=job_id: self._show_log(jid)
-                      ).pack(side="left", padx=2)
-        ctk.CTkButton(btn_frame, text="Del", width=38, height=28,
-                      fg_color="gray35", hover_color=C_DANGER,
-                      command=lambda jid=job_id: self._delete(jid)
-                      ).pack(side="left", padx=2)
+            ctk.CTkButton(
+                btn_row, text="Save .md", width=80, height=28,
+                command=lambda jid=job_id, t=title: self._save_md(jid, t),
+            ).pack(side="left", padx=(0, 4))
+        ctk.CTkButton(
+            btn_row, text="Log", width=54, height=28,
+            fg_color="gray35",
+            command=lambda jid=job_id: self._show_log(jid),
+        ).pack(side="left", padx=2)
+        ctk.CTkButton(
+            btn_row, text="Del", width=54, height=28,
+            fg_color="gray35", hover_color=C_DANGER,
+            command=lambda jid=job_id: self._delete(jid),
+        ).pack(side="right", padx=2)
 
+    def _attach_thumbnail(self, holder: ctk.CTkFrame, job: dict) -> None:
+        """
+        썸네일 이미지 로드 (캐시 즉시, 미캐시 시 비동기 다운로드).
+        실패 / 로컬파일 소스 시 회색 플레이스홀더 + 아이콘 라벨.
+        """
+        url = job.get("source_url") or ""
+        video_id = extract_youtube_id(url) if url else None
+
+        if not video_id:
+            # 로컬 파일 또는 YouTube 아님
+            ctk.CTkLabel(
+                holder, text="🎵\n(로컬 파일)" if url else "🎙️",
+                font=ctk.CTkFont(size=22), text_color=C_TEXT_DIM,
+            ).place(relx=0.5, rely=0.5, anchor="center")
+            return
+
+        cache_path = cached_thumbnail_path(video_id)
+        if cache_path.exists():
+            self._place_thumbnail(holder, cache_path, video_id)
+            return
+
+        # 플레이스홀더 먼저 표시
+        placeholder = ctk.CTkLabel(
+            holder, text="⏳", font=ctk.CTkFont(size=22),
+            text_color=C_TEXT_DIM,
+        )
+        placeholder.place(relx=0.5, rely=0.5, anchor="center")
+
+        # 비동기 다운로드 요청 (중복 방지)
+        if video_id not in self._pending_thumb_ids:
+            self._pending_thumb_ids.add(video_id)
+            def _on_complete(path):
+                self._thumb_queue.put((video_id, path))
+            download_thumbnail_async(video_id, _on_complete)
+
+        # holder 를 video_id 로 기억해 나중에 찾음
+        holder._gurunote_thumb_video_id = video_id  # type: ignore[attr-defined]
+        holder._gurunote_placeholder = placeholder  # type: ignore[attr-defined]
+
+    def _place_thumbnail(self, holder: ctk.CTkFrame, image_path, video_id: str) -> None:
+        """PIL 로 이미지 로드해 CTkImage 로 holder 에 표시."""
+        try:
+            from PIL import Image  # type: ignore
+            img = Image.open(image_path)
+            ctk_img = ctk.CTkImage(
+                light_image=img, dark_image=img,
+                size=(self._THUMB_W, self._THUMB_H),
+            )
+            # GC 방지용 참조 유지
+            self._thumb_refs[video_id] = ctk_img
+            label = ctk.CTkLabel(holder, text="", image=ctk_img)
+            label.place(relx=0.5, rely=0.5, anchor="center")
+        except Exception:  # noqa: BLE001
+            ctk.CTkLabel(
+                holder, text="🎬", font=ctk.CTkFont(size=22),
+                text_color=C_TEXT_DIM,
+            ).place(relx=0.5, rely=0.5, anchor="center")
+
+    def _poll_thumb_queue(self) -> None:
+        """비동기 다운로드 완료 메시지를 메인 스레드에서 처리."""
+        try:
+            while True:
+                video_id, path = self._thumb_queue.get_nowait()
+                self._pending_thumb_ids.discard(video_id)
+                if path is None:
+                    continue
+                # 현재 그리드의 모든 카드를 훑어 해당 video_id 를 찾아 업데이트
+                self._apply_thumbnail_to_cards(video_id, path)
+        except queue.Empty:
+            pass
+        # 다이얼로그가 살아있을 때만 다음 poll 예약
+        if self.winfo_exists():
+            self.after(200, self._poll_thumb_queue)
+
+    def _apply_thumbnail_to_cards(self, video_id: str, path) -> None:
+        """현재 그리드에서 해당 video_id 의 holder 들을 찾아 이미지 삽입."""
+        for card in self._scroll.winfo_children():
+            for child in card.winfo_children() if hasattr(card, "winfo_children") else []:
+                vid = getattr(child, "_gurunote_thumb_video_id", None)
+                if vid == video_id:
+                    # 플레이스홀더 제거
+                    ph = getattr(child, "_gurunote_placeholder", None)
+                    if ph is not None:
+                        try:
+                            ph.destroy()
+                        except Exception:  # noqa: BLE001
+                            pass
+                    self._place_thumbnail(child, path, video_id)
+
+    # =========================================================================
+    # Actions (기존과 동일)
+    # =========================================================================
     def _save_md(self, job_id: str, title: str) -> None:
         md = get_job_markdown(job_id)
         if not md:
@@ -452,7 +777,7 @@ class HistoryDialog(ctk.CTkToplevel):
     def _delete(self, job_id: str) -> None:
         if messagebox.askyesno("삭제", "이 작업 기록을 삭제할까요?"):
             delete_job(job_id)
-            self._refresh()
+            self._reload_and_refresh()
 
 
 class UpdateProgressDialog(ctk.CTkToplevel):
@@ -902,7 +1227,7 @@ class GuruNoteApp(ctk.CTk):
             ).grid(row=2 + i, column=0, padx=10, pady=2, sticky="ew")
 
         ctk.CTkLabel(
-            sb, text="v0.6.0.5", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
+            sb, text="v0.6.0.6", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
         ).grid(row=6, column=0, padx=20, pady=(0, 16), sticky="sw")
 
     # ── 메인 영역 ────────────────────────────────────────────

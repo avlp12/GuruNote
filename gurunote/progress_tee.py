@@ -206,9 +206,11 @@ def install_tee(
     sys.stderr = tee_err
 
     orig_out = None
+    tee_out: Optional[_Tee] = None
     if include_stdout:
         orig_out = sys.stdout
-        sys.stdout = _Tee(orig_out, callback, throttle_ms=throttle_ms)
+        tee_out = _Tee(orig_out, callback, throttle_ms=throttle_ms)
+        sys.stdout = tee_out
 
     try:
         yield
@@ -218,6 +220,15 @@ def install_tee(
             tee_err.flush()
         except Exception:  # noqa: BLE001
             pass
-        sys.stderr = orig_err
-        if orig_out is not None:
+        if tee_out is not None:
+            try:
+                tee_out.flush()
+            except Exception:  # noqa: BLE001
+                pass
+        # 방어적 restore: 우리가 설치한 tee 가 여전히 top-of-stack 일 때만 교체.
+        # 다른 코드가 그 사이 또 다른 tee 를 걸었다면 함부로 덮지 않는다
+        # (nested install_tee 호출 등 엣지 케이스에서 stderr 영구 오염 방지).
+        if sys.stderr is tee_err:
+            sys.stderr = orig_err
+        if tee_out is not None and sys.stdout is tee_out:
             sys.stdout = orig_out

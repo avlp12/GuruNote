@@ -7,6 +7,24 @@
 
 ## [Unreleased]
 
+## [0.7.1.1] - 2026-04-17
+
+### Changed
+- **README 갱신** — v0.7.0.4 ~ v0.7.1.0 까지의 신규 기능을 본문 (빠른 시작,
+  주요 기능, 실행 섹션, 프로젝트 구조, Uninstall, FAQ) 에 모두 반영.
+  - 빠른 시작 / 실행 섹션: macOS 백그라운드 런처 (`./run_gui.command`) 안내
+    + venv 자동 감지 + `~/.gurunote/gui.log` 진단법
+  - 주요 기능: PDF 자동 설치 다이얼로그, Obsidian vault 자동 감지, 4-facet
+    트리 내비, 노트 인-앱 편집, 의미 검색, 대시보드, Material 3 다크 UI
+  - 프로젝트 구조: 신규 모듈 11종 (`thumbnails.py`, `pdf_export.py`,
+    `pdf_installer.py`, `obsidian.py`, `notion_sync.py`, `search.py`,
+    `semantic.py`, `stats.py`, `nav_tree.py`, `ui_state.py`, `app_icon.py`)
+    + `run_gui.command` 추가 표기
+  - Uninstall: `~/.gurunote` 하위 신규 산출물 (썸네일 캐시, 의미 검색
+    인덱스, UI 상태, 앱 아이콘, 백그라운드 로그) 명시
+  - FAQ 5건 신규: PDF 자동 설치 / Obsidian 자동 감지 / macOS 터미널
+    분리 런처 / 앱 아이콘 / 트리 내비
+
 ## [0.7.1.0] - 2026-04-17
 
 ### Added
@@ -888,7 +906,8 @@ bash run_desktop.sh
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.7.1.0...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.7.1.1...HEAD
+[0.7.1.1]: https://github.com/avlp12/GuruNote/compare/v0.7.1.0...v0.7.1.1
 [0.7.1.0]: https://github.com/avlp12/GuruNote/compare/v0.7.0.5...v0.7.1.0
 [0.7.0.5]: https://github.com/avlp12/GuruNote/compare/v0.7.0.4...v0.7.0.5
 [0.7.0.4]: https://github.com/avlp12/GuruNote/compare/v0.7.0.3...v0.7.0.4

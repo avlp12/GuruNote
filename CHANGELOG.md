@@ -7,6 +7,30 @@
 
 ## [Unreleased]
 
+## [0.6.0.15] - 2026-04-17
+
+### Added
+- **저장된 노트 인라인 편집기** (`gui.py::NoteEditorDialog`,
+  `gurunote/history.py::update_job_markdown`) — LLM 요약/번역의 교정이
+  자주 필요한데 그동안은 외부 에디터로 `~/.gurunote/jobs/<id>/result.md`
+  를 열어야 했다. 이제 HistoryDialog 카드의 **Edit** 버튼 한 번으로
+  CTkToplevel 편집기가 열린다.
+  - YAML frontmatter 포함 전체 마크다운을 단일 textbox 로 표시 (monospace
+    Menlo, wrap=word)
+  - 저장: `update_job_markdown` 이 `result.md` 만 덮어씀 (metadata 불변),
+    필요시 인덱스의 stale `has_markdown=False` 를 True 로 보정
+  - dirty 체크: 닫기/취소 시 저장 안 된 변경 있으면 확인 대화상자
+  - Cmd/Ctrl+S 로 저장 단축키
+  - 저장 후 `search_clear_cache()` 호출 + 히스토리 그리드 재로드 →
+    Phase F 본문 검색 스니펫이 수정된 내용으로 즉시 갱신
+
+### Changed
+- **HistoryDialog 카드 버튼 레이아웃** — 6 → 7 버튼으로 확장
+  (`.md` / **Edit** / `PDF` / `Obs` / `Ntn` / `Log` / `Del`).
+  `Edit` 은 `.md` 바로 옆에 배치 (둘 다 원본 마크다운 대상). 버튼 너비를
+  34 → 32px 로 조정해 카드 inner ~264px 에 7×32 + 6×gap = 236px 로 여유
+  있게 맞춤. Edit 은 gray-dark-hover-primary 스타일로 시각적 구분.
+
 ## [0.6.0.14] - 2026-04-17
 
 ### Added
@@ -630,7 +654,8 @@ bash run_desktop.sh
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.6.0.14...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.6.0.15...HEAD
+[0.6.0.15]: https://github.com/avlp12/GuruNote/compare/v0.6.0.14...v0.6.0.15
 [0.6.0.14]: https://github.com/avlp12/GuruNote/compare/v0.6.0.13...v0.6.0.14
 [0.6.0.13]: https://github.com/avlp12/GuruNote/compare/v0.6.0.12...v0.6.0.13
 [0.6.0.12]: https://github.com/avlp12/GuruNote/compare/v0.6.0.11...v0.6.0.12

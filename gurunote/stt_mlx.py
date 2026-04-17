@@ -168,6 +168,16 @@ def transcribe_mlx(
                     "  https://huggingface.co/pyannote/speaker-diarization-3.1\n"
                     "  화자 분리 없이 단일 화자(A) 로 진행합니다."
                 )
+            elif "AudioMetaData" in err_msg:
+                # torchaudio 2.8+ 에서 `AudioMetaData` 가 제거되어 pyannote.audio 3.x
+                # 와 호환 불가. 4.0+ 는 torchcodec 로 마이그레이션해 해결.
+                log(
+                    "화자 분리 실패: pyannote.audio 3.x 와 최신 torchaudio 가\n"
+                    "  호환되지 않습니다 ('AudioMetaData' 제거됨).\n"
+                    "  pyannote.audio 4.0+ 로 업그레이드하세요:\n"
+                    "    .venv/bin/pip install --upgrade 'pyannote.audio>=4.0'\n"
+                    "  단일 화자(A) 로 진행합니다."
+                )
             else:
                 log(f"화자 분리 실패: {exc}\n  단일 화자(A) 로 진행합니다.")
     else:

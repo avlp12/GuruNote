@@ -76,9 +76,23 @@ def save_job(
     num_speakers: int = 0,
     error_message: str = "",
     full_md: str = "",
+    # Phase A — 지식 증류기 메타데이터
+    organized_title: str = "",
+    field: str = "",
+    tags: Optional[List[str]] = None,
+    uploader: str = "",
+    upload_date: str = "",
 ) -> Path:
     """
     작업 결과를 디스크에 저장하고 인덱스를 갱신한다.
+
+    Args:
+        title: yt-dlp 가 가져온 원본 영상 제목 (또는 로컬 파일명)
+        organized_title: LLM 이 정리한 한국어 제목 (없으면 title 사용)
+        field: 분야 분류 (예: "AI/ML", "스타트업")
+        tags: 태그 리스트 (5개 권장)
+        uploader: 채널/업로더 이름 (분류용)
+        upload_date: 영상 게시일 (YYYY-MM-DD 또는 yt-dlp 의 YYYYMMDD)
 
     Returns:
         job_dir 경로
@@ -89,6 +103,11 @@ def save_job(
     meta: dict[str, Any] = {
         "job_id": job_id,
         "title": title,
+        "organized_title": organized_title or title,
+        "field": field,
+        "tags": list(tags) if tags else [],
+        "uploader": uploader,
+        "upload_date": upload_date,
         "created_at": created_at,
         "source_url": source_url,
         "stt_engine": stt_engine,

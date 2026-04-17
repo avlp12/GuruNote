@@ -7,7 +7,7 @@ from __future__ import annotations
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Iterable, Optional
+from typing import Iterable, List, Optional
 
 from gurunote.types import Transcript, _format_ts
 
@@ -74,24 +74,52 @@ def build_gurunote_markdown(
     upload_date: Optional[str] = None,
     chapters: Optional[Iterable] = None,
     subtitles_source: str = "",
+    # Phase A — 지식 증류기 메타데이터
+    organized_title: str = "",
+    field: str = "",
+    tags: Optional[List[str]] = None,
 ) -> str:
     """
     최종 다운로드용 마크다운 조립.
 
     구조:
-        - 헤더 (영상 메타: 제목/채널/게시일/URL/STT/화자수/재생시간)
+        - YAML frontmatter (Obsidian/Notion 호환 — Phase A)
+        - 헤더 (영상 메타: 제목/채널/게시일/URL/STT/화자수/재생시간/분야/태그)
         - 원본 영상 챕터 (있을 경우)
         - GuruNote 요약 (LLM 결과)
         - 전체 번역 스크립트
         - 영어 원문 스크립트
         - 푸터
     """
-    meta_lines = [f"# 🎙️ GuruNote — {title}", ""]
+    display_title = (organized_title or title).strip()
+
+    # YAML frontmatter — Obsidian/Notion 가 자동 인식하는 메타. 비어있으면 생략.
+    frontmatter = _build_frontmatter(
+        organized_title=organized_title or title,
+        original_title=title,
+        uploader=uploader or "",
+        upload_date=upload_date or "",
+        webpage_url=webpage_url,
+        field=field,
+        tags=tags or [],
+        stt_engine=stt_engine,
+        duration_sec=transcript.duration,
+        num_speakers=len(transcript.speakers),
+    )
+
+    meta_lines = [f"# 🎙️ GuruNote — {display_title}", ""]
+    if organized_title and organized_title != title:
+        meta_lines.append(f"- **원본 제목:** {title}")
     if uploader:
         meta_lines.append(f"- **채널:** {uploader}")
     if upload_date:
         meta_lines.append(f"- **게시일:** {upload_date}")
     meta_lines.append(f"- **원본 영상:** <{webpage_url}>")
+    if field:
+        meta_lines.append(f"- **분야:** {field}")
+    if tags:
+        tag_str = " ".join(f"`#{t}`" for t in tags)
+        meta_lines.append(f"- **태그:** {tag_str}")
     if stt_engine:
         meta_lines.append(f"- **STT 엔진:** `{stt_engine}`")
     if subtitles_source:
@@ -103,9 +131,10 @@ def build_gurunote_markdown(
 
     chapters_section = build_chapters_section(chapters or [])
 
-    parts = [
-        "\n".join(meta_lines),
-    ]
+    parts: list[str] = []
+    if frontmatter:
+        parts.extend([frontmatter, ""])
+    parts.append("\n".join(meta_lines))
     if chapters_section:
         parts.extend([chapters_section, ""])
     parts.extend([
@@ -120,6 +149,70 @@ def build_gurunote_markdown(
         "",
     ])
     return "\n".join(parts)
+
+
+def _build_frontmatter(
+    *,
+    organized_title: str,
+    original_title: str,
+    uploader: str,
+    upload_date: str,
+    webpage_url: str,
+    field: str,
+    tags: List[str],
+    stt_engine: str,
+    duration_sec: float,
+    num_speakers: int,
+) -> str:
+    """
+    Obsidian / Notion / Hugo / Jekyll 호환 YAML frontmatter.
+
+    필요한 값이 하나도 없으면 빈 문자열 반환.
+    """
+    if not (organized_title or field or tags):
+        return ""
+
+    lines: list[str] = ["---"]
+    if organized_title:
+        # YAML safe quoting: 콜론/대시/특수문자 안전
+        lines.append(f'title: "{_yaml_escape(organized_title)}"')
+    if original_title and original_title != organized_title:
+        lines.append(f'original_title: "{_yaml_escape(original_title)}"')
+    if uploader:
+        lines.append(f'uploader: "{_yaml_escape(uploader)}"')
+    if upload_date:
+        lines.append(f"upload_date: {upload_date}")
+    if webpage_url:
+        lines.append(f"source_url: {webpage_url}")
+    if field:
+        lines.append(f'field: "{_yaml_escape(field)}"')
+    if tags:
+        # Obsidian 스타일: 공백/특수문자 없는 단순 태그
+        sanitized = [_yaml_tag(t) for t in tags]
+        sanitized = [t for t in sanitized if t]
+        if sanitized:
+            tag_array = ", ".join(f'"{t}"' for t in sanitized)
+            lines.append(f"tags: [{tag_array}]")
+    if stt_engine:
+        lines.append(f'stt_engine: "{stt_engine}"')
+    if duration_sec:
+        lines.append(f"duration_sec: {int(duration_sec)}")
+    if num_speakers:
+        lines.append(f"num_speakers: {num_speakers}")
+    lines.append(f'created: {datetime.now().isoformat(timespec="seconds")}')
+    lines.append("---")
+    return "\n".join(lines)
+
+
+def _yaml_escape(value: str) -> str:
+    """YAML 큰따옴표 문자열 이스케이프 — 백슬래시/큰따옴표만."""
+    return value.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _yaml_tag(value: str) -> str:
+    """Obsidian 호환 태그 정규화 — 공백을 `_`로, `#` 앞쪽 prefix 제거."""
+    v = value.strip().lstrip("#").strip()
+    return re.sub(r"\s+", "_", v)
 
 
 def autosave_result(full_md: str, title: str, save_dir: Path | None = None) -> Path:

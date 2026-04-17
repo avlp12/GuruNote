@@ -42,6 +42,8 @@ from gurunote.history import (
     JobLogger, get_job_log, get_job_markdown,
     load_index, new_job_id, save_job,
 )
+from gurunote import semantic as semantic_search
+from gurunote.stats import compute_stats, render_report
 from gurunote.stt import install_whisperx, is_whisperx_installed, transcribe
 from gurunote.stt_mlx import is_apple_silicon
 from gurunote.types import Transcript, _format_ts
@@ -120,6 +122,118 @@ def render_sidebar() -> dict:
         st.caption("Powered by WhisperX-ASR · yt-dlp · Streamlit")
 
         return {"engine": engine_label, "provider": provider}
+
+
+def render_dashboard_tab() -> None:
+    """대시보드 탭 — 통계 리포트 + 의미 검색 인덱스 빌드/상태."""
+    st.subheader("대시보드")
+    jobs = load_index()
+    stats = compute_stats(jobs)
+    st.code(render_report(stats), language="text")
+
+    st.divider()
+    st.markdown("#### 의미 검색 인덱스")
+
+    if not semantic_search.is_available():
+        st.warning(semantic_search.missing_packages_hint())
+        return
+
+    info = semantic_search.index_stats()
+    if info.get("built"):
+        st.success(
+            f"빌드됨 · 모델 `{info.get('model', '?')}` · "
+            f"청크 {info.get('num_chunks', 0):,} · "
+            f"잡 {info.get('num_jobs', 0):,} · "
+            f"빌드 시각 `{info.get('built_at', '')[:19]}`"
+        )
+    else:
+        st.info("아직 빌드된 인덱스가 없습니다. 아래 버튼으로 처음 빌드하세요.")
+
+    col_b, col_c = st.columns(2)
+    if col_b.button("Rebuild Semantic Index", use_container_width=True):
+        if not jobs:
+            st.warning("인덱싱할 작업이 없습니다.")
+        else:
+            log_lines: list[str] = []
+            with st.status("의미 검색 인덱스 빌드 중...", expanded=True) as st_status:
+                try:
+                    result = semantic_search.build_index(
+                        jobs, log=lambda m: (log_lines.append(m), st.write(m))[1],
+                    )
+                    st_status.update(
+                        label=(
+                            f"빌드 완료 · 잡 {result.get('num_jobs', 0)} · "
+                            f"청크 {result.get('num_chunks', 0)} · "
+                            f"스킵 {result.get('skipped', 0)}"
+                        ),
+                        state="complete",
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    st.error(f"인덱스 빌드 실패: {exc}")
+
+    if col_c.button("Clear Index", use_container_width=True):
+        semantic_search.clear_index()
+        st.success("인덱스를 삭제했습니다. 새로 빌드하려면 위 버튼을 누르세요.")
+
+
+def render_search_tab() -> None:
+    """의미 검색 탭 — 질의 입력 → 유사 노트 매칭 + 다운로드."""
+    st.subheader("의미 검색")
+
+    if not semantic_search.is_available():
+        st.warning(semantic_search.missing_packages_hint())
+        return
+    if not semantic_search.is_index_built():
+        st.info(
+            "아직 인덱스가 빌드되지 않았습니다. **대시보드** 탭에서 "
+            "'Rebuild Semantic Index' 를 먼저 실행하세요."
+        )
+        return
+
+    with st.form("semantic_search_form"):
+        query = st.text_input(
+            "질의 (의미/문맥 기반)",
+            placeholder="예: AI 가 일자리를 대체할 가능성",
+        )
+        c1, c2 = st.columns(2)
+        top_k = c1.slider("Top-K (잡 단위)", min_value=1, max_value=30, value=10)
+        min_score = c2.slider("최소 유사도", min_value=0.0, max_value=1.0, value=0.25, step=0.05)
+        submitted = st.form_submit_button("검색", type="primary")
+
+    if not submitted:
+        return
+    if not query.strip():
+        st.warning("질의를 입력하세요.")
+        return
+
+    try:
+        results = semantic_search.search(query, top_k=top_k, min_score=min_score)
+    except Exception as exc:  # noqa: BLE001
+        st.error(f"검색 실패: {exc}")
+        return
+
+    if not results:
+        st.info(f"매칭 결과가 없습니다. (최소 유사도 {min_score:.2f} 이상)")
+        return
+
+    st.caption(f"{len(results)} 개 잡 매칭 · 점수 내림차순")
+    for r in results:
+        score = r.get("score", 0.0)
+        title = r.get("title") or "제목 없음"
+        job_id = r.get("job_id", "")
+        preview = r.get("preview", "")
+        with st.expander(f"[{score:.3f}]  {title}", expanded=False):
+            st.markdown(f"**Preview (chunk {r.get('chunk_idx', 0)}):**")
+            st.write(preview)
+            md = get_job_markdown(job_id)
+            if md:
+                st.download_button(
+                    "마크다운 다운로드",
+                    data=md.encode("utf-8"),
+                    file_name=f"GuruNote_{sanitize_filename(title)}.md",
+                    mime="text/markdown",
+                    key=f"sem_dl_{job_id}",
+                )
 
 
 def render_history_tab() -> None:
@@ -529,7 +643,9 @@ def render_results() -> None:
 def main() -> None:
     render_header()
     settings = render_sidebar()
-    tab_run, tab_history, tab_settings = st.tabs(["🎧 GuruNote 생성", "📂 히스토리", "⚙️ Settings"])
+    tab_run, tab_history, tab_dashboard, tab_search, tab_settings = st.tabs(
+        ["🎧 GuruNote 생성", "📂 히스토리", "📊 대시보드", "🔎 의미 검색", "⚙️ Settings"]
+    )
 
     with tab_run:
         st.subheader("🎧 오디오 소스 선택")
@@ -612,6 +728,12 @@ def main() -> None:
 
     with tab_history:
         render_history_tab()
+
+    with tab_dashboard:
+        render_dashboard_tab()
+
+    with tab_search:
+        render_search_tab()
 
     with tab_settings:
         render_settings_tab(settings["provider"])

@@ -7,6 +7,18 @@
 
 ## [Unreleased]
 
+## [0.6.0.4] - 2026-04-17
+
+### Fixed
+- **메타 추출 품질 이슈 2건** (`gurunote/llm.py`) — PR #68 코드 리뷰 후속:
+  - `_parse_metadata_json` 의 태그 필터를 `isinstance(t, str)` 기반으로 강화.
+    이전: `str(t).strip()` 이 `None`/`{}` 등을 `"None"`/`"{}"` 문자열로 저장해
+    쓰레기 태그가 영속화될 가능성. 이후: 문자열만 통과, 나머지 드롭.
+    `organized_title` / `field` 도 동일하게 `isinstance(str)` 가드 추가.
+  - `extract_metadata` 의 하드코딩된 `max_tokens=512` 를 `max(1024,
+    config.summary_max_tokens // 4)` 로 변경. 긴 한국어 제목/태그 조합에서
+    응답이 잘려 빈 결과가 반환되는 경우 방지.
+
 ## [0.6.0.3] - 2026-04-17
 
 > "지식 증류기" 로드맵 **Phase A — 메타데이터 자동 추출**.
@@ -358,7 +370,8 @@
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.6.0.3...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.6.0.4...HEAD
+[0.6.0.4]: https://github.com/avlp12/GuruNote/compare/v0.6.0.3...v0.6.0.4
 [0.6.0.3]: https://github.com/avlp12/GuruNote/compare/v0.6.0.2...v0.6.0.3
 [0.6.0.2]: https://github.com/avlp12/GuruNote/compare/v0.6.0.1...v0.6.0.2
 [0.6.0.1]: https://github.com/avlp12/GuruNote/compare/v0.6.0...v0.6.0.1

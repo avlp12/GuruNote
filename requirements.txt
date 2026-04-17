@@ -13,6 +13,9 @@
 # --- UI ---
 streamlit>=1.32
 customtkinter>=5.2
+# Pillow: 썸네일 캐시 로딩 + 앱 아이콘 런타임 생성 (customtkinter 가 전이적으로
+# 당기지만, 직접 사용하므로 명시적으로 선언).
+Pillow>=10.0
 
 # --- 오디오 다운로드 ---
 yt-dlp>=2024.3.10

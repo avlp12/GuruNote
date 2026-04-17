@@ -435,7 +435,7 @@ GuruNote/
 주요 변경 사항은 [CHANGELOG.md](./CHANGELOG.md) 에 [Keep a Changelog](https://keepachangelog.com/)
 형식으로 기록되며 버전은 [Semantic Versioning](https://semver.org/) 을 따릅니다.
 
-현재 버전: **v0.7.0.5** — Obsidian 연동 간편 설정 (자동 감지 + 폴더 피커 + 유효성 chip).
+현재 버전: **v0.7.1.0** — Material 3 다크 팔레트 / 전용 앱 아이콘 / 터미널 없는 macOS 런처.
 
 ---
 

@@ -84,9 +84,34 @@ from gurunote.ui_state import (
 )
 from gurunote.types import _format_ts
 from gurunote.updater import check_for_update, update_project
+from gurunote.app_icon import get_app_icon_path
 
 # 환경변수 로드
 load_dotenv()
+
+
+# =============================================================================
+# 앱 아이콘 — 메인 윈도우 및 모든 Toplevel 다이얼로그에 적용
+# =============================================================================
+# Tk PhotoImage 는 같은 윈도우 계층에서 참조가 살아있어야 아이콘이 유지된다.
+# Toplevel 이 destroy 되면 해당 PhotoImage 도 해제되지만, 공유 캐시로 하나만
+# 유지하면 모든 창이 같은 이미지를 참조할 수 있다.
+_ICON_PHOTO = None
+
+
+def _apply_app_icon(window) -> None:
+    """Tk / Toplevel 창에 GuruNote 아이콘 적용. 실패 시 silent no-op."""
+    global _ICON_PHOTO
+    try:
+        path = get_app_icon_path()
+        if path is None:
+            return
+        if _ICON_PHOTO is None:
+            import tkinter as _tk
+            _ICON_PHOTO = _tk.PhotoImage(file=str(path))
+        window.iconphoto(False, _ICON_PHOTO)
+    except Exception:  # noqa: BLE001
+        pass
 
 # =============================================================================
 # 테마 & 상수
@@ -101,19 +126,28 @@ WINDOW_HEIGHT = 820
 STT_OPTIONS = ["auto", "whisperx", "mlx", "assemblyai"]
 LLM_OPTIONS = ["openai", "openai_compatible", "anthropic", "gemini"]
 
-# ── 브랜드 컬러 팔레트 ──
-C_BG = "#1A1B2E"
-C_SIDEBAR = "#212240"
-C_SURFACE = "#262842"
-C_SURFACE_HI = "#303260"
-C_BORDER = "#3A3C5E"
-C_PRIMARY = "#6C63FF"
-C_PRIMARY_HO = "#5A52E0"
-C_ACCENT = "#22D3EE"
-C_TEXT = "#E8E8F0"
-C_TEXT_DIM = "#8B8DA8"
-C_SUCCESS = "#4ADE80"
-C_DANGER = "#F87171"
+# ── 컬러 팔레트 — Material 3 다크 테마 기반 ──
+# 톤 기준 (Material 3 reference palette, purple 톤):
+#   - Surface 계층은 elevation 별로 점진적으로 밝아짐 (1dp → 12dp)
+#   - Primary 는 Purple 40 tone, on_primary 는 Purple 20
+#   - 강조 색은 "surface tint" 로 사용해 배경을 은은히 덮음
+C_BG = "#141218"          # Material 3 surface (base)
+C_SIDEBAR = "#1D1B20"     # Surface + 1dp elevation
+C_SURFACE = "#211F26"     # Surface + 2dp (카드/다이얼로그)
+C_SURFACE_HI = "#2B2930"  # Surface + 3dp (hover/강조 블록)
+C_BORDER = "#49454F"      # Outline variant
+# "Primary container" tone (Material 3 tone 30) — 채도 있는 진보라 배경 +
+# 흰색 텍스트로 충분한 대비 확보. FAB 용 더 밝은 tone(`#D0BCFF`) 은 별도로
+# 정의해 필요한 곳에만 쓴다.
+C_PRIMARY = "#4F378B"     # Primary container (purple 30)
+C_PRIMARY_HO = "#5D43A8"  # Hover 시 한 단계 밝게
+C_PRIMARY_BRIGHT = "#D0BCFF"  # Primary (purple 80) — 아이콘/하이라이트 전용
+C_ON_PRIMARY = "#FFFFFF"  # primary container 위 텍스트 색
+C_ACCENT = "#CCC2DC"      # Secondary — 소프트 라벤더
+C_TEXT = "#E6E0E9"        # On-surface
+C_TEXT_DIM = "#938F99"    # On-surface-variant
+C_SUCCESS = "#81C995"     # Google Material green 200
+C_DANGER = "#F2B8B5"      # Material error container on-dark
 STEP_LABELS = ["오디오", "STT", "번역", "요약", "조립"]
 
 
@@ -410,7 +444,8 @@ class DashboardDialog(ctk.CTkToplevel):
 
     def __init__(self, parent: ctk.CTk) -> None:
         super().__init__(parent)
-        self.title("📊 GuruNote Dashboard")
+        _apply_app_icon(self)
+        self.title("GuruNote · 대시보드")
         self.geometry("760x640")
         self.transient(parent)
         self.grab_set()
@@ -431,7 +466,7 @@ class DashboardDialog(ctk.CTkToplevel):
         ).pack(side="right")
         # Step 3.4 — 의미 검색 인덱스 재빌드 (모델 추론이 무거워 명시적 버튼)
         ctk.CTkButton(
-            header, text="🔮 Semantic Rebuild", width=160, height=28,
+            header, text="Semantic Rebuild", width=160, height=28,
             fg_color=C_PRIMARY, hover_color=C_PRIMARY_HO,
             command=self._on_rebuild_semantic,
         ).pack(side="right", padx=(0, 6))
@@ -552,6 +587,7 @@ class NoteEditorDialog(ctk.CTkToplevel):
         on_saved=None,
     ) -> None:
         super().__init__(parent)
+        _apply_app_icon(self)
         self.title(f"편집 — {title[:60]}")
         self.geometry("1200x680")
         self.transient(parent)
@@ -808,7 +844,8 @@ class HistoryDialog(ctk.CTkToplevel):
 
     def __init__(self, parent: ctk.CTk) -> None:
         super().__init__(parent)
-        self.title("GuruNote History")
+        _apply_app_icon(self)
+        self.title("GuruNote · 히스토리")
         self.geometry("1240x680")
         self.transient(parent)
         self.grab_set()
@@ -889,14 +926,14 @@ class HistoryDialog(ctk.CTkToplevel):
 
         # Phase F — 본문 검색 토글 (result.md 본문 lazy load + lru_cache)
         ctk.CTkCheckBox(
-            fbar, text="📄 본문 포함", variable=self._search_body_var,
+            fbar, text="본문 포함", variable=self._search_body_var,
             command=self._refresh_grid,
             font=ctk.CTkFont(size=11),
         ).pack(side="left", padx=(8, 0), pady=10)
 
         # Step 3.4 — 의미 검색 토글 (sentence-transformers + cosine similarity)
         ctk.CTkCheckBox(
-            fbar, text="🔮 의미 검색", variable=self._search_semantic_var,
+            fbar, text="의미 검색", variable=self._search_semantic_var,
             command=self._refresh_grid,
             font=ctk.CTkFont(size=11),
         ).pack(side="left", padx=(8, 0), pady=10)
@@ -1753,6 +1790,7 @@ class PDFInstallDialog(ctk.CTkToplevel):
         on_success: Optional[Callable[[], None]] = None,
     ) -> None:
         super().__init__(parent)
+        _apply_app_icon(self)
         self.title("PDF 출력 패키지 설치")
         self.geometry("560x380")
         self.resizable(False, False)
@@ -1895,6 +1933,7 @@ class ObsidianSetupDialog(ctk.CTkToplevel):
         on_vault_set: Optional[Callable[[Path], None]] = None,
     ) -> None:
         super().__init__(parent)
+        _apply_app_icon(self)
         self.title("Obsidian Vault 설정")
         self.geometry("620x460")
         self.transient(parent)
@@ -2035,7 +2074,8 @@ class UpdateProgressDialog(ctk.CTkToplevel):
 
     def __init__(self, parent: ctk.CTk) -> None:
         super().__init__(parent)
-        self.title("GuruNote Update")
+        _apply_app_icon(self)
+        self.title("GuruNote · 업데이트")
         self.geometry("520x340")
         self.resizable(False, False)
         self.transient(parent)
@@ -2122,7 +2162,8 @@ class SettingsDialog(ctk.CTkToplevel):
 
     def __init__(self, parent: ctk.CTk) -> None:
         super().__init__(parent)
-        self.title("⚙️ GuruNote 설정")
+        _apply_app_icon(self)
+        self.title("GuruNote · 설정")
         self.geometry("620x640")
         self.resizable(False, False)
         self.transient(parent)
@@ -2507,6 +2548,7 @@ def _install_clipboard_shortcuts(root) -> None:
 class GuruNoteApp(ctk.CTk):
     def __init__(self):
         super().__init__()
+        _apply_app_icon(self)
         self.title(APP_TITLE)
         self.geometry(f"{WINDOW_WIDTH}x{WINDOW_HEIGHT}")
         self.minsize(1000, 700)
@@ -2560,7 +2602,7 @@ class GuruNoteApp(ctk.CTk):
             ).grid(row=2 + i, column=0, padx=10, pady=2, sticky="ew")
 
         ctk.CTkLabel(
-            sb, text="v0.7.0.5", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
+            sb, text="v0.7.1.0", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
         ).grid(row=7, column=0, padx=20, pady=(0, 16), sticky="sw")
 
     # ── 메인 영역 ────────────────────────────────────────────

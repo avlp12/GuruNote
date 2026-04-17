@@ -803,20 +803,30 @@ class HistoryDialog(ctk.CTkToplevel):
             ).place(relx=0.5, rely=0.5, anchor="center")
 
     def _poll_thumb_queue(self) -> None:
-        """비동기 다운로드 완료 메시지를 메인 스레드에서 처리."""
+        """비동기 다운로드 완료 메시지를 메인 스레드에서 처리.
+
+        다이얼로그가 destroyed 된 뒤 pending `after()` 콜백이 한 번 더 실행되면
+        `self._scroll.winfo_children()` 이 `_tkinter.TclError` 를 낼 수 있어
+        전체 블록을 try/except 로 감싼다.
+        """
         try:
-            while True:
-                video_id, path = self._thumb_queue.get_nowait()
-                self._pending_thumb_ids.discard(video_id)
-                if path is None:
-                    continue
-                # 현재 그리드의 모든 카드를 훑어 해당 video_id 를 찾아 업데이트
-                self._apply_thumbnail_to_cards(video_id, path)
-        except queue.Empty:
-            pass
+            try:
+                while True:
+                    video_id, path = self._thumb_queue.get_nowait()
+                    self._pending_thumb_ids.discard(video_id)
+                    if path is None:
+                        continue
+                    self._apply_thumbnail_to_cards(video_id, path)
+            except queue.Empty:
+                pass
+        except Exception:  # noqa: BLE001 — TclError 등 widget-destroyed 경로
+            return
         # 다이얼로그가 살아있을 때만 다음 poll 예약
-        if self.winfo_exists():
-            self.after(200, self._poll_thumb_queue)
+        try:
+            if self.winfo_exists():
+                self.after(200, self._poll_thumb_queue)
+        except Exception:  # noqa: BLE001
+            pass
 
     def _apply_thumbnail_to_cards(self, video_id: str, path) -> None:
         """현재 그리드에서 해당 video_id 의 holder 들을 찾아 이미지 삽입."""
@@ -945,12 +955,19 @@ class HistoryDialog(ctk.CTkToplevel):
         self._poll_notion_from_history(result_q)
 
     def _poll_notion_from_history(self, q: "queue.Queue") -> None:
-        """HistoryDialog 의 Notion 버튼 전용 결과 폴링 (200ms)."""
+        """HistoryDialog 의 Notion 버튼 전용 결과 폴링 (200ms).
+
+        다이얼로그 destroyed 후에도 stale `after()` 가 한 번 더 실행될 수
+        있어 `winfo_exists` / `after` / `configure` 모두 TclError 방어.
+        """
         try:
             status, payload = q.get_nowait()
         except queue.Empty:
-            if self.winfo_exists():
-                self.after(200, lambda: self._poll_notion_from_history(q))
+            try:
+                if self.winfo_exists():
+                    self.after(200, lambda: self._poll_notion_from_history(q))
+            except Exception:  # noqa: BLE001
+                pass
             return
         try:
             self.configure(cursor="")
@@ -1439,7 +1456,7 @@ class GuruNoteApp(ctk.CTk):
             ).grid(row=2 + i, column=0, padx=10, pady=2, sticky="ew")
 
         ctk.CTkLabel(
-            sb, text="v0.6.0.12", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
+            sb, text="v0.6.0.13", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
         ).grid(row=6, column=0, padx=20, pady=(0, 16), sticky="sw")
 
     # ── 메인 영역 ────────────────────────────────────────────

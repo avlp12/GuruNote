@@ -435,7 +435,7 @@ GuruNote/
 주요 변경 사항은 [CHANGELOG.md](./CHANGELOG.md) 에 [Keep a Changelog](https://keepachangelog.com/)
 형식으로 기록되며 버전은 [Semantic Versioning](https://semver.org/) 을 따릅니다.
 
-현재 버전: **v0.6.0.18** — semantic 인덱스 incremental 갱신 + 노트 에디터 마크다운 프리뷰 분할 뷰.
+현재 버전: **v0.6.0.19** — Streamlit 앱에 대시보드 + 의미 검색 탭 포팅.
 
 ---
 

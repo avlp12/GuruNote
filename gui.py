@@ -43,7 +43,7 @@ from gurunote.progress_tee import install_tee
 from gurunote.settings import save_settings
 from gurunote.history import (
     JobLogger, delete_job, get_job_log, get_job_markdown,
-    load_index, new_job_id, save_job,
+    load_index, new_job_id, rebuild_index, save_job,
 )
 from gurunote.hardware import (
     AUTO_KEY, CUSTOM_KEY, PRESETS,
@@ -430,6 +430,11 @@ class HistoryDialog(ctk.CTkToplevel):
             header, text="Refresh", width=90, height=28,
             command=self._reload_and_refresh,
         ).pack(side="right")
+        ctk.CTkButton(
+            header, text="Rebuild", width=90, height=28,
+            fg_color="gray35", hover_color="gray45",
+            command=self._on_rebuild_index,
+        ).pack(side="right", padx=(0, 6))
         self._count_label = ctk.CTkLabel(
             header, text="", text_color=C_TEXT_DIM, font=ctk.CTkFont(size=11),
         )
@@ -995,6 +1000,42 @@ class HistoryDialog(ctk.CTkToplevel):
             delete_job(job_id)
             self._reload_and_refresh()
 
+    def _on_rebuild_index(self) -> None:
+        """
+        `~/.gurunote/jobs/` 폴더 스캔 → `history.json` 재생성.
+
+        사용 케이스:
+          - history.json 삭제/손상 복구
+          - 다른 머신에서 jobs/ 폴더만 복사해 왔을 때 마이그레이션
+        """
+        if not messagebox.askyesno(
+            "히스토리 인덱스 재생성",
+            "~/.gurunote/jobs/ 폴더를 스캔해 history.json 을 다시 만듭니다.\n"
+            "기존 인덱스는 덮어쓰여지며 잡 파일들은 건드리지 않습니다.\n\n"
+            "계속할까요?",
+        ):
+            return
+        try:
+            result = rebuild_index()
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror("인덱스 재생성 실패", str(exc))
+            return
+
+        msg = (
+            f"스캔: {result['total_scanned']} 폴더\n"
+            f"인덱스 등록: {result['indexed']} 건"
+        )
+        if result["errors"]:
+            msg += f"\n손상/누락 (건너뜀): {len(result['errors'])}"
+            if len(result["errors"]) <= 5:
+                msg += "\n  " + "\n  ".join(result["errors"])
+        if result["missing_md"]:
+            msg += f"\nmetadata 에만 있고 result.md 없음: {len(result['missing_md'])}"
+        messagebox.showinfo("인덱스 재생성 완료", msg)
+        # 검색 캐시도 함께 클리어하고 다시 그리기
+        search_clear_cache()
+        self._reload_and_refresh()
+
 
 class UpdateProgressDialog(ctk.CTkToplevel):
     """업데이트 진행 상황을 실시간 표시하는 다이얼로그."""
@@ -1456,7 +1497,7 @@ class GuruNoteApp(ctk.CTk):
             ).grid(row=2 + i, column=0, padx=10, pady=2, sticky="ew")
 
         ctk.CTkLabel(
-            sb, text="v0.6.0.13", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
+            sb, text="v0.6.0.14", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
         ).grid(row=6, column=0, padx=20, pady=(0, 16), sticky="sw")
 
     # ── 메인 영역 ────────────────────────────────────────────

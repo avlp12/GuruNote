@@ -435,7 +435,7 @@ GuruNote/
 주요 변경 사항은 [CHANGELOG.md](./CHANGELOG.md) 에 [Keep a Changelog](https://keepachangelog.com/)
 형식으로 기록되며 버전은 [Semantic Versioning](https://semver.org/) 을 따릅니다.
 
-현재 버전: **v0.6.0.16** — 대시보드 (총 작업/녹취 시간/분야·업로더·태그 top-N/월별 추이 — Unicode 바 차트).
+현재 버전: **v0.6.0.17** — 의미 검색 (sentence-transformers MiniLM 다국어, cosine similarity) — 로드맵 완성.
 
 ---
 

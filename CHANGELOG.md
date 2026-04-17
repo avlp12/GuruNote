@@ -7,6 +7,42 @@
 
 ## [Unreleased]
 
+## [0.6.0.17] - 2026-04-17
+
+### Added
+- **의미 검색 (Semantic Search)** (`gurunote/semantic.py` 신규,
+  `requirements-search.txt` 신규) — 로드맵 "지식 증류기 확장" 의 마지막
+  단계 완성. Phase F 의 키워드 substring 검색을 embedding 기반 cosine
+  similarity 로 보완.
+  - 모델: `paraphrase-multilingual-MiniLM-L12-v2` (384-dim, ~117MB,
+    한국어 지원). 환경변수 `GURUNOTE_SEMANTIC_MODEL` 로 오버라이드 가능.
+  - Chunk 분할: 1000자 + 100자 overlap (frontmatter 는 제외)
+  - 인덱스 저장: `~/.gurunote/embeddings.npz` (vectors) +
+    `embeddings_meta.json` (job_id / chunk_idx / title / preview)
+  - `build_index(jobs)` / `search(query, top_k=10, min_score=0.25)` /
+    `clear_index()` / `index_stats()` API
+  - `search()` 는 동일 잡의 중복 chunk 제거하여 job 당 최고 점수 chunk
+    1개씩만 반환 → 히스토리 그리드에 중복 카드 없이 표시
+- **HistoryDialog `🔮 의미 검색` 토글** (`gui.py`) — 기존 `📄 본문 포함`
+  옆에 체크박스 추가. 켜지면 query 로 embedding 검색 → cosine 유사도
+  0.25 이상 상위 20 잡을 결과에 포함. 매칭 잡 카드에
+  `[유사도 0.73] ...preview...` 스니펫 표시. 최초 쿼리 실패 시 한 번만
+  경고 대화상자 (반복 경고 방지).
+- **Dashboard `🔮 Semantic Rebuild` 버튼** — 모든 저장된 잡 본문을
+  재인덱싱. 백그라운드 worker thread + `after()` polling 으로 UI
+  freeze 방지. 완료 시 다이얼로그에 `{num_jobs, num_chunks, skipped}`
+  카운트. Dashboard 본문에도 "의미 검색 인덱스" 상태 블록 추가
+  (모델 / chunks / 작업 수 / 빌드 시각).
+- **`requirements-search.txt`** — `sentence-transformers>=2.5` 선택 설치.
+  미설치 시 친절한 설치 안내 (`is_available()` False + 117MB 모델 다운로드
+  알림).
+
+### Roadmap 완성 (Step 3)
+- ✅ 3.1 리인덱싱 (PR #80)
+- ✅ 3.2 노트 편집 (PR #81)
+- ✅ 3.3 대시보드 (PR #82)
+- ✅ **3.4 의미 검색** ← 이번 PR
+
 ## [0.6.0.16] - 2026-04-17
 
 ### Added
@@ -674,7 +710,8 @@ bash run_desktop.sh
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.6.0.16...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.6.0.17...HEAD
+[0.6.0.17]: https://github.com/avlp12/GuruNote/compare/v0.6.0.16...v0.6.0.17
 [0.6.0.16]: https://github.com/avlp12/GuruNote/compare/v0.6.0.15...v0.6.0.16
 [0.6.0.15]: https://github.com/avlp12/GuruNote/compare/v0.6.0.14...v0.6.0.15
 [0.6.0.14]: https://github.com/avlp12/GuruNote/compare/v0.6.0.13...v0.6.0.14

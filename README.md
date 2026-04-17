@@ -395,7 +395,7 @@ GuruNote/
 주요 변경 사항은 [CHANGELOG.md](./CHANGELOG.md) 에 [Keep a Changelog](https://keepachangelog.com/)
 형식으로 기록되며 버전은 [Semantic Versioning](https://semver.org/) 을 따릅니다.
 
-현재 버전: **v0.6.0.2** — macOS 입력 창 Cmd+V 붙여넣기 수정.
+현재 버전: **v0.6.0.3** — Phase A 지식 증류기 메타데이터 (정리 제목 / 분야 / 태그 5개 + Obsidian 호환 YAML frontmatter).
 
 ---
 

@@ -35,7 +35,10 @@ from gurunote.audio import (
     is_supported_local_file,
 )
 from gurunote.exporter import autosave_result, build_gurunote_markdown, sanitize_filename
-from gurunote.llm import LLMConfig, summarize_translation, test_connection, translate_transcript
+from gurunote.llm import (
+    LLMConfig, extract_metadata, summarize_translation,
+    test_connection, translate_transcript,
+)
 from gurunote.settings import save_settings
 from gurunote.history import (
     JobLogger, delete_job, get_job_log, get_job_markdown,
@@ -213,7 +216,25 @@ class PipelineWorker:
                 video_context=video_ctx,
             )
             self._log("[Step 4] OK: 요약 완료")
-            self._set_progress(0.90)
+            self._set_progress(0.88)
+
+            # Step 4.5 — 메타데이터 자동 추출 (제목/분야/태그)
+            self._log("[Step 4.5] 분류 메타데이터(제목/분야/태그) 추출 중...")
+            video_meta = {
+                "title": audio.video_title,
+                "uploader": audio.uploader,
+                "tags": getattr(audio, "tags", None) or [],
+            }
+            metadata = extract_metadata(
+                translated, video_meta=video_meta,
+                config=llm_cfg, log=self._log,
+            )
+            if metadata:
+                self._log(
+                    f"[Step 4.5] OK: 분야='{metadata.get('field', '')}', "
+                    f"태그={metadata.get('tags', [])}"
+                )
+            self._set_progress(0.92)
 
             # Step 5
             self._log("[Step 5] 마크다운 조립 중...")
@@ -228,11 +249,14 @@ class PipelineWorker:
                 upload_date=audio.upload_date,
                 chapters=audio.chapters,
                 subtitles_source=audio.subtitles_source,
+                organized_title=metadata.get("organized_title", ""),
+                field=metadata.get("field", ""),
+                tags=metadata.get("tags", []),
             )
             self._log("[Done] GuruNote 생성 완료")
             self._set_progress(1.0)
 
-            # 히스토리에 자동 저장
+            # 히스토리에 자동 저장 (분류 메타 포함)
             save_job(
                 self.job_id,
                 title=audio.video_title,
@@ -243,6 +267,11 @@ class PipelineWorker:
                 duration_sec=audio.duration_sec,
                 num_speakers=len(transcript.speakers),
                 full_md=full_md,
+                organized_title=metadata.get("organized_title", ""),
+                field=metadata.get("field", ""),
+                tags=metadata.get("tags", []),
+                uploader=audio.uploader or "",
+                upload_date=audio.upload_date or "",
             )
             self._log("[Save] 히스토리에 저장됨")
 
@@ -866,7 +895,7 @@ class GuruNoteApp(ctk.CTk):
             ).grid(row=2 + i, column=0, padx=10, pady=2, sticky="ew")
 
         ctk.CTkLabel(
-            sb, text="v0.6.0.2", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
+            sb, text="v0.6.0.3", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
         ).grid(row=6, column=0, padx=20, pady=(0, 16), sticky="sw")
 
     # ── 메인 영역 ────────────────────────────────────────────

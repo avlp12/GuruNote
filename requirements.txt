@@ -27,3 +27,14 @@ google-genai>=1.0
 
 # --- 환경 설정 ---
 python-dotenv>=1.0
+
+# --- PDF 출력 (Phase C) ---
+# weasyprint 는 macOS/Linux 에서 cairo/pango 시스템 라이브러리를 필요로 한다.
+# pip 설치만으로도 import 자체는 성공하지만, 시스템 라이브러리가 없으면 첫
+# PDF 변환 시점에 OSError 를 낸다. GUI 의 `is_pdf_export_available()` 가 해당
+# 실패를 포착해서 사용자에게 시스템 의존성 설치 다이얼로그를 띄운다.
+#   macOS:   brew install cairo pango gdk-pixbuf libffi
+#   Ubuntu:  sudo apt install libpango-1.0-0 libpangoft2-1.0-0 fonts-noto-cjk
+#   Windows: 별도 작업 불필요 (weasyprint wheel 에 DLL 포함)
+markdown>=3.5
+weasyprint>=60

@@ -44,6 +44,7 @@ from gurunote.settings import save_settings
 from gurunote.history import (
     JobLogger, delete_job, get_job_log, get_job_markdown,
     load_index, new_job_id, rebuild_index, save_job,
+    update_job_markdown,
 )
 from gurunote.hardware import (
     AUTO_KEY, CUSTOM_KEY, PRESETS,
@@ -376,6 +377,118 @@ _SETTINGS_FIELDS = [
     ("NOTION_PARENT_ID", "Notion Parent ID (database/page UUID)", False),
     ("NOTION_PARENT_TYPE", "Notion Parent Type (database/page)", False),
 ]
+
+
+class NoteEditorDialog(ctk.CTkToplevel):
+    """
+    저장된 결과 마크다운 인라인 편집기 (Step 3.2).
+
+    LLM 요약/번역 결과는 종종 교정이 필요하다 (오타, 화자 이름 오인식, 태그
+    수정 등). 별도 에디터 앱을 쓰지 않고 앱 안에서 바로 고쳐 `result.md` 에
+    되저장할 수 있게 한다. frontmatter 포함 전체 마크다운을 단일 textbox 로
+    노출 — 사용자가 필요한 부분만 수정.
+
+    저장 시 `history.update_job_markdown()` 로 atomic write. 저장 후 콜백
+    (`on_saved`) 이 HistoryDialog 의 그리드를 재로드해 스니펫/카드 갱신.
+    """
+
+    def __init__(
+        self,
+        parent: ctk.CTkToplevel,
+        job_id: str,
+        title: str,
+        initial_md: str,
+        on_saved=None,
+    ) -> None:
+        super().__init__(parent)
+        self.title(f"편집 — {title[:60]}")
+        self.geometry("900x680")
+        self.transient(parent)
+        self.grab_set()
+        self._job_id = job_id
+        self._initial_md = initial_md
+        self._on_saved = on_saved
+        self._build_ui()
+        # 닫기(X) 도 dirty 체크 거치도록
+        self.protocol("WM_DELETE_WINDOW", self._on_close_attempt)
+        self.after(100, self.focus_force)
+
+    def _build_ui(self) -> None:
+        # 헤더
+        header = ctk.CTkFrame(self, fg_color="transparent")
+        header.pack(fill="x", padx=16, pady=(14, 6))
+        ctk.CTkLabel(
+            header, text="result.md 편집",
+            font=ctk.CTkFont(size=14, weight="bold"), text_color=C_TEXT,
+        ).pack(side="left")
+        ctk.CTkButton(
+            header, text="💾 저장", width=96, height=32,
+            fg_color=C_PRIMARY, hover_color=C_PRIMARY_HO,
+            command=self._on_save_click,
+        ).pack(side="right")
+        ctk.CTkButton(
+            header, text="취소", width=72, height=32,
+            fg_color="gray35", hover_color="gray45",
+            command=self._on_close_attempt,
+        ).pack(side="right", padx=6)
+
+        # 안내
+        ctk.CTkLabel(
+            self,
+            text="YAML frontmatter 포함 전체 마크다운을 직접 수정할 수 있습니다. "
+                 "저장 시 ~/.gurunote/jobs/<id>/result.md 가 덮어쓰여집니다.",
+            font=ctk.CTkFont(size=11), text_color=C_TEXT_DIM,
+            anchor="w", justify="left",
+        ).pack(fill="x", padx=16, pady=(0, 8))
+
+        # Textbox
+        self._tb = ctk.CTkTextbox(
+            self, wrap="word",
+            font=ctk.CTkFont(family="Menlo", size=12),
+            fg_color=C_BG, text_color=C_TEXT,
+            corner_radius=8,
+        )
+        self._tb.pack(fill="both", expand=True, padx=16, pady=(0, 16))
+        self._tb.insert("1.0", self._initial_md)
+
+        # 키 바인딩: Cmd/Ctrl+S 로 저장
+        import platform as _p
+        save_key = "<Command-s>" if _p.system() == "Darwin" else "<Control-s>"
+        self.bind(save_key, lambda _e: self._on_save_click())
+
+    def _current_md(self) -> str:
+        return self._tb.get("1.0", "end-1c")
+
+    def _is_dirty(self) -> bool:
+        return self._current_md() != self._initial_md
+
+    def _on_close_attempt(self) -> None:
+        if self._is_dirty():
+            if not messagebox.askyesno(
+                "편집 취소",
+                "저장하지 않은 변경 사항이 있습니다. 버리고 닫을까요?",
+            ):
+                return
+        self.destroy()
+
+    def _on_save_click(self) -> None:
+        new_md = self._current_md()
+        if new_md == self._initial_md:
+            messagebox.showinfo("변경 사항 없음", "수정된 내용이 없습니다.")
+            return
+        try:
+            update_job_markdown(self._job_id, new_md)
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror("저장 실패", str(exc))
+            return
+        self._initial_md = new_md
+        messagebox.showinfo("저장 완료", "노트가 업데이트됐습니다.")
+        if self._on_saved is not None:
+            try:
+                self._on_saved()
+            except Exception:  # noqa: BLE001
+                pass
+        self.destroy()
 
 
 class HistoryDialog(ctk.CTkToplevel):
@@ -719,32 +832,39 @@ class HistoryDialog(ctk.CTkToplevel):
         btn_row = ctk.CTkFrame(card, fg_color="transparent")
         btn_row.grid(row=6, column=0, padx=8, pady=(4, 10), sticky="ew")
         job_id = job.get("job_id", "")
+        # 7버튼 레이아웃 (카드 inner ~264px, 7×32+6×2=236 ← 여유 28px)
+        #   .md · Edit | PDF · Obs · Ntn | Log · Del
         if job.get("has_markdown"):
             ctk.CTkButton(
-                btn_row, text=".md", width=34, height=28,
+                btn_row, text=".md", width=32, height=28,
                 command=lambda jid=job_id, t=title: self._save_md(jid, t),
             ).pack(side="left", padx=(0, 2))
             ctk.CTkButton(
-                btn_row, text="PDF", width=34, height=28,
+                btn_row, text="Edit", width=36, height=28,
+                fg_color=C_SURFACE_HI, hover_color=C_PRIMARY,
+                command=lambda jid=job_id, t=title: self._edit_note(jid, t),
+            ).pack(side="left", padx=2)
+            ctk.CTkButton(
+                btn_row, text="PDF", width=32, height=28,
                 command=lambda jid=job_id, t=title: self._save_pdf(jid, t),
             ).pack(side="left", padx=2)
             ctk.CTkButton(
-                btn_row, text="Obs", width=34, height=28,
+                btn_row, text="Obs", width=32, height=28,
                 fg_color=C_PRIMARY, hover_color=C_PRIMARY_HO,
                 command=lambda jid=job_id, t=title: self._save_obsidian(jid, t),
             ).pack(side="left", padx=2)
             ctk.CTkButton(
-                btn_row, text="Ntn", width=34, height=28,
+                btn_row, text="Ntn", width=32, height=28,
                 fg_color=C_PRIMARY, hover_color=C_PRIMARY_HO,
                 command=lambda jid=job_id, t=title: self._save_notion(jid, t),
             ).pack(side="left", padx=2)
         ctk.CTkButton(
-            btn_row, text="Log", width=34, height=28,
+            btn_row, text="Log", width=32, height=28,
             fg_color="gray35",
             command=lambda jid=job_id: self._show_log(jid),
         ).pack(side="left", padx=2)
         ctk.CTkButton(
-            btn_row, text="Del", width=34, height=28,
+            btn_row, text="Del", width=32, height=28,
             fg_color="gray35", hover_color=C_DANGER,
             command=lambda jid=job_id: self._delete(jid),
         ).pack(side="right", padx=2)
@@ -851,6 +971,20 @@ class HistoryDialog(ctk.CTkToplevel):
     # =========================================================================
     # Actions (기존과 동일)
     # =========================================================================
+    def _edit_note(self, job_id: str, title: str) -> None:
+        """HistoryDialog 의 Edit 버튼 → 인라인 마크다운 편집기 다이얼로그."""
+        md = get_job_markdown(job_id)
+        if md is None:
+            messagebox.showinfo("없음", "마크다운 파일이 없습니다.")
+            return
+
+        def _on_saved() -> None:
+            # 저장 후 검색 캐시 무효화 + 그리드 재로드 (스니펫/카드 갱신)
+            search_clear_cache()
+            self._reload_and_refresh()
+
+        NoteEditorDialog(self, job_id, title, md, on_saved=_on_saved)
+
     def _save_md(self, job_id: str, title: str) -> None:
         md = get_job_markdown(job_id)
         if not md:
@@ -1497,7 +1631,7 @@ class GuruNoteApp(ctk.CTk):
             ).grid(row=2 + i, column=0, padx=10, pady=2, sticky="ew")
 
         ctk.CTkLabel(
-            sb, text="v0.6.0.14", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
+            sb, text="v0.6.0.15", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
         ).grid(row=6, column=0, padx=20, pady=(0, 16), sticky="sw")
 
     # ── 메인 영역 ────────────────────────────────────────────

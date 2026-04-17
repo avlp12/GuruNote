@@ -189,6 +189,39 @@ def get_job_log(job_id: str) -> Optional[str]:
     return None
 
 
+def update_job_markdown(job_id: str, new_md: str) -> None:
+    """
+    기존 작업의 `result.md` 만 교체한다. metadata.json 은 건드리지 않음.
+
+    사용자가 HistoryDialog 의 Edit 버튼으로 LLM 결과를 수정한 뒤 저장할 때
+    쓰인다. 인덱스의 `has_markdown` 은 True 로 보정 (원래 False 였거나
+    stale 이었던 경우 대응).
+
+    Args:
+        job_id: 대상 작업 ID
+        new_md: 새 마크다운 전체 내용 (frontmatter 포함)
+
+    Raises:
+        FileNotFoundError — 잡 폴더가 존재하지 않음
+    """
+    job_dir = JOBS_DIR / job_id
+    if not job_dir.is_dir():
+        raise FileNotFoundError(f"작업 폴더가 없습니다: {job_dir}")
+    md_path = job_dir / "result.md"
+    md_path.write_text(new_md, encoding="utf-8")
+
+    # 인덱스의 has_markdown 이 혹시 False 였다면 보정 (stale 대응)
+    index = load_index()
+    changed = False
+    for j in index:
+        if j.get("job_id") == job_id and not j.get("has_markdown"):
+            j["has_markdown"] = True
+            changed = True
+            break
+    if changed:
+        _write_index_atomic(index)
+
+
 def rebuild_index() -> dict:
     """
     `~/.gurunote/jobs/` 전체를 스캔해 `history.json` 인덱스를 재생성.

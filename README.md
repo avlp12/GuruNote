@@ -24,22 +24,59 @@ $ streamlit run app.py             # 웹 앱 실행
 
 ---
 
+## 📦 선행 조건 (필수 사전 설치)
+
+`setup.sh` / `setup.bat` 를 돌리기 **전에** 다음 3가지가 OS 에 설치돼 있어야
+합니다. 하나라도 빠지면 첫 단계에서 `'git' 용어가 ... 인식되지 않습니다` /
+`python: command not found` 같은 에러가 발생합니다.
+
+| 도구 | 용도 | Windows | macOS | Linux (Debian/Ubuntu) |
+|---|---|---|---|---|
+| **Git** | 저장소 clone · 앱 내 업데이트 (`git pull`) | `winget install --id Git.Git -e` · [공식 다운로드](https://git-scm.com/download/win) | `brew install git` (또는 Xcode CLT 자동 설치) | `sudo apt install -y git` |
+| **Python 3.10+** | GuruNote 런타임 | `winget install --id Python.Python.3.12 -e` · [python.org](https://www.python.org/downloads/windows/) | `brew install python@3.12` · [python.org](https://www.python.org/downloads/macos/) | `sudo apt install -y python3 python3-venv python3-pip` |
+| **ffmpeg** | `yt-dlp` 오디오 추출 (Step 1) | `winget install --id Gyan.FFmpeg -e` · [공식 사이트](https://ffmpeg.org/download.html) | `brew install ffmpeg` · [Homebrew](https://brew.sh/) | `sudo apt install -y ffmpeg` |
+
+> ⚠️ **Windows 사용자**: `winget` 으로 Git / Python 을 설치한 뒤에는 **PowerShell 창을
+> 새로 열어야** `PATH` 가 갱신됩니다. 또한 Python 설치 시 "Add python.exe to PATH"
+> 체크박스를 반드시 켜두세요 (설치 마법사 첫 화면).
+>
+> ⚠️ **Windows PowerShell 5.1 주의**: 기본 탑재된 PowerShell 5.1 은 유닉스식 명령
+> 연결자 `&&` 를 지원하지 않습니다 (`'&&' 토큰은 이 버전에서 올바른 문 구분 기호가
+> 아닙니다`). 아래 빠른 시작은 이를 피해 **한 줄에 하나씩** 실행하는 형태로
+> 기술돼 있습니다. PowerShell 7+ (`winget install Microsoft.PowerShell`) 에서는
+> `&&` 가 정상 동작합니다.
+
+설치 확인 (버전이 표시되면 OK):
+
+```bash
+# Windows (PowerShell / cmd) · macOS · Linux 공통
+git --version
+python --version      # macOS 는 python3 --version
+ffmpeg -version
+```
+
+---
+
 ## ⚡ 빠른 시작 (3단계)
 
 ```bash
-# 1. 설치 (플랫폼 자동 감지 + STT 엔진 자동 설치 + .venv 자동 생성)
-git clone https://github.com/avlp12/GuruNote.git && cd GuruNote
+# 1. 저장소 clone & 이동 (PowerShell 5.1 호환: && 를 쓰지 않고 한 줄씩)
+git clone https://github.com/avlp12/GuruNote.git
+cd GuruNote
+
+# 2. 설치 (플랫폼 자동 감지 + STT 엔진 자동 설치 + .venv 자동 생성)
 bash setup.sh        # macOS / Linux  (Windows 는 setup.bat)
 # 자동 감지 + 설치:
 #   - NVIDIA GPU (Linux/Windows) → CUDA PyTorch + WhisperX
 #   - Apple Silicon Mac (M1~M5)  → MLX Whisper + pyannote (Metal/MPS GPU 가속)
 #   - 그 외                       → AssemblyAI Cloud API 만 사용 가능
 
-# 2. API 키 설정 (OpenAI / Anthropic / Google Gemini 중 하나)
+# 3. API 키 설정 (OpenAI / Anthropic / Google Gemini 중 하나)
 cp .env.example .env
 # .env 를 열어 OPENAI_API_KEY=sk-... 입력
+# (Windows PowerShell 은 cp 대신 Copy-Item .env.example .env)
 
-# 3. 실행 (venv activate 불필요 — 래퍼 스크립트가 .venv 의 Python/Streamlit 을 직접 호출)
+# 4. 실행 (venv activate 불필요 — 래퍼 스크립트가 .venv 의 Python/Streamlit 을 직접 호출)
 bash run_desktop.sh      # 데스크톱 앱 (macOS/Linux)
 bash run_web.sh          # 웹 앱   (macOS/Linux)
 # Windows: run_desktop.bat / run_web.bat
@@ -148,10 +185,13 @@ GuruNote_<영상제목>.md
 
 ## ⚙️ 요구사항
 
-- **Python** 3.10 이상
-- **ffmpeg** (오디오 추출에 필수적인 시스템 패키지)
+상세 설치 명령은 위 [📦 선행 조건](#-선행-조건-필수-사전-설치) 섹션 참고.
+
+- **Git** ([git-scm.com](https://git-scm.com/downloads)) — 저장소 clone + 앱 내 업데이트
+- **Python** 3.10 이상 ([python.org](https://www.python.org/downloads/))
+- **ffmpeg** ([ffmpeg.org](https://ffmpeg.org/download.html)) — 오디오 추출에 필수적인 시스템 패키지
   - Mac: `brew install ffmpeg`
-  - Windows: `winget install ffmpeg` (또는 [공식 사이트](https://ffmpeg.org/download.html) 다운로드)
+  - Windows: `winget install --id Gyan.FFmpeg -e` (또는 공식 사이트 다운로드)
   - Ubuntu/Debian: `sudo apt install ffmpeg`
 - **로컬 STT GPU (선택)** — `setup.sh` 가 자동 감지/설치
   - **NVIDIA (Linux/Windows)** — WhisperX, VRAM ~6GB 권장 (Distil-Whisper + 청크 분할)
@@ -395,7 +435,7 @@ GuruNote/
 주요 변경 사항은 [CHANGELOG.md](./CHANGELOG.md) 에 [Keep a Changelog](https://keepachangelog.com/)
 형식으로 기록되며 버전은 [Semantic Versioning](https://semver.org/) 을 따릅니다.
 
-현재 버전: **v0.6.0.6** — Phase B: History 카드 그리드 뷰 + 필터/정렬 + YouTube 썸네일.
+현재 버전: **v0.6.0.7** — README 선행 조건(Git/Python/ffmpeg) 명시 + Windows PowerShell 5.1 `&&` 호환 가이드.
 
 ---
 
@@ -403,6 +443,9 @@ GuruNote/
 
 | 질문 | 답변 |
 |---|---|
+| **`'git' 용어가 ... 인식되지 않습니다` (Windows)** | Git 이 설치되지 않았습니다. `winget install --id Git.Git -e` 실행 후 **새 PowerShell 창**을 열어 재시도하세요. winget 이 없는 구형 Windows 는 [git-scm.com/download/win](https://git-scm.com/download/win) 에서 인스톨러를 받아 설치. 자세한 내용은 위 [📦 선행 조건](#-선행-조건-필수-사전-설치) 참고. |
+| **`'&&' 토큰은 이 버전에서 올바른 문 구분 기호가 아닙니다` (Windows PowerShell)** | Windows 기본 탑재된 PowerShell 5.1 은 `&&` 를 지원하지 않습니다. 명령을 **한 줄에 하나씩** 실행하거나 (`git clone ...` 한 줄 → `cd GuruNote` 한 줄), PowerShell 7+ 로 업그레이드(`winget install Microsoft.PowerShell`) 또는 `cmd.exe` 를 사용하세요. |
+| **`python: command not found` / `'python' 용어가 인식되지 않습니다`** | Python 3.10+ 이 설치되지 않았거나 PATH 에 없습니다. Windows: `winget install --id Python.Python.3.12 -e` (설치 마법사의 "Add python.exe to PATH" 체크 필수). macOS 는 `python3` 명령을 사용하세요. Linux: `sudo apt install python3 python3-venv`. |
 | **`command not found: python` / `streamlit` (macOS)** | macOS 12+ 는 `python` 명령이 없고 `python3` 만 있으며, `streamlit` 은 venv 내부에만 설치됩니다. `bash run_desktop.sh` / `bash run_web.sh` 를 쓰면 venv activate 없이 실행됩니다. 직접 실행하려면 먼저 `source .venv/bin/activate` 로 venv 를 활성화하세요. |
 | **GPU 없이 쓸 수 있나요?** | `.env` 에서 `GURUNOTE_STT_ENGINE=assemblyai` 로 설정하면 클라우드 API 로 동작합니다 (AssemblyAI 키 필요). |
 | **Apple Silicon Mac (M1~M5) 에서 GPU 로컬 STT 가 되나요?** | 네. v0.6.0 부터 `setup.sh` 가 Apple Silicon 을 자동 감지해 `mlx-whisper` + `pyannote.audio` 를 설치합니다. STT 엔진을 `auto` 로 두면 Metal/MPS GPU 가속으로 로컬 전사 + 화자 분리가 동작합니다. 화자 분리에는 `HUGGINGFACE_TOKEN` + [pyannote 모델 동의](https://huggingface.co/pyannote/speaker-diarization-3.1) 가 필요합니다. |

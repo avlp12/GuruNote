@@ -7,6 +7,29 @@
 
 ## [Unreleased]
 
+## [0.6.0.7] - 2026-04-17
+
+### Added
+- **README 선행 조건(Prerequisites) 섹션** (`README.md`) — `setup.sh` /
+  `setup.bat` 실행 전에 OS 에 설치돼 있어야 하는 3가지 도구 (Git, Python 3.10+,
+  ffmpeg) 를 Windows / macOS / Linux 별 설치 명령 + 공식 다운로드 링크와 함께
+  표로 제공. 신규 Windows PC 에서 README 첫 단계인 `git clone` 자체가
+  `'git' 용어가 인식되지 않습니다` 로 실패하던 상황을 예방.
+- **FAQ 신규 3항목** (`README.md`) —
+  - `'git' 용어가 ... 인식되지 않습니다` (Windows Git 미설치)
+  - `'&&' 토큰은 이 버전에서 올바른 문 구분 기호가 아닙니다`
+    (PowerShell 5.1 의 `&&` 미지원 — 명령 분리 또는 PowerShell 7+ 안내)
+  - `python: command not found` (Python 미설치 / PATH 누락)
+
+### Changed
+- **빠른 시작 3단계의 `git clone && cd` 분리** (`README.md`) — Windows PowerShell
+  5.1 은 유닉스식 `&&` 를 파서 에러로 거부하므로 `git clone ...` 과 `cd GuruNote`
+  를 별도 줄로 분리. 단계 번호도 1→2 분리로 재조정 (clone / setup / API 키 /
+  실행 4단계). `.env.example` 복사는 PowerShell 용 `Copy-Item` 대안도 명시.
+- **요구사항 섹션 설치 링크 보강** (`README.md`) — Git (git-scm.com),
+  Python (python.org), ffmpeg (ffmpeg.org) 공식 링크와 winget ID 명시
+  (`Git.Git`, `Python.Python.3.12`, `Gyan.FFmpeg`).
+
 ## [0.6.0.6] - 2026-04-17
 
 > "지식 증류기" 로드맵 **Phase B — History 일괄 뷰**.
@@ -426,7 +449,8 @@
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.6.0.6...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.6.0.7...HEAD
+[0.6.0.7]: https://github.com/avlp12/GuruNote/compare/v0.6.0.6...v0.6.0.7
 [0.6.0.6]: https://github.com/avlp12/GuruNote/compare/v0.6.0.5...v0.6.0.6
 [0.6.0.5]: https://github.com/avlp12/GuruNote/compare/v0.6.0.4...v0.6.0.5
 [0.6.0.4]: https://github.com/avlp12/GuruNote/compare/v0.6.0.3...v0.6.0.4

@@ -7,6 +7,30 @@
 
 ## [Unreleased]
 
+## [0.6.0.12] - 2026-04-17
+
+### Fixed
+- **pyannote.audio ↔ 신버전 torchaudio 호환성** (`requirements-mac.txt`,
+  `gurunote/stt_mlx.py`) — 화자 분리 단계에서
+  `AttributeError: module 'torchaudio' has no attribute 'AudioMetaData'`
+  에러가 나고 단일 화자(A) 로 fallback 되던 문제. torchaudio 2.8+ 에서
+  `AudioMetaData` 가 제거되면서 pyannote.audio 3.x 의 audio I/O 경로가
+  깨졌다. pyannote.audio **4.0.0** 이 이미 `torchaudio` → `torchcodec`
+  마이그레이션으로 해결한 상태였으나, 본 프로젝트의 `requirements-mac.txt`
+  가 `<4` 로 상한을 걸어 사용자가 fix 를 받지 못함. 상한을 `<5` 로 완화해
+  기본 설치가 최신 4.x 를 가져오도록 수정.
+- **`stt_mlx.py` 에 AudioMetaData 전용 에러 메시지** — 업그레이드 명령
+  (`.venv/bin/pip install --upgrade 'pyannote.audio>=4.0'`) 을 포함한
+  구체적 안내가 GUI 로그에 표시되도록 분기 추가. 이미 설치된 기존 사용자가
+  setup 을 재실행하지 않아도 에러 메시지만 보고 바로 해결 가능.
+
+### 기존 사용자 즉시 업그레이드
+```bash
+cd ~/GuruNote
+.venv/bin/pip install --upgrade 'pyannote.audio>=4.0'
+bash run_desktop.sh
+```
+
 ## [0.6.0.11] - 2026-04-17
 
 > "지식 증류기" 로드맵 **Phase F — 저장된 노트 검색** (키워드 단계).
@@ -560,7 +584,8 @@
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.6.0.11...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.6.0.12...HEAD
+[0.6.0.12]: https://github.com/avlp12/GuruNote/compare/v0.6.0.11...v0.6.0.12
 [0.6.0.11]: https://github.com/avlp12/GuruNote/compare/v0.6.0.10...v0.6.0.11
 [0.6.0.10]: https://github.com/avlp12/GuruNote/compare/v0.6.0.9...v0.6.0.10
 [0.6.0.9]: https://github.com/avlp12/GuruNote/compare/v0.6.0.8...v0.6.0.9

@@ -16,7 +16,8 @@
 # =============================================================================
 
 mlx-whisper>=0.4
-# pyannote.audio: 4.x 는 호환성 미검증이므로 상한을 둔다 (`stt_mlx.py` 가
-# `token=` / `use_auth_token=` 양쪽에 폴백하지만 안전을 위해 상한 명시).
-pyannote.audio>=3.1,<4
+# pyannote.audio 4.0.0 에서 `torchaudio` → `torchcodec` 로 마이그레이션.
+# 3.x 는 새 torchaudio (>=2.8) 와 호환 불가 (`module 'torchaudio' has no
+# attribute 'AudioMetaData'` 에러). 반드시 4.0 이상으로 업그레이드.
+pyannote.audio>=4.0,<5
 onnxruntime>=1.16

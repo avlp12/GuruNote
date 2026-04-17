@@ -856,7 +856,11 @@ class HistoryDialog(ctk.CTkToplevel):
             messagebox.showerror("Obsidian 저장 실패", str(e))
 
     def _save_notion(self, job_id: str, title: str) -> None:
-        """저장된 마크다운을 Notion 으로 전송 (Phase E)."""
+        """저장된 마크다운을 Notion 으로 전송 (Phase E).
+
+        API 호출은 worker thread 로 던지고 `after()` 로 결과 폴링 — 히스토리
+        다이얼로그가 freeze 되지 않음.
+        """
         md = get_job_markdown(job_id)
         if not md:
             messagebox.showinfo("없음", "마크다운 파일이 없습니다.")
@@ -873,16 +877,41 @@ class HistoryDialog(ctk.CTkToplevel):
                 "Settings 에서 `NOTION_TOKEN` 과 `NOTION_PARENT_ID` 를 지정하세요.",
             )
             return
+
+        result_q: queue.Queue = queue.Queue()
+        is_db = (parent_type == "database")
+
+        def _worker():
+            try:
+                url = notion_save(md, title=title, token=token,
+                                  parent_id=parent_id, is_database=is_db)
+                result_q.put(("ok", url))
+            except Exception as exc:  # noqa: BLE001
+                result_q.put(("err", str(exc)))
+
+        # 즉시 피드백 다이얼로그 없이 기본 cursor 를 "watch" 로 바꿔 진행 중임을 표시
+        self.configure(cursor="watch")
+        threading.Thread(target=_worker, daemon=True).start()
+        self._poll_notion_from_history(result_q)
+
+    def _poll_notion_from_history(self, q: "queue.Queue") -> None:
+        """HistoryDialog 의 Notion 버튼 전용 결과 폴링 (200ms)."""
         try:
-            url = notion_save(
-                md, title=title, token=token, parent_id=parent_id,
-                is_database=(parent_type == "database"),
-            )
-            if messagebox.askyesno("Notion 전송 완료", f"{url}\n\n브라우저에서 열까요?"):
+            status, payload = q.get_nowait()
+        except queue.Empty:
+            if self.winfo_exists():
+                self.after(200, lambda: self._poll_notion_from_history(q))
+            return
+        try:
+            self.configure(cursor="")
+        except Exception:  # noqa: BLE001
+            pass
+        if status == "ok":
+            if messagebox.askyesno("Notion 전송 완료", f"{payload}\n\n브라우저에서 열까요?"):
                 import webbrowser
-                webbrowser.open(url)
-        except Exception as e:  # noqa: BLE001
-            messagebox.showerror("Notion 전송 실패", str(e))
+                webbrowser.open(payload)
+        else:
+            messagebox.showerror("Notion 전송 실패", payload)
 
     def _show_log(self, job_id: str) -> None:
         log = get_job_log(job_id) or "(로그 없음)"
@@ -1751,7 +1780,11 @@ class GuruNoteApp(ctk.CTk):
             messagebox.showerror("Obsidian 저장 실패", str(e))
 
     def _on_save_notion(self):
-        """결과 마크다운을 Notion 페이지로 전송 (Phase E)."""
+        """결과 마크다운을 Notion 페이지로 전송 (Phase E).
+
+        Notion API 호출은 2-10초 블로킹이라 worker thread 로 던지고 main thread
+        에선 `after()` 로 결과를 폴링해 UI freeze 회피.
+        """
         if not self._result:
             return
         if not is_notion_sync_available():
@@ -1768,20 +1801,41 @@ class GuruNoteApp(ctk.CTk):
                 "parent page/DB 에서 해당 Integration 을 Share 해야 접근 가능합니다.",
             )
             return
+
         title = self._result["audio"].video_title
+        md = self._result["full_md"]
+        is_db = (parent_type == "database")
+
+        # 전송 중 버튼 비활성화 + 라벨 변경
+        self._save_notion_btn.configure(state="disabled", text="전송 중…")
+        result_q: queue.Queue = queue.Queue()
+
+        def _worker():
+            try:
+                url = notion_save(md, title=title, token=token,
+                                  parent_id=parent_id, is_database=is_db)
+                result_q.put(("ok", url))
+            except Exception as exc:  # noqa: BLE001
+                result_q.put(("err", str(exc)))
+
+        threading.Thread(target=_worker, daemon=True).start()
+        self._poll_notion_result(result_q)
+
+    def _poll_notion_result(self, q: "queue.Queue") -> None:
+        """result-card 의 Notion 버튼 전용 결과 폴링 (200ms 주기)."""
         try:
-            url = notion_save(
-                self._result["full_md"],
-                title=title,
-                token=token,
-                parent_id=parent_id,
-                is_database=(parent_type == "database"),
-            )
-            if messagebox.askyesno("Notion 전송 완료", f"{url}\n\n브라우저에서 열까요?"):
+            status, payload = q.get_nowait()
+        except queue.Empty:
+            self.after(200, lambda: self._poll_notion_result(q))
+            return
+        # 완료: 버튼 복구 + 결과 다이얼로그
+        self._save_notion_btn.configure(state="normal", text="→ Notion")
+        if status == "ok":
+            if messagebox.askyesno("Notion 전송 완료", f"{payload}\n\n브라우저에서 열까요?"):
                 import webbrowser
-                webbrowser.open(url)
-        except Exception as e:  # noqa: BLE001
-            messagebox.showerror("Notion 전송 실패", str(e))
+                webbrowser.open(payload)
+        else:
+            messagebox.showerror("Notion 전송 실패", payload)
 
     # ── 유틸 ─────────────────────────────────────────────────
     def _append_log(self, msg):

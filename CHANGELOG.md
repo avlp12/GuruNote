@@ -7,6 +7,24 @@
 
 ## [Unreleased]
 
+## [0.7.0.3] - 2026-04-17
+
+### Fixed
+- **유튜브 썸네일 다운로드 안정화** (`gurunote/thumbnails.py`, `gui.py`) —
+  일부 영상 (라이브 replay, 오래된 업로드, shorts 등) 의 `mqdefault.jpg` 가
+  404 / 1-2KB placeholder 를 반환해 히스토리 카드에 ⏳ 아이콘이 영구 고착되던
+  문제 해결.
+  - **해상도 폴백 체인**: `mqdefault` → `hqdefault` → `sddefault` → `default`.
+    첫 유효 응답 (>=2KB) 에서 중단. 모든 variant 실패 시 None.
+  - **Referer + User-Agent 정규화**: 일부 CDN 경로에서 빈 Referer 요청에
+    투명 PNG 를 반환해서 실패하던 케이스 예방.
+  - **실패 피드백 UX**: 다운로드 최종 실패 시 `_mark_thumbnail_failed` 가
+    ⏳ 플레이스홀더를 🎬 로 즉시 교체 (스틱 상태 방지).
+  - **Atomic write**: 썸네일 JPEG 를 `tmp → replace` 로 저장해 앱 크래시 시
+    반쪽 파일이 캐시에 남지 않음.
+  - **디버그 로그**: `GURUNOTE_THUMB_DEBUG=1` 환경변수로 variant 별 시도
+    결과 추적 가능.
+
 ## [0.7.0.2] - 2026-04-17
 
 ### Added
@@ -788,7 +806,8 @@ bash run_desktop.sh
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.7.0.2...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.7.0.3...HEAD
+[0.7.0.3]: https://github.com/avlp12/GuruNote/compare/v0.7.0.2...v0.7.0.3
 [0.7.0.2]: https://github.com/avlp12/GuruNote/compare/v0.7.0.1...v0.7.0.2
 [0.7.0.1]: https://github.com/avlp12/GuruNote/compare/v0.7.0.0...v0.7.0.1
 [0.7.0.0]: https://github.com/avlp12/GuruNote/compare/v0.6.0.19...v0.7.0.0

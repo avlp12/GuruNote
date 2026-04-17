@@ -1480,6 +1480,8 @@ class HistoryDialog(ctk.CTkToplevel):
                     video_id, path = self._thumb_queue.get_nowait()
                     self._pending_thumb_ids.discard(video_id)
                     if path is None:
+                        # 다운로드 실패: ⏳ 플레이스홀더를 🎬 로 교체
+                        self._mark_thumbnail_failed(video_id)
                         continue
                     self._apply_thumbnail_to_cards(video_id, path)
             except queue.Empty:
@@ -1507,6 +1509,27 @@ class HistoryDialog(ctk.CTkToplevel):
                         except Exception:  # noqa: BLE001
                             pass
                     self._place_thumbnail(child, path, video_id)
+
+    def _mark_thumbnail_failed(self, video_id: str) -> None:
+        """다운로드 실패한 video_id 의 ⏳ 을 🎬 로 교체 (스틱 상태 방지)."""
+        for card in self._scroll.winfo_children():
+            for child in card.winfo_children() if hasattr(card, "winfo_children") else []:
+                vid = getattr(child, "_gurunote_thumb_video_id", None)
+                if vid != video_id:
+                    continue
+                ph = getattr(child, "_gurunote_placeholder", None)
+                if ph is not None:
+                    try:
+                        ph.destroy()
+                    except Exception:  # noqa: BLE001
+                        pass
+                try:
+                    ctk.CTkLabel(
+                        child, text="🎬", font=ctk.CTkFont(size=22),
+                        text_color=C_TEXT_DIM,
+                    ).place(relx=0.5, rely=0.5, anchor="center")
+                except Exception:  # noqa: BLE001
+                    pass
 
     # =========================================================================
     # Actions (기존과 동일)
@@ -2173,7 +2196,7 @@ class GuruNoteApp(ctk.CTk):
             ).grid(row=2 + i, column=0, padx=10, pady=2, sticky="ew")
 
         ctk.CTkLabel(
-            sb, text="v0.7.0.2", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
+            sb, text="v0.7.0.3", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
         ).grid(row=7, column=0, padx=20, pady=(0, 16), sticky="sw")
 
     # ── 메인 영역 ────────────────────────────────────────────

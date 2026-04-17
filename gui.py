@@ -379,6 +379,8 @@ class HistoryDialog(ctk.CTkToplevel):
         self._pending_thumb_ids: set[str] = set()
         # 메인 스레드에서 받아 처리할 썸네일 완성 알림
         self._thumb_queue: queue.Queue[tuple[str, object]] = queue.Queue()
+        # 검색 debounce — 다량 히스토리에서 키 입력마다 full re-render 방지
+        self._search_after_id: Optional[str] = None
 
         self._build_ui()
         self.after(100, self.focus_force)
@@ -415,7 +417,8 @@ class HistoryDialog(ctk.CTkToplevel):
             placeholder_text="제목 / 업로더",
         )
         search_entry.pack(side="left", pady=10)
-        self._search_var.trace_add("write", lambda *_: self._refresh_grid())
+        # 검색 debounce: 200ms 간격으로만 re-render — 빠른 타이핑 중 UI 프리즈 방지
+        self._search_var.trace_add("write", lambda *_: self._schedule_refresh())
 
         ctk.CTkLabel(fbar, text="분야", font=ctk.CTkFont(size=12)).pack(
             side="left", padx=(16, 6), pady=10)
@@ -440,10 +443,13 @@ class HistoryDialog(ctk.CTkToplevel):
         ).pack(side="right", padx=12, pady=10)
 
         # 그리드 스크롤 영역
+        # 컬럼 minsize 로 고정 폭 보장 — 카드는 grid_propagate 로 높이 자동화.
         self._scroll = ctk.CTkScrollableFrame(self, fg_color=C_BG)
         self._scroll.pack(fill="both", expand=True, padx=16, pady=(0, 16))
         for c in range(self._COLUMNS):
-            self._scroll.grid_columnconfigure(c, weight=1, uniform="card")
+            self._scroll.grid_columnconfigure(
+                c, weight=1, minsize=self._CARD_W, uniform="card"
+            )
 
         self._reload_and_refresh()
 
@@ -524,22 +530,33 @@ class HistoryDialog(ctk.CTkToplevel):
         return out
 
     def _reset_filters(self) -> None:
+        # trace 가 발동해 _schedule_refresh 가 예약되므로 직접 호출은 불필요
         self._search_var.set("")
         self._field_var.set("모든 분야")
         self._sort_var.set("최신순")
         self._refresh_grid()
 
+    def _schedule_refresh(self) -> None:
+        """debounce: 타이핑이 빠르면 이전 예약을 취소하고 마지막 키 이후 200ms 에만 re-render."""
+        if self._search_after_id is not None:
+            try:
+                self.after_cancel(self._search_after_id)
+            except Exception:  # noqa: BLE001
+                pass
+        self._search_after_id = self.after(200, self._refresh_grid)
+
     # =========================================================================
     # Card rendering
     # =========================================================================
     def _render_card(self, row: int, col: int, job: dict) -> None:
+        # 카드 크기는 grid 의 컬럼 minsize 로 보장 — grid_propagate 를 풀어
+        # 길이 다른 제목/태그에서도 클리핑 없이 높이가 자연스럽게 확장되게.
         card = ctk.CTkFrame(
             self._scroll, fg_color=C_SURFACE, corner_radius=10,
-            border_width=1, border_color=C_BORDER, width=self._CARD_W,
+            border_width=1, border_color=C_BORDER,
         )
         card.grid(row=row, column=col, padx=8, pady=8, sticky="nsew")
         card.grid_columnconfigure(0, weight=1)
-        card.grid_propagate(False)
 
         # 썸네일 자리 (비동기 로딩)
         thumb_holder = ctk.CTkFrame(

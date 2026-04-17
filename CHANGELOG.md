@@ -7,6 +7,24 @@
 
 ## [Unreleased]
 
+## [0.6.0.11] - 2026-04-17
+
+> "지식 증류기" 로드맵 **Phase F — 저장된 노트 검색** (키워드 단계).
+> 의미(임베딩) 검색은 추후 phase.
+
+### Added
+- **`gurunote/search.py` 신규** — `match_body(job_id, query)` 가 저장된
+  `result.md` 본문 (frontmatter 제외) 에서 query 의 첫 매칭 위치를 찾아
+  ±80자 스니펫을 반환. `functools.lru_cache(maxsize=128)` 로 본문을 지연
+  로드 + 캐시해 재검색 시 I/O 반복을 피함. `clear_cache()` 는 삭제/리프레시
+  시 호출해 stale 캐시 무효화. Case-insensitive 매칭, 빈 query 는 None 가드.
+- **HistoryDialog 에 "📄 본문 포함" 토글** (`gui.py`) — 검색창 옆
+  체크박스. 꺼져 있으면 기존처럼 제목/업로더/태그/분야 만 매칭 (빠름).
+  켜지면 메타 불일치 잡도 본문에서 찾아보고, 매칭된 카드에는 `🔍 ±80자
+  스니펫` 미리보기를 italic 으로 표시. 본문 로드는 on-demand + LRU 캐시.
+- **`_reload_and_refresh` 가 본문 캐시 클리어** — 삭제/새 작업 반영 시 stale
+  스니펫 방지.
+
 ## [0.6.0.10] - 2026-04-17
 
 > "지식 증류기" 로드맵 **Phase E — Notion API 연동**.
@@ -542,7 +560,8 @@
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.6.0.10...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.6.0.11...HEAD
+[0.6.0.11]: https://github.com/avlp12/GuruNote/compare/v0.6.0.10...v0.6.0.11
 [0.6.0.10]: https://github.com/avlp12/GuruNote/compare/v0.6.0.9...v0.6.0.10
 [0.6.0.9]: https://github.com/avlp12/GuruNote/compare/v0.6.0.8...v0.6.0.9
 [0.6.0.8]: https://github.com/avlp12/GuruNote/compare/v0.6.0.7...v0.6.0.8

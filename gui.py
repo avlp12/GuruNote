@@ -73,6 +73,10 @@ from gurunote.notion_sync import (
     missing_packages_hint as notion_missing_hint,
     save_to_notion as notion_save,
 )
+from gurunote.search import (
+    clear_cache as search_clear_cache,
+    match_body as search_match_body,
+)
 from gurunote.types import _format_ts
 from gurunote.updater import check_for_update, update_project
 
@@ -396,6 +400,8 @@ class HistoryDialog(ctk.CTkToplevel):
         self._search_var = ctk.StringVar(value="")
         self._field_var = ctk.StringVar(value="모든 분야")
         self._sort_var = ctk.StringVar(value="최신순")
+        # Phase F — 본문 전문 검색 토글. 켜면 result.md 본문도 매칭 대상.
+        self._search_body_var = ctk.BooleanVar(value=False)
 
         # PIL 이미지 참조 유지 (GC 방지) + 렌더링 중 썸네일 요청 중복 방지
         self._thumb_refs: dict[str, object] = {}
@@ -437,11 +443,18 @@ class HistoryDialog(ctk.CTkToplevel):
             side="left", padx=(12, 6), pady=10)
         search_entry = ctk.CTkEntry(
             fbar, textvariable=self._search_var, width=200,
-            placeholder_text="제목 / 업로더",
+            placeholder_text="제목 / 업로더 / 태그 / (옵션)본문",
         )
         search_entry.pack(side="left", pady=10)
         # 검색 debounce: 200ms 간격으로만 re-render — 빠른 타이핑 중 UI 프리즈 방지
         self._search_var.trace_add("write", lambda *_: self._schedule_refresh())
+
+        # Phase F — 본문 검색 토글 (result.md 본문 lazy load + lru_cache)
+        ctk.CTkCheckBox(
+            fbar, text="📄 본문 포함", variable=self._search_body_var,
+            command=self._refresh_grid,
+            font=ctk.CTkFont(size=11),
+        ).pack(side="left", padx=(8, 0), pady=10)
 
         ctk.CTkLabel(fbar, text="분야", font=ctk.CTkFont(size=12)).pack(
             side="left", padx=(16, 6), pady=10)
@@ -480,7 +493,11 @@ class HistoryDialog(ctk.CTkToplevel):
     # Data flow
     # =========================================================================
     def _reload_and_refresh(self) -> None:
-        """인덱스 재로드 + 분야 드롭다운 재구성 + 그리드 재렌더."""
+        """인덱스 재로드 + 분야 드롭다운 재구성 + 그리드 재렌더.
+
+        검색 본문 캐시도 함께 무효화해 삭제/신규 작업이 반영되도록 한다.
+        """
+        search_clear_cache()
         self._all_jobs = load_index()
 
         # 분야 드롭다운 재구성
@@ -519,25 +536,48 @@ class HistoryDialog(ctk.CTkToplevel):
             self._render_card(r, c, job)
 
     def _apply_filters(self, jobs: list[dict]) -> list[dict]:
-        """검색어 + 분야 + 정렬 적용."""
+        """검색어 + 분야 + (옵션)본문 검색 + 정렬 적용 (Phase F).
+
+        본문 검색이 켜진 경우 메타 불일치 잡도 본문 매칭이 있으면 포함.
+        매칭된 잡에는 `_body_snippet` 키가 추가되어 카드가 스니펫을 렌더링.
+        """
         q = self._search_var.get().strip().lower()
         field = self._field_var.get().strip()
+        search_body = bool(self._search_body_var.get())
 
-        def matches(j: dict) -> bool:
+        def meta_match(j: dict) -> bool:
+            if not q:
+                return True
+            hay = " ".join([
+                j.get("organized_title") or "",
+                j.get("title") or "",
+                j.get("uploader") or "",
+                " ".join(j.get("tags") or []),
+            ]).lower()
+            return q in hay
+
+        def passes_filters(j: dict) -> Optional[dict]:
+            """매치하면 job 사본 (스니펫 포함 가능) 반환, 아니면 None."""
             if field and field != "모든 분야" and (j.get("field") or "") != field:
-                return False
-            if q:
-                hay = " ".join([
-                    j.get("organized_title") or "",
-                    j.get("title") or "",
-                    j.get("uploader") or "",
-                    " ".join(j.get("tags") or []),
-                ]).lower()
-                if q not in hay:
-                    return False
-            return True
+                return None
+            if not q:
+                return j
+            if meta_match(j):
+                return j
+            # 본문 검색이 켜져 있으면 result.md 에서도 찾아본다
+            if search_body and j.get("has_markdown"):
+                snippet = search_match_body(j.get("job_id", ""), q)
+                if snippet:
+                    copy = dict(j)
+                    copy["_body_snippet"] = snippet
+                    return copy
+            return None
 
-        out = [j for j in jobs if matches(j)]
+        out: list[dict] = []
+        for j in jobs:
+            res = passes_filters(j)
+            if res is not None:
+                out.append(res)
 
         sort_mode = self._sort_var.get()
         if sort_mode == "최신순":
@@ -659,6 +699,16 @@ class HistoryDialog(ctk.CTkToplevel):
                     font=ctk.CTkFont(size=10), text_color=C_DANGER,
                     wraplength=self._CARD_W - 30, anchor="w", justify="left",
                 ).grid(row=5, column=0, padx=10, pady=(2, 4), sticky="w")
+
+        # Phase F — 본문 검색 매칭 시 스니펫 표시
+        snippet = job.get("_body_snippet")
+        if snippet:
+            ctk.CTkLabel(
+                card, text=f"🔍 {snippet[:200]}",
+                font=ctk.CTkFont(size=10, slant="italic"),
+                text_color=C_TEXT_DIM,
+                wraplength=self._CARD_W - 30, anchor="w", justify="left",
+            ).grid(row=5, column=0, padx=10, pady=(2, 4), sticky="w")
 
         # 액션 버튼 바
         btn_row = ctk.CTkFrame(card, fg_color="transparent")
@@ -1389,7 +1439,7 @@ class GuruNoteApp(ctk.CTk):
             ).grid(row=2 + i, column=0, padx=10, pady=2, sticky="ew")
 
         ctk.CTkLabel(
-            sb, text="v0.6.0.10", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
+            sb, text="v0.6.0.11", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
         ).grid(row=6, column=0, padx=20, pady=(0, 16), sticky="sw")
 
     # ── 메인 영역 ────────────────────────────────────────────

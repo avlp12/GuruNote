@@ -242,6 +242,91 @@ def clear_index() -> None:
             p.unlink()
 
 
+def update_job_in_index(
+    job_id: str,
+    full_md: str,
+    title: str = "",
+    log: Optional[ProgressFn] = None,
+    model_name: str = _DEFAULT_MODEL,
+) -> Optional[dict]:
+    """
+    단일 작업의 임베딩을 인덱스에 incremental 업데이트.
+
+    동작:
+      - 인덱스가 아직 없거나 sentence-transformers 미설치 → silent no-op
+        (`None` 반환). 첫 빌드는 사용자가 명시적으로 "Semantic Rebuild" 해야 함.
+      - 인덱스가 있으면:
+          1. 같은 job_id 의 기존 chunk 들 제거 (재저장/편집 대응)
+          2. 새 본문을 chunk 분할 + embed
+          3. 기존 vectors 에 append, meta 갱신, 원자적 저장
+
+    `save_job()` 직후나 `update_job_markdown()` 직후 백그라운드 thread 에서
+    호출하면 사용자는 Dashboard 의 "Semantic Rebuild" 를 다시 누르지 않아도
+    검색 결과에 새 작업이 반영됨.
+
+    Returns:
+        {"removed_old": int, "added_new": int}  성공 시
+        None — 인덱스 미존재 / 패키지 미설치 / 본문 비어 / 에러
+    """
+    log = log or (lambda _msg: None)
+    if not is_available() or not is_index_built():
+        return None
+    try:
+        import numpy as np  # type: ignore
+        data = np.load(_INDEX_PATH)
+        existing_vectors = data["vectors"]
+        meta = json.loads(_META_PATH.read_text(encoding="utf-8"))
+
+        # 1) 기존 chunk 제거 (job_id 일치하는 항목)
+        keep_mask = [j != job_id for j in meta.get("job_ids", [])]
+        removed = sum(1 for k in keep_mask if not k)
+        if removed > 0:
+            existing_vectors = existing_vectors[keep_mask]
+            for key in ("job_ids", "chunk_idxs", "titles", "previews"):
+                if key in meta:
+                    meta[key] = [v for v, keep in zip(meta[key], keep_mask) if keep]
+
+        # 2) 새 본문 chunk 분할 + embed
+        chunks = _split_into_chunks(full_md)
+        if not chunks:
+            # 본문 비어있음 → 그냥 cleaned-up 인덱스만 저장
+            np.savez(_INDEX_PATH, vectors=existing_vectors)
+            meta["built_at"] = _now_iso()
+            _META_PATH.write_text(
+                json.dumps(meta, ensure_ascii=False), encoding="utf-8"
+            )
+            log(f"[Semantic] {job_id}: 본문 없음 — old {removed} 제거만")
+            return {"removed_old": removed, "added_new": 0}
+
+        log(f"[Semantic] {job_id}: {len(chunks)} chunk 임베딩 중…")
+        model = _get_model(model_name)
+        new_vectors = model.encode(
+            chunks, batch_size=32, show_progress_bar=False,
+            normalize_embeddings=True,
+        )
+        new_vectors = np.asarray(new_vectors, dtype=np.float32)
+
+        # 3) append + 저장
+        combined = np.vstack([existing_vectors, new_vectors]) if len(existing_vectors) else new_vectors
+        np.savez(_INDEX_PATH, vectors=combined)
+        for ci, chunk in enumerate(chunks):
+            meta.setdefault("job_ids", []).append(job_id)
+            meta.setdefault("chunk_idxs", []).append(ci)
+            meta.setdefault("titles", []).append(title)
+            meta.setdefault("previews", []).append(chunk[:160])
+        meta["num_chunks"] = len(meta.get("job_ids", []))
+        meta["num_jobs"] = len(set(meta.get("job_ids", [])))
+        meta["built_at"] = _now_iso()
+        _META_PATH.write_text(
+            json.dumps(meta, ensure_ascii=False), encoding="utf-8"
+        )
+        log(f"[Semantic] {job_id}: -{removed} +{len(chunks)} 인덱스 갱신")
+        return {"removed_old": removed, "added_new": len(chunks)}
+    except Exception as exc:  # noqa: BLE001
+        log(f"[Semantic] 인덱스 갱신 실패 ({exc}) — 무시하고 계속")
+        return None
+
+
 def _now_iso() -> str:
     from datetime import datetime
     return datetime.now().isoformat(timespec="seconds")

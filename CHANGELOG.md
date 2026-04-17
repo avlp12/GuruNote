@@ -7,6 +7,33 @@
 
 ## [Unreleased]
 
+## [0.6.0.7] - 2026-04-17
+
+> "지식 증류기" 로드맵 **Phase C — 깔끔한 PDF 출력**.
+
+### Added
+- **결과 마크다운 → 렌더링된 PDF 변환** (`gurunote/pdf_export.py` 신규,
+  `requirements-pdf.txt` 신규) — `markdown` (pure Python) 으로 MD → HTML,
+  `weasyprint` 로 HTML → PDF. YAML frontmatter 를 자체 파서로 추출해 PDF 첫
+  페이지 메타 테이블 (업로더/게시일/원본 URL/분야/STT 엔진/태그 pill) 로
+  렌더링. 본문은 A4 페이지에 한국어 친화 폰트 스택 (Noto Sans KR → Apple SD
+  Gothic Neo → 맑은 고딕 → Pretendard → system-ui) 으로 출력. 페이지 하단
+  `N / M` 페이지 번호, 블록쿼트/코드블록/테이블/수평선 스타일 포함.
+- **GUI "Save PDF" 버튼** (`gui.py`) — 결과 카드 우상단에 `.md` 옆에 추가,
+  HistoryDialog 의 각 카드에도 `.md` / **PDF** 버튼 병치. weasyprint 미설치
+  시 OS 별 시스템 의존성 (macOS: `brew install cairo pango gdk-pixbuf libffi`
+  / Ubuntu: `apt install libpango-1.0-0 libpangoft2-1.0-0`) + `pip install
+  -r requirements-pdf.txt` 명령을 담은 친절한 안내 다이얼로그 표시.
+- **선택 설치 의존성 분리** — `requirements-pdf.txt` 신설. 기본 `.md` 저장은
+  이 패키지 없이도 동작하므로 PDF 가 필요한 사용자만 설치.
+
+### Fixed
+- **Settings 연결 테스트에서 Gemini 분기 누락** (`gui.py::_on_test_connection`)
+  — 이전에는 `anthropic` 외의 모든 provider 가 `else` 분기로 빠져 OPENAI_*
+  키를 사용했기 때문에 `gemini` 를 선택한 사용자의 "Test" 버튼이 항상 실패.
+  `elif provider == "gemini"` 분기 추가 (`GOOGLE_API_KEY` + `GEMINI_MODEL`).
+  PR #65 에서 도입된 드롭다운 선택지가 실제 동작과 정합되도록 수정.
+
 ## [0.6.0.6] - 2026-04-17
 
 > "지식 증류기" 로드맵 **Phase B — History 일괄 뷰**.
@@ -426,7 +453,8 @@
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.6.0.6...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.6.0.7...HEAD
+[0.6.0.7]: https://github.com/avlp12/GuruNote/compare/v0.6.0.6...v0.6.0.7
 [0.6.0.6]: https://github.com/avlp12/GuruNote/compare/v0.6.0.5...v0.6.0.6
 [0.6.0.5]: https://github.com/avlp12/GuruNote/compare/v0.6.0.4...v0.6.0.5
 [0.6.0.4]: https://github.com/avlp12/GuruNote/compare/v0.6.0.3...v0.6.0.4

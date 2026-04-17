@@ -24,20 +24,35 @@ from typing import Optional
 _FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
 
 
-def is_pdf_export_available() -> bool:
-    """`markdown` + `weasyprint` 가 **실제로 import 가능**한지 확인.
+_AVAILABILITY_CACHE: Optional[bool] = None
 
-    weasyprint 는 순수 파이썬 import 가 성공해도 cairo/pango 시스템 라이브러리
-    부재 시 import 시점에 `OSError` 또는 `cffi.VerificationError` 로 실패
-    하므로, 모든 예외를 포괄해 첫 클릭 시 크래시 대신 친절한 안내 대화상자를
-    띄울 수 있게 한다.
+
+def is_pdf_export_available(force_recheck: bool = False) -> bool:
+    """`markdown` + `weasyprint` 가 **실제 PDF 렌더 가능**한지 smoke-test.
+
+    `import weasyprint` 는 cairo/pango 시스템 라이브러리가 없어도 성공하고
+    stderr 로 "WeasyPrint could not import some external libraries" 경고만
+    찍고 넘어간다. 하지만 이후 `HTML().write_pdf()` 시점에 `OSError` 로
+    크래시해 PDF 생성이 불가능하다. 이 함수는 **실제로 minimal HTML 객체를
+    생성**해 cffi 레벨의 네이티브 바인딩까지 통과하는지 확인한다.
+
+    결과는 프로세스 수명 동안 캐시 — 사용자가 자동 설치 다이얼로그에서
+    추가 의존성을 깔면 `force_recheck=True` 로 재확인.
     """
+    global _AVAILABILITY_CACHE
+    if _AVAILABILITY_CACHE is not None and not force_recheck:
+        return _AVAILABILITY_CACHE
+
     try:
         import markdown  # type: ignore  # noqa: F401
-        import weasyprint  # type: ignore  # noqa: F401
-        return True
+        from weasyprint import HTML  # type: ignore
+        # cffi 로 감싸진 pango/cairo 가 실제로 로드되는지 확인 —
+        # 경량 HTML 파싱만 수행 (PDF 렌더까진 안 가도 native libs 를 트리거).
+        HTML(string="<p>_</p>")
+        _AVAILABILITY_CACHE = True
     except Exception:  # noqa: BLE001
-        return False
+        _AVAILABILITY_CACHE = False
+    return _AVAILABILITY_CACHE
 
 
 def missing_packages_hint() -> str:

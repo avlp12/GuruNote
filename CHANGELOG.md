@@ -7,6 +7,34 @@
 
 ## [Unreleased]
 
+## [0.6.0.8] - 2026-04-17
+
+> "지식 증류기" 로드맵 **Phase D — Obsidian vault 연동**.
+>
+> Phase A 의 YAML frontmatter 가 이미 Obsidian 호환 형식이라, 파일만 vault
+> 폴더에 두면 Obsidian 이 즉시 인식해 태그 검색/Dataview 쿼리가 가능하다.
+> 이 PR 은 "수동으로 vault 에 복사" 단계를 GUI 버튼 한 번으로 자동화.
+
+### Added
+- **`gurunote/obsidian.py` 신규** — `save_to_vault()` 가 지정된 vault 하위
+  폴더에 결과 마크다운을 저장. 주요 기능:
+  - `is_obsidian_vault(path)` — `.obsidian/` 하위 디렉토리 존재로 유효한
+    vault 인지 판별
+  - `resolve_vault_path()` / `resolve_subfolder()` — `OBSIDIAN_VAULT_PATH`
+    (`~` 확장 + 심볼릭 링크 해결) / `OBSIDIAN_SUBFOLDER` (기본 `"GuruNote"`)
+    환경변수 읽기
+  - 파일명 충돌 시 `_YYYYMMDD_HHMMSS` 접미사 자동 부여
+  - Path traversal 방지 — filename / subfolder 에 `..`, `/`, `\` 금지
+- **Settings 다이얼로그 필드 2개 추가** (`gui.py`) —
+  `OBSIDIAN_VAULT_PATH`, `OBSIDIAN_SUBFOLDER`. 다른 설정과 동일하게 `.env`
+  에 저장.
+- **GUI 버튼 추가** —
+  - 결과 카드: Save .md / Save PDF 옆에 `→ Obsidian` 버튼
+  - HistoryDialog 카드: `.md` / `PDF` / **Obs** / `Log` / `Del` (5개 버튼,
+    너비 38px 로 재조정)
+  - 버튼 클릭 시 `OBSIDIAN_VAULT_PATH` 미설정이면 Settings 열도록 안내,
+    `.obsidian/` 폴더가 없으면 "그래도 저장할까요?" 확인 대화상자 표시.
+
 ## [0.6.0.7] - 2026-04-17
 
 > "지식 증류기" 로드맵 **Phase C — 깔끔한 PDF 출력**.
@@ -453,7 +481,8 @@
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.6.0.7...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.6.0.8...HEAD
+[0.6.0.8]: https://github.com/avlp12/GuruNote/compare/v0.6.0.7...v0.6.0.8
 [0.6.0.7]: https://github.com/avlp12/GuruNote/compare/v0.6.0.6...v0.6.0.7
 [0.6.0.6]: https://github.com/avlp12/GuruNote/compare/v0.6.0.5...v0.6.0.6
 [0.6.0.5]: https://github.com/avlp12/GuruNote/compare/v0.6.0.4...v0.6.0.5

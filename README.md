@@ -467,7 +467,7 @@ GuruNote/
 주요 변경 사항은 [CHANGELOG.md](./CHANGELOG.md) 에 [Keep a Changelog](https://keepachangelog.com/)
 형식으로 기록되며 버전은 [Semantic Versioning](https://semver.org/) 을 따릅니다.
 
-현재 버전: **v0.7.2.0** — stderr 터미널 누수 차단 + PDF 실사용 가능 smoke-test + Obsidian 저장 다이얼로그 재설계.
+현재 버전: **v0.7.2.1** — 업데이트 시 GitHub 인증 프롬프트 제거 + GitHub CLI/PAT 가이드 다이얼로그.
 
 ---
 

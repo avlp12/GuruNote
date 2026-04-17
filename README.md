@@ -435,7 +435,7 @@ GuruNote/
 주요 변경 사항은 [CHANGELOG.md](./CHANGELOG.md) 에 [Keep a Changelog](https://keepachangelog.com/)
 형식으로 기록되며 버전은 [Semantic Versioning](https://semver.org/) 을 따릅니다.
 
-현재 버전: **v0.6.0.19** — Streamlit 앱에 대시보드 + 의미 검색 탭 포팅.
+현재 버전: **v0.7.0.0** — 히스토리 우측 트리 내비게이션 (주제/인물/제목 3-facet).
 
 ---
 

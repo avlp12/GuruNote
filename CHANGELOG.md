@@ -7,6 +7,40 @@
 
 ## [Unreleased]
 
+## [0.7.2.1] - 2026-04-17
+
+### Fixed
+- **업데이트 시 GitHub `Username/Password` 프롬프트 문제** (`gurunote/updater.py`,
+  `gui.py`) — Google OAuth 로만 GitHub 에 로그인한 사용자처럼 password 가
+  없는 계정에서 `git pull` 이 credential 입력을 요구하며 멈추던 문제 해결.
+  - 모든 `git` 서브프로세스가 이제 **완전 non-interactive** 로 실행:
+    `GIT_TERMINAL_PROMPT=0` + `GIT_ASKPASS=/bin/echo` +
+    `-c credential.helper=""` 로 credential helper 비활성화 +
+    `stdin=subprocess.DEVNULL` 로 TTY 접근 차단.
+  - 공개 저장소라면 이 조합만으로 인증 없이 fetch/pull 이 정상 동작.
+  - auth 관련 실패(`Authentication failed`, `could not read Username`,
+    `HTTP 401/403` 등) 감지 시 `GitAuthError` 를 raise.
+
+### Added
+- **`GitAuthErrorDialog`** (`gui.py`) — 비공개 저장소 등으로 인증이 필요한
+  상황에서 사용자가 해결 옵션을 한눈에 볼 수 있는 다이얼로그. 사용자가
+  OAuth 로만 GitHub 에 가입해 password 가 없는 케이스를 주 대상으로 설계.
+  - **방법 1 · GitHub CLI (권장)** — `gh auth login --web` 을 별도
+    Terminal 창(macOS AppleScript / Windows cmd `/K` / Linux
+    xdg terminal) 으로 띄워 브라우저 OAuth 플로우로 로그인. 로그인 후
+    git 이 자동으로 gh 의 credential helper 를 통해 토큰 사용. 미설치 시
+    OS 별 설치 명령(`brew install gh` / `winget install GitHub.cli` 등)
+    안내.
+  - **방법 2 · Personal Access Token** — `github.com/settings/tokens/new`
+    (repo scope 사전 선택) 을 기본 브라우저로 열어 토큰 생성 유도.
+  - **"다시 시도"** 버튼으로 로그인 완료 후 업데이트 재실행 원클릭.
+- **`update_via_tarball()`** (`gurunote/updater.py`) — 공개 저장소에서만
+  유효한 tarball 기반 업데이트 헬퍼 (현재는 공개 저장소 전용 옵션으로
+  보관. 향후 public repo 감지 시 자동 제안용).
+- **remote 버전 확인 3차 fallback** — git fetch 가 완전히 막힌 환경에서도
+  `raw.githubusercontent.com` 에서 직접 `__init__.py` 를 가져와 버전
+  비교가 동작하도록 추가 (공개 저장소 한정).
+
 ## [0.7.2.0] - 2026-04-17
 
 ### Fixed
@@ -941,7 +975,8 @@ bash run_desktop.sh
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.7.2.0...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.7.2.1...HEAD
+[0.7.2.1]: https://github.com/avlp12/GuruNote/compare/v0.7.2.0...v0.7.2.1
 [0.7.2.0]: https://github.com/avlp12/GuruNote/compare/v0.7.1.1...v0.7.2.0
 [0.7.1.1]: https://github.com/avlp12/GuruNote/compare/v0.7.1.0...v0.7.1.1
 [0.7.1.0]: https://github.com/avlp12/GuruNote/compare/v0.7.0.5...v0.7.1.0

@@ -43,6 +43,7 @@ from gurunote.history import (
     load_index, new_job_id, save_job,
 )
 from gurunote import semantic as semantic_search
+from gurunote.nav_tree import compute_facets
 from gurunote.stats import compute_stats, render_report
 from gurunote.stt import install_whisperx, is_whisperx_installed, transcribe
 from gurunote.stt_mlx import is_apple_silicon
@@ -236,46 +237,114 @@ def render_search_tab() -> None:
                 )
 
 
+_FACET_LABELS = [
+    ("field", "주제 (분야)"),
+    ("person", "인물 (업로더)"),
+    ("title", "제목 (첫글자)"),
+    ("tag", "태그"),
+]
+
+
+def _render_nav_tree(jobs: list[dict]) -> None:
+    """좌측 트리 내비 — 4 facet 을 st.expander 로 펼침. 클릭 시 필터 session_state."""
+    facets = compute_facets(jobs)
+    current = st.session_state.get("nav_filter")
+
+    if st.button("× 필터 해제", use_container_width=True, disabled=current is None):
+        st.session_state.pop("nav_filter", None)
+        st.rerun()
+
+    for key, title in _FACET_LABELS:
+        nodes = facets.get(key, [])
+        total = sum(n.count for n in nodes)
+        with st.expander(f"{title}  ·  {total}", expanded=True):
+            if not nodes:
+                st.caption("(비어 있음)")
+                continue
+            for node in nodes:
+                is_active = bool(
+                    current and current.get("facet") == key and current.get("label") == node.label
+                )
+                label_txt = node.label if len(node.label) <= 22 else node.label[:21] + "…"
+                btn_label = f"{'▸ ' if is_active else ''}{label_txt}  ({node.count})"
+                if st.button(
+                    btn_label, key=f"nav_{key}_{node.label}",
+                    use_container_width=True,
+                    type="primary" if is_active else "secondary",
+                ):
+                    if is_active:
+                        st.session_state.pop("nav_filter", None)
+                    else:
+                        st.session_state["nav_filter"] = {
+                            "facet": key,
+                            "label": node.label,
+                            "job_ids": list(node.job_ids),
+                        }
+                    st.rerun()
+
+
 def render_history_tab() -> None:
-    """📂 히스토리 탭 — 과거 작업 목록 + 다운로드 + 로그 확인."""
+    """📂 히스토리 탭 — 좌측 트리 내비 + 우측 잡 목록."""
     st.subheader("📂 작업 히스토리")
     jobs = load_index()
     if not jobs:
         st.info("아직 작업 기록이 없습니다. GuruNote 를 생성하면 여기에 자동 저장됩니다.")
         return
 
-    for job in jobs:
-        status = job.get("status", "unknown")
-        icon = "✅" if status == "completed" else "❌"
-        title = job.get("title", "제목 없음")
-        created = (job.get("created_at") or "")[:16].replace("T", " ")
-        engine = job.get("stt_engine", "")
-        job_id = job.get("job_id", "")
-        err = job.get("error_message", "")
+    nav_col, list_col = st.columns([1, 3])
 
-        with st.expander(f"{icon} {title}  —  {created}  ·  {engine}", expanded=False):
-            if err:
-                st.error(f"오류: {err}")
+    with nav_col:
+        _render_nav_tree(jobs)
 
-            col1, col2 = st.columns(2)
-            # 마크다운 다운로드
-            if job.get("has_markdown"):
-                md = get_job_markdown(job_id)
-                if md:
-                    from gurunote.exporter import sanitize_filename
-                    col1.download_button(
-                        "📥 마크다운 다운로드",
-                        data=md.encode("utf-8"),
-                        file_name=f"GuruNote_{sanitize_filename(title)}.md",
-                        mime="text/markdown",
-                        key=f"dl_{job_id}",
-                    )
+    with list_col:
+        nav = st.session_state.get("nav_filter")
+        if nav:
+            # 삭제된 잡 id 정합 체크
+            valid_ids = {j.get("job_id") for j in jobs}
+            active_ids = set(nav.get("job_ids") or []) & valid_ids
+            if not active_ids:
+                st.session_state.pop("nav_filter", None)
+                st.rerun()
+            facet_title = dict(_FACET_LABELS).get(nav["facet"], "")
+            st.caption(f"활성 필터  ·  {facet_title}  ›  **{nav['label']}**  ({len(active_ids)} 건)")
+            filtered_jobs = [j for j in jobs if j.get("job_id") in active_ids]
+        else:
+            st.caption(f"전체 {len(jobs)} 건")
+            filtered_jobs = jobs
 
-            # 로그 보기
-            log_text = get_job_log(job_id)
-            if log_text:
-                if col2.button("📋 로그 보기", key=f"log_{job_id}"):
-                    st.code(log_text, language="bash")
+        if not filtered_jobs:
+            st.info("조건에 맞는 작업이 없습니다.")
+            return
+
+        for job in filtered_jobs:
+            status = job.get("status", "unknown")
+            icon = "✅" if status == "completed" else "❌"
+            title = job.get("title", "제목 없음")
+            created = (job.get("created_at") or "")[:16].replace("T", " ")
+            engine = job.get("stt_engine", "")
+            job_id = job.get("job_id", "")
+            err = job.get("error_message", "")
+
+            with st.expander(f"{icon} {title}  —  {created}  ·  {engine}", expanded=False):
+                if err:
+                    st.error(f"오류: {err}")
+
+                col1, col2 = st.columns(2)
+                if job.get("has_markdown"):
+                    md = get_job_markdown(job_id)
+                    if md:
+                        col1.download_button(
+                            "📥 마크다운 다운로드",
+                            data=md.encode("utf-8"),
+                            file_name=f"GuruNote_{sanitize_filename(title)}.md",
+                            mime="text/markdown",
+                            key=f"dl_{job_id}",
+                        )
+
+                log_text = get_job_log(job_id)
+                if log_text:
+                    if col2.button("📋 로그 보기", key=f"log_{job_id}"):
+                        st.code(log_text, language="bash")
 
 
 def render_settings_tab(default_provider: str) -> None:

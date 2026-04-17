@@ -7,6 +7,19 @@
 
 ## [Unreleased]
 
+## [0.7.0.2] - 2026-04-17
+
+### Added
+- **Streamlit 히스토리 탭 트리 내비 포팅** (`app.py`) — Phase 3 "지식 증류기
+  UI" 마지막. 데스크톱 GUI 의 4-facet 트리를 웹 앱에도 동등 기능으로 제공.
+  - 히스토리 탭을 `st.columns([1, 3])` 으로 분할 — 좌: 트리 내비 / 우: 잡 목록.
+  - `gurunote.nav_tree.compute_facets(jobs)` 재사용 → 주제/인물/제목/태그
+    각각 `st.expander` 로 펼침.
+  - 노드 버튼 클릭 → `st.session_state["nav_filter"]` 설정 → `st.rerun()`.
+    활성 노드는 `type="primary"` 로 강조.
+  - `× 필터 해제` 버튼 (상단) + 우측 패널 상단 활성 필터 chip.
+  - 삭제된 잡의 stale id 자동 정합 — `valid_ids` 교집합 후 0 이면 필터 해제.
+
 ## [0.7.0.1] - 2026-04-17
 
 ### Added
@@ -775,7 +788,8 @@ bash run_desktop.sh
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.7.0.1...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.7.0.2...HEAD
+[0.7.0.2]: https://github.com/avlp12/GuruNote/compare/v0.7.0.1...v0.7.0.2
 [0.7.0.1]: https://github.com/avlp12/GuruNote/compare/v0.7.0.0...v0.7.0.1
 [0.7.0.0]: https://github.com/avlp12/GuruNote/compare/v0.6.0.19...v0.7.0.0
 [0.6.0.19]: https://github.com/avlp12/GuruNote/compare/v0.6.0.18...v0.6.0.19

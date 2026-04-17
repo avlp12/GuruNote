@@ -7,6 +7,41 @@
 
 ## [Unreleased]
 
+## [0.7.2.0] - 2026-04-17
+
+### Fixed
+- **터미널 앞으로 튀어오르는 문제** (`gurunote/log_redirect.py` 신규,
+  `gui.py` 모듈 초기화) — `python gui.py` 직접 실행 시 WeasyPrint /
+  pyannote / mlx-whisper 의 native 라이브러리가 C 레벨에서 stderr 로
+  찍는 경고 ("WeasyPrint could not import some external libraries")
+  가 macOS Terminal 을 반복적으로 포그라운드로 끌어올리던 문제 해결.
+  - `os.dup2` 로 FD 1, 2 자체를 `~/.gurunote/gui.log` 로 리다이렉트
+    해서 `fprintf(stderr, ...)` 직접 호출까지 커버.
+  - Tkinter 메인 루프 및 heavy import 전에 실행 (gui.py 상단).
+  - `GURUNOTE_NO_REDIRECT=1` 환경변수로 비활성화 (디버깅용).
+- **PDF availability 판정 오탐** (`gurunote/pdf_export.py`) — 기존
+  `is_pdf_export_available()` 는 `import weasyprint` 만 확인해서
+  cairo/pango native 라이브러리가 없어 WeasyPrint 가 실제로는 동작
+  불가인 상태에서도 True 를 반환. `Save PDF` 클릭 → 저장 시도 →
+  OSError 크래시 + stderr 경고 폭주로 이어지던 문제 수정.
+  - 이제 minimal `HTML(string="<p>_</p>")` 객체를 실제 생성해서
+    cffi 네이티브 바인딩까지 통과하는지 확인.
+  - 결과는 프로세스 수명 동안 캐시되며 `force_recheck=True` 로 갱신
+    가능 — `pdf_installer.run_plan` 이 설치 성공 후 이를 호출.
+
+### Changed
+- **Obsidian 저장 성공 다이얼로그 재설계** (`gui.py` `ObsidianSaveDialog`
+  신규) — 이전의 `messagebox.showinfo("Obsidian 저장 완료", 전체경로)`
+  "성의없는 팝업" 교체.
+  - 파일명 + vault/하위폴더 요약 표시 (긴 절대경로 대신).
+  - **`Obsidian 에서 열기`** 버튼 — `obsidian://open?path=...` URL 스킴
+    으로 Obsidian 앱에서 해당 노트 즉시 열기.
+  - **`폴더 보기`** 버튼 — macOS `open -R` / Windows `explorer /select`
+    / Linux `xdg-open` 로 파일 위치 공개.
+  - `닫기` 버튼.
+  - 히스토리 카드의 `→ Obsidian` 과 결과 카드의 `→ Obsidian` 양쪽
+    모두 이 다이얼로그를 사용.
+
 ## [0.7.1.1] - 2026-04-17
 
 ### Changed
@@ -906,7 +941,8 @@ bash run_desktop.sh
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.7.1.1...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.7.2.0...HEAD
+[0.7.2.0]: https://github.com/avlp12/GuruNote/compare/v0.7.1.1...v0.7.2.0
 [0.7.1.1]: https://github.com/avlp12/GuruNote/compare/v0.7.1.0...v0.7.1.1
 [0.7.1.0]: https://github.com/avlp12/GuruNote/compare/v0.7.0.5...v0.7.1.0
 [0.7.0.5]: https://github.com/avlp12/GuruNote/compare/v0.7.0.4...v0.7.0.5

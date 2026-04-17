@@ -68,6 +68,11 @@ from gurunote.obsidian import (
     resolve_vault_path as obsidian_vault,
     save_to_vault as obsidian_save,
 )
+from gurunote.notion_sync import (
+    is_notion_sync_available,
+    missing_packages_hint as notion_missing_hint,
+    save_to_notion as notion_save,
+)
 from gurunote.types import _format_ts
 from gurunote.updater import check_for_update, update_project
 
@@ -362,6 +367,10 @@ _SETTINGS_FIELDS = [
     # Phase D — Obsidian vault 연동
     ("OBSIDIAN_VAULT_PATH", "Obsidian Vault 경로", False),
     ("OBSIDIAN_SUBFOLDER", "Obsidian 하위 폴더 (기본 GuruNote)", False),
+    # Phase E — Notion API 연동
+    ("NOTION_TOKEN", "Notion Integration Token", True),
+    ("NOTION_PARENT_ID", "Notion Parent ID (database/page UUID)", False),
+    ("NOTION_PARENT_TYPE", "Notion Parent Type (database/page)", False),
 ]
 
 
@@ -657,25 +666,30 @@ class HistoryDialog(ctk.CTkToplevel):
         job_id = job.get("job_id", "")
         if job.get("has_markdown"):
             ctk.CTkButton(
-                btn_row, text=".md", width=38, height=28,
+                btn_row, text=".md", width=34, height=28,
                 command=lambda jid=job_id, t=title: self._save_md(jid, t),
             ).pack(side="left", padx=(0, 2))
             ctk.CTkButton(
-                btn_row, text="PDF", width=38, height=28,
+                btn_row, text="PDF", width=34, height=28,
                 command=lambda jid=job_id, t=title: self._save_pdf(jid, t),
             ).pack(side="left", padx=2)
             ctk.CTkButton(
-                btn_row, text="Obs", width=38, height=28,
+                btn_row, text="Obs", width=34, height=28,
                 fg_color=C_PRIMARY, hover_color=C_PRIMARY_HO,
                 command=lambda jid=job_id, t=title: self._save_obsidian(jid, t),
             ).pack(side="left", padx=2)
+            ctk.CTkButton(
+                btn_row, text="Ntn", width=34, height=28,
+                fg_color=C_PRIMARY, hover_color=C_PRIMARY_HO,
+                command=lambda jid=job_id, t=title: self._save_notion(jid, t),
+            ).pack(side="left", padx=2)
         ctk.CTkButton(
-            btn_row, text="Log", width=38, height=28,
+            btn_row, text="Log", width=34, height=28,
             fg_color="gray35",
             command=lambda jid=job_id: self._show_log(jid),
         ).pack(side="left", padx=2)
         ctk.CTkButton(
-            btn_row, text="Del", width=38, height=28,
+            btn_row, text="Del", width=34, height=28,
             fg_color="gray35", hover_color=C_DANGER,
             command=lambda jid=job_id: self._delete(jid),
         ).pack(side="right", padx=2)
@@ -840,6 +854,35 @@ class HistoryDialog(ctk.CTkToplevel):
             messagebox.showinfo("Obsidian 저장 완료", f"{out}")
         except Exception as e:  # noqa: BLE001
             messagebox.showerror("Obsidian 저장 실패", str(e))
+
+    def _save_notion(self, job_id: str, title: str) -> None:
+        """저장된 마크다운을 Notion 으로 전송 (Phase E)."""
+        md = get_job_markdown(job_id)
+        if not md:
+            messagebox.showinfo("없음", "마크다운 파일이 없습니다.")
+            return
+        if not is_notion_sync_available():
+            messagebox.showwarning("Notion 미지원", notion_missing_hint())
+            return
+        token = os.environ.get("NOTION_TOKEN", "").strip()
+        parent_id = os.environ.get("NOTION_PARENT_ID", "").strip()
+        parent_type = (os.environ.get("NOTION_PARENT_TYPE", "database") or "database").strip().lower()
+        if not token or not parent_id:
+            messagebox.showwarning(
+                "Notion 미설정",
+                "Settings 에서 `NOTION_TOKEN` 과 `NOTION_PARENT_ID` 를 지정하세요.",
+            )
+            return
+        try:
+            url = notion_save(
+                md, title=title, token=token, parent_id=parent_id,
+                is_database=(parent_type == "database"),
+            )
+            if messagebox.askyesno("Notion 전송 완료", f"{url}\n\n브라우저에서 열까요?"):
+                import webbrowser
+                webbrowser.open(url)
+        except Exception as e:  # noqa: BLE001
+            messagebox.showerror("Notion 전송 실패", str(e))
 
     def _show_log(self, job_id: str) -> None:
         log = get_job_log(job_id) or "(로그 없음)"
@@ -1020,6 +1063,8 @@ class SettingsDialog(ctk.CTkToplevel):
             "MLX_WHISPER_MODEL": "mlx-community/whisper-large-v3-mlx",
             "OBSIDIAN_VAULT_PATH": "/Users/me/Documents/MyVault",
             "OBSIDIAN_SUBFOLDER": "GuruNote",
+            "NOTION_PARENT_ID": "1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
+            "NOTION_PARENT_TYPE": "database",
         }
 
         for idx, (env_key, label, is_secret) in enumerate(_SETTINGS_FIELDS, start=5):
@@ -1315,7 +1360,7 @@ class GuruNoteApp(ctk.CTk):
             ).grid(row=2 + i, column=0, padx=10, pady=2, sticky="ew")
 
         ctk.CTkLabel(
-            sb, text="v0.6.0.9", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
+            sb, text="v0.6.0.10", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
         ).grid(row=6, column=0, padx=20, pady=(0, 16), sticky="sw")
 
     # ── 메인 영역 ────────────────────────────────────────────
@@ -1407,10 +1452,14 @@ class GuruNoteApp(ctk.CTk):
                                            fg_color=C_SURFACE_HI, hover_color=C_PRIMARY, state="disabled",
                                            command=self._on_save_pdf)
         self._save_pdf_btn.grid(row=0, column=2, sticky="e", padx=(0, 4))
-        self._save_obsidian_btn = ctk.CTkButton(top, text="→ Obsidian", height=32, width=110, corner_radius=8,
+        self._save_obsidian_btn = ctk.CTkButton(top, text="→ Obsidian", height=32, width=100, corner_radius=8,
                                                 fg_color=C_SURFACE_HI, hover_color=C_PRIMARY, state="disabled",
                                                 command=self._on_save_obsidian)
-        self._save_obsidian_btn.grid(row=0, column=3, sticky="e")
+        self._save_obsidian_btn.grid(row=0, column=3, sticky="e", padx=(0, 4))
+        self._save_notion_btn = ctk.CTkButton(top, text="→ Notion", height=32, width=100, corner_radius=8,
+                                              fg_color=C_SURFACE_HI, hover_color=C_PRIMARY, state="disabled",
+                                              command=self._on_save_notion)
+        self._save_notion_btn.grid(row=0, column=4, sticky="e")
         self._tabview = ctk.CTkTabview(c, height=300, corner_radius=8, fg_color=C_SURFACE,
                                        segmented_button_fg_color=C_SURFACE_HI,
                                        segmented_button_selected_color=C_PRIMARY,
@@ -1565,6 +1614,7 @@ class GuruNoteApp(ctk.CTk):
         self._save_btn.configure(state="disabled")
         self._save_pdf_btn.configure(state="disabled")
         self._save_obsidian_btn.configure(state="disabled")
+        self._save_notion_btn.configure(state="disabled")
         self._clear_log()
         self._clear_results()
         self._title_label.configure(text="파이프라인 실행 중…")
@@ -1618,6 +1668,7 @@ class GuruNoteApp(ctk.CTk):
         self._save_btn.configure(state="normal")
         self._save_pdf_btn.configure(state="normal")
         self._save_obsidian_btn.configure(state="normal")
+        self._save_notion_btn.configure(state="normal")
         self._set_text(self._summary_text, result["summary_md"])
         self._set_text(self._translated_text, result["translated"])
         lines = [f"[{_format_ts(s.start)}] Speaker {s.speaker}: {s.text}" for s in transcript.segments]
@@ -1698,6 +1749,39 @@ class GuruNoteApp(ctk.CTk):
             messagebox.showinfo("Obsidian 저장 완료", f"{out}")
         except Exception as e:  # noqa: BLE001
             messagebox.showerror("Obsidian 저장 실패", str(e))
+
+    def _on_save_notion(self):
+        """결과 마크다운을 Notion 페이지로 전송 (Phase E)."""
+        if not self._result:
+            return
+        if not is_notion_sync_available():
+            messagebox.showwarning("Notion 미지원", notion_missing_hint())
+            return
+        token = os.environ.get("NOTION_TOKEN", "").strip()
+        parent_id = os.environ.get("NOTION_PARENT_ID", "").strip()
+        parent_type = (os.environ.get("NOTION_PARENT_TYPE", "database") or "database").strip().lower()
+        if not token or not parent_id:
+            messagebox.showwarning(
+                "Notion 미설정",
+                "Settings 에서 `NOTION_TOKEN` 과 `NOTION_PARENT_ID` 를 지정하세요.\n"
+                "Integration: https://www.notion.so/my-integrations\n"
+                "parent page/DB 에서 해당 Integration 을 Share 해야 접근 가능합니다.",
+            )
+            return
+        title = self._result["audio"].video_title
+        try:
+            url = notion_save(
+                self._result["full_md"],
+                title=title,
+                token=token,
+                parent_id=parent_id,
+                is_database=(parent_type == "database"),
+            )
+            if messagebox.askyesno("Notion 전송 완료", f"{url}\n\n브라우저에서 열까요?"):
+                import webbrowser
+                webbrowser.open(url)
+        except Exception as e:  # noqa: BLE001
+            messagebox.showerror("Notion 전송 실패", str(e))
 
     # ── 유틸 ─────────────────────────────────────────────────
     def _append_log(self, msg):

@@ -37,6 +37,7 @@ from gurunote.llm import (
     LLMConfig, extract_metadata, summarize_translation,
     test_connection, translate_transcript,
 )
+from gurunote.progress_tee import install_tee
 from gurunote.settings import save_settings
 from gurunote.history import (
     JobLogger, get_job_log, get_job_markdown,
@@ -293,7 +294,15 @@ def run_pipeline(
         import time as _time
         _pipeline_start = _time.monotonic()
 
-        with st.status("GuruNote 파이프라인 실행 중...", expanded=True) as status:
+        # stderr tee — tqdm 백엔드 진행률을 Streamlit 로그에 축약 전달
+        _log_status = st.empty()
+
+        def _tee_log(line: str) -> None:
+            _log_status.text(line)
+
+        with install_tee(_tee_log), st.status(
+            "GuruNote 파이프라인 실행 중...", expanded=True
+        ) as status:
             progress_bar = st.progress(0, text="진행률 0%")
 
             def set_progress(pct: int, label: str) -> None:

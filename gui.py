@@ -39,6 +39,7 @@ from gurunote.llm import (
     LLMConfig, extract_metadata, summarize_translation,
     test_connection, translate_transcript,
 )
+from gurunote.progress_tee import install_tee
 from gurunote.settings import save_settings
 from gurunote.history import (
     JobLogger, delete_job, get_job_log, get_job_markdown,
@@ -141,6 +142,12 @@ class PipelineWorker:
         import time as _time
         self._start_time = _time.monotonic()
         tmp_dir = tempfile.mkdtemp(prefix="gurunote_")
+        # 파이프라인 실행 동안 stderr 를 tee 로 감싸 tqdm 진행률 (HF 모델 다운로드,
+        # mlx-whisper / whisperx 전사) 을 GUI 로그 패널에 압축해서 전달.
+        with install_tee(self._log):
+            self._run_pipeline(tmp_dir)
+
+    def _run_pipeline(self, tmp_dir: str) -> None:
         try:
             self._set_progress(0.02)
             # Step 1
@@ -895,7 +902,7 @@ class GuruNoteApp(ctk.CTk):
             ).grid(row=2 + i, column=0, padx=10, pady=2, sticky="ew")
 
         ctk.CTkLabel(
-            sb, text="v0.6.0.4", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
+            sb, text="v0.6.0.5", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
         ).grid(row=6, column=0, padx=20, pady=(0, 16), sticky="sw")
 
     # ── 메인 영역 ────────────────────────────────────────────

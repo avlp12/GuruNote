@@ -7,6 +7,41 @@
 
 ## [Unreleased]
 
+## [0.7.1.0] - 2026-04-17
+
+### Added
+- **전용 앱 아이콘** (`gurunote/app_icon.py` 신규) — 이전엔 macOS
+  messagebox 가 Python 기본 "로켓" 아이콘을 썼던 문제 해결. 첫 실행 시 PIL
+  로 `G` 모노그램 아이콘을 `~/.gurunote/app_icon.png` 에 생성 (Material 3
+  Primary 컨테이너 보라 + 흰 글자, 둥근 사각). 메인 윈도우 및 모든
+  `CTkToplevel` (History/Dashboard/Settings/NoteEditor/Obsidian/PDF
+  Install/Update) 에 `iconphoto` 로 적용.
+- **macOS 백그라운드 런처** (`run_gui.command`) — 소스에서 실행할 때 터미널
+  에 pyannote/mlx-whisper 의 진행 로그가 쏟아지던 문제 해결.
+  - `nohup ... &` + `disown` + stdin `/dev/null` 로 완전 분리.
+  - 모든 stdout/stderr 를 `~/.gurunote/gui.log` 로 리다이렉트 (진단 시
+    `tail -f` 로 접근 가능).
+  - 런치 후 Terminal.app 의 해당 창을 AppleScript 로 자동 닫음.
+  - venv 자동 감지 (`./.venv/bin/python` → `./venv/bin/python` → 시스템
+    `python3`).
+- **`Pillow>=10.0` 의존성 명시** — 지금까지 `customtkinter` 의 전이
+  의존으로만 들어오던 것을 명시 선언.
+
+### Changed
+- **Material 3 다크 팔레트 적용** (`gui.py`) — 기존 indigo/navy 톤을 구글
+  Material 3 다크 테마 기준 톤으로 재조정.
+  - Background: `#141218` (base surface) / Sidebar: `#1D1B20` (+1dp)
+  - Surface: `#211F26` / Surface HI: `#2B2930` (hover)
+  - Primary: `#4F378B` (primary container, purple 30) / Hover: `#5D43A8`
+  - Text: `#E6E0E9` (on-surface) / Dim: `#938F99` (on-surface-variant)
+  - Success: `#81C995` / Danger: `#F2B8B5`
+  - 새 `C_PRIMARY_BRIGHT (#D0BCFF)` 는 Material Primary(purple 80) 로
+    아이콘/하이라이트 전용.
+- **다이얼로그 타이틀 정돈**: `📊 GuruNote Dashboard` 등 이모지 프리픽스
+  제거 → `GuruNote · 대시보드` 형태 중점 구분자 사용.
+- **필터바 이모지 제거**: `📄 본문 포함` → `본문 포함`, `🔮 의미 검색` →
+  `의미 검색` (Windows 렌더링 호환성 개선; CLAUDE.md UI 규칙 준수).
+
 ## [0.7.0.5] - 2026-04-17
 
 ### Added
@@ -853,7 +888,8 @@ bash run_desktop.sh
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.7.0.5...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.7.1.0...HEAD
+[0.7.1.0]: https://github.com/avlp12/GuruNote/compare/v0.7.0.5...v0.7.1.0
 [0.7.0.5]: https://github.com/avlp12/GuruNote/compare/v0.7.0.4...v0.7.0.5
 [0.7.0.4]: https://github.com/avlp12/GuruNote/compare/v0.7.0.3...v0.7.0.4
 [0.7.0.3]: https://github.com/avlp12/GuruNote/compare/v0.7.0.2...v0.7.0.3

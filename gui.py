@@ -80,6 +80,7 @@ from gurunote.search import (
 )
 from gurunote.stats import compute_stats, render_report
 from gurunote import semantic as semantic_search
+from gurunote.nav_tree import FacetNode, compute_facets, default_expand_state
 from gurunote.types import _format_ts
 from gurunote.updater import check_for_update, update_project
 
@@ -807,7 +808,7 @@ class HistoryDialog(ctk.CTkToplevel):
     def __init__(self, parent: ctk.CTk) -> None:
         super().__init__(parent)
         self.title("GuruNote History")
-        self.geometry("960x660")
+        self.geometry("1240x680")
         self.transient(parent)
         self.grab_set()
         self._parent = parent
@@ -822,6 +823,12 @@ class HistoryDialog(ctk.CTkToplevel):
         self._search_body_var = ctk.BooleanVar(value=False)
         # Step 3.4 — 의미 검색 토글 (semantic/embedding 기반)
         self._search_semantic_var = ctk.BooleanVar(value=False)
+        # Phase 1 트리 내비게이션 — 노드 클릭 시 facet job_ids 로 필터
+        self._nav_filter: Optional[dict] = None  # {"facet": "field"|"person"|"title", "label": str, "job_ids": set[str]}
+        self._nav_expand: dict[str, bool] = default_expand_state()
+        self._nav_body: Optional[ctk.CTkScrollableFrame] = None
+        self._nav_chip: Optional[ctk.CTkLabel] = None
+        self._nav_clear_btn: Optional[ctk.CTkButton] = None
 
         # PIL 이미지 참조 유지 (GC 방지) + 렌더링 중 썸네일 요청 중복 방지
         self._thumb_refs: dict[str, object] = {}
@@ -910,14 +917,49 @@ class HistoryDialog(ctk.CTkToplevel):
             command=self._reset_filters,
         ).pack(side="right", padx=12, pady=10)
 
+        # 본문: 좌측 그리드 | 우측 트리 내비게이션
+        body = ctk.CTkFrame(self, fg_color="transparent")
+        body.pack(fill="both", expand=True, padx=16, pady=(0, 16))
+        body.grid_columnconfigure(0, weight=1)
+        body.grid_columnconfigure(1, weight=0, minsize=280)
+        body.grid_rowconfigure(0, weight=0)
+        body.grid_rowconfigure(1, weight=1)
+
+        # 활성 facet chip + clear 버튼 (좌측 상단)
+        chip_bar = ctk.CTkFrame(body, fg_color="transparent")
+        chip_bar.grid(row=0, column=0, sticky="ew", padx=(0, 8), pady=(0, 6))
+        self._nav_chip = ctk.CTkLabel(
+            chip_bar, text="", text_color=C_TEXT_DIM, font=ctk.CTkFont(size=11),
+        )
+        self._nav_chip.pack(side="left")
+        self._nav_clear_btn = ctk.CTkButton(
+            chip_bar, text="× 필터 해제", width=90, height=24,
+            fg_color="gray35", hover_color="gray45",
+            font=ctk.CTkFont(size=11),
+            command=self._clear_nav_filter,
+        )
+        # 기본은 숨김 — 필터 활성화 시만 표시
+
         # 그리드 스크롤 영역
-        # 컬럼 minsize 로 고정 폭 보장 — 카드는 grid_propagate 로 높이 자동화.
-        self._scroll = ctk.CTkScrollableFrame(self, fg_color=C_BG)
-        self._scroll.pack(fill="both", expand=True, padx=16, pady=(0, 16))
+        self._scroll = ctk.CTkScrollableFrame(body, fg_color=C_BG)
+        self._scroll.grid(row=1, column=0, sticky="nsew", padx=(0, 8))
         for c in range(self._COLUMNS):
             self._scroll.grid_columnconfigure(
                 c, weight=1, minsize=self._CARD_W, uniform="card"
             )
+
+        # 우측 트리 내비게이션 패널
+        nav_panel = ctk.CTkFrame(body, fg_color=C_SURFACE, corner_radius=8)
+        nav_panel.grid(row=0, column=1, rowspan=2, sticky="nsew")
+        nav_panel.grid_columnconfigure(0, weight=1)
+        nav_panel.grid_rowconfigure(1, weight=1)
+        ctk.CTkLabel(
+            nav_panel, text="내비게이션",
+            font=ctk.CTkFont(size=13, weight="bold"),
+        ).grid(row=0, column=0, padx=12, pady=(10, 4), sticky="w")
+        self._nav_body = ctk.CTkScrollableFrame(nav_panel, fg_color="transparent")
+        self._nav_body.grid(row=1, column=0, sticky="nsew", padx=6, pady=(0, 10))
+        self._nav_body.grid_columnconfigure(0, weight=1)
 
         self._reload_and_refresh()
 
@@ -941,12 +983,130 @@ class HistoryDialog(ctk.CTkToplevel):
         if self._field_var.get() not in ["모든 분야", *fields]:
             self._field_var.set("모든 분야")
 
+        # 활성 nav 필터의 job_ids 가 현재 인덱스에 존재하는지 검증 (삭제 반영)
+        if self._nav_filter:
+            valid_ids = {j.get("job_id") for j in self._all_jobs}
+            self._nav_filter["job_ids"] &= valid_ids
+            if not self._nav_filter["job_ids"]:
+                self._nav_filter = None
+
+        self._render_nav_tree()
+        self._refresh_grid()
+
+    # =========================================================================
+    # Tree navigation (Phase 1)
+    # =========================================================================
+    _FACET_HEADERS = [
+        ("field", "주제 (분야)"),
+        ("person", "인물 (업로더)"),
+        ("title", "제목 (첫글자)"),
+    ]
+
+    def _render_nav_tree(self) -> None:
+        """우측 패널에 3-facet 트리 재렌더."""
+        if self._nav_body is None:
+            return
+        for w in self._nav_body.winfo_children():
+            w.destroy()
+
+        if not self._all_jobs:
+            ctk.CTkLabel(
+                self._nav_body, text="노트를 만들면 자동 분류됩니다.",
+                text_color="gray55", font=ctk.CTkFont(size=11),
+                wraplength=240, justify="left",
+            ).grid(row=0, column=0, padx=8, pady=12, sticky="ew")
+            return
+
+        facets = compute_facets(self._all_jobs)
+        row = 0
+        for key, title in self._FACET_HEADERS:
+            expanded = self._nav_expand.get(key, True)
+            header = ctk.CTkButton(
+                self._nav_body,
+                text=f"{'▾' if expanded else '▸'}  {title}",
+                anchor="w", height=28,
+                fg_color="transparent", hover_color="gray25",
+                text_color=C_TEXT_DIM, font=ctk.CTkFont(size=12, weight="bold"),
+                command=lambda k=key: self._toggle_facet(k),
+            )
+            header.grid(row=row, column=0, sticky="ew", padx=4, pady=(6, 2))
+            row += 1
+
+            if not expanded:
+                continue
+
+            nodes: list[FacetNode] = facets.get(key, [])
+            if not nodes:
+                ctk.CTkLabel(
+                    self._nav_body, text="  (비어 있음)",
+                    text_color="gray55", font=ctk.CTkFont(size=11),
+                ).grid(row=row, column=0, sticky="w", padx=14)
+                row += 1
+                continue
+
+            for node in nodes:
+                active = bool(
+                    self._nav_filter
+                    and self._nav_filter.get("facet") == key
+                    and self._nav_filter.get("label") == node.label
+                )
+                label_txt = node.label
+                if len(label_txt) > 22:
+                    label_txt = label_txt[:21] + "…"
+                btn = ctk.CTkButton(
+                    self._nav_body,
+                    text=f"  {label_txt}  ({node.count})",
+                    anchor="w", height=24,
+                    fg_color=C_ACCENT if active else "transparent",
+                    hover_color="gray25",
+                    text_color="white" if active else C_TEXT,
+                    font=ctk.CTkFont(size=11),
+                    command=lambda k=key, n=node: self._on_nav_click(k, n),
+                )
+                btn.grid(row=row, column=0, sticky="ew", padx=14, pady=0)
+                row += 1
+
+    def _toggle_facet(self, key: str) -> None:
+        self._nav_expand[key] = not self._nav_expand.get(key, True)
+        self._render_nav_tree()
+
+    def _on_nav_click(self, facet: str, node: FacetNode) -> None:
+        """동일 노드 재클릭 → 필터 해제. 아니면 새 필터 적용."""
+        current = self._nav_filter
+        if current and current.get("facet") == facet and current.get("label") == node.label:
+            self._nav_filter = None
+        else:
+            self._nav_filter = {
+                "facet": facet,
+                "label": node.label,
+                "job_ids": set(node.job_ids),
+            }
+        self._render_nav_tree()
+        self._refresh_grid()
+
+    def _clear_nav_filter(self) -> None:
+        if self._nav_filter is None:
+            return
+        self._nav_filter = None
+        self._render_nav_tree()
         self._refresh_grid()
 
     def _refresh_grid(self) -> None:
         # 기존 카드 제거
         for w in self._scroll.winfo_children():
             w.destroy()
+
+        # nav 필터 chip 표시/해제
+        if self._nav_chip is not None and self._nav_clear_btn is not None:
+            if self._nav_filter:
+                facet_title = dict(self._FACET_HEADERS).get(self._nav_filter["facet"], "")
+                self._nav_chip.configure(
+                    text=f"활성 필터  ·  {facet_title}  ›  {self._nav_filter['label']}"
+                )
+                self._nav_clear_btn.pack(side="left", padx=(10, 0))
+            else:
+                self._nav_chip.configure(text="")
+                self._nav_clear_btn.pack_forget()
 
         filtered = self._apply_filters(self._all_jobs)
         self._filtered_jobs = filtered
@@ -1006,8 +1166,13 @@ class HistoryDialog(ctk.CTkToplevel):
                     messagebox.showwarning("의미 검색 오류", str(exc))
                     self._semantic_warned = True
 
+        nav = self._nav_filter
+        nav_ids = nav.get("job_ids") if nav else None
+
         def passes_filters(j: dict) -> Optional[dict]:
             """매치하면 job 사본 (스니펫 포함 가능) 반환, 아니면 None."""
+            if nav_ids is not None and j.get("job_id") not in nav_ids:
+                return None
             if field and field != "모든 분야" and (j.get("field") or "") != field:
                 return None
             if not q:
@@ -1054,6 +1219,8 @@ class HistoryDialog(ctk.CTkToplevel):
         self._search_var.set("")
         self._field_var.set("모든 분야")
         self._sort_var.set("최신순")
+        self._nav_filter = None
+        self._render_nav_tree()
         self._refresh_grid()
 
     def _schedule_refresh(self) -> None:
@@ -1972,7 +2139,7 @@ class GuruNoteApp(ctk.CTk):
             ).grid(row=2 + i, column=0, padx=10, pady=2, sticky="ew")
 
         ctk.CTkLabel(
-            sb, text="v0.6.0.19", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
+            sb, text="v0.7.0.0", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
         ).grid(row=7, column=0, padx=20, pady=(0, 16), sticky="sw")
 
     # ── 메인 영역 ────────────────────────────────────────────

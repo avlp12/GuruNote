@@ -1,0 +1,19 @@
+# =============================================================================
+# GuruNote 의미 검색 의존성 (선택 설치)
+# -----------------------------------------------------------------------------
+# 설치:
+#   pip install -r requirements-search.txt
+#
+# 동작:
+#   - sentence-transformers 의 다국어 MiniLM 모델 (~117MB) 로 본문을 embed
+#   - numpy cosine similarity 로 top-K 매칭
+#   - 인덱스: ~/.gurunote/embeddings.npz (+ meta json)
+#
+# 첫 실행 시 HuggingFace 에서 모델 무게를 1회 다운로드하며, 이후 로컬
+# 캐시 (~/.cache/huggingface/) 를 사용합니다.
+#
+# torch 는 이미 setup.sh 가 플랫폼별로 설치 (CUDA/MPS/CPU) — 여기서는
+# sentence-transformers 만 추가.
+# =============================================================================
+
+sentence-transformers>=2.5

@@ -7,6 +7,20 @@
 
 ## [Unreleased]
 
+## [0.6.0.19] - 2026-04-17
+
+### Added
+- **Streamlit 앱 대시보드 / 의미 검색 탭 포팅** (`app.py`) — 데스크톱 GUI
+  와 같은 두 기능을 웹 앱에서도 사용 가능하게 추가.
+  - `📊 대시보드` 탭: `gurunote.stats.compute_stats` + `render_report` 결과를
+    `st.code` 로 표시 (전체 통계 + 분야/업로더/태그/월별 차트). 의미 검색
+    인덱스 상태 패널 + `Rebuild Semantic Index` / `Clear Index` 버튼.
+  - `🔎 의미 검색` 탭: 질의 입력 → `gurunote.semantic.search()` → 잡 단위
+    매칭 카드 표시 (점수 / 제목 / preview / 마크다운 다운로드). Top-K
+    슬라이더 (1~30) + 최소 유사도 슬라이더 (0~1).
+  - 가용성 체크: `sentence-transformers` 미설치 / 인덱스 미빌드 시 친절한
+    안내 메시지로 graceful fallback.
+
 ## [0.6.0.18] - 2026-04-17
 
 ### Added
@@ -731,7 +745,8 @@ bash run_desktop.sh
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.6.0.18...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.6.0.19...HEAD
+[0.6.0.19]: https://github.com/avlp12/GuruNote/compare/v0.6.0.18...v0.6.0.19
 [0.6.0.18]: https://github.com/avlp12/GuruNote/compare/v0.6.0.17...v0.6.0.18
 [0.6.0.17]: https://github.com/avlp12/GuruNote/compare/v0.6.0.16...v0.6.0.17
 [0.6.0.16]: https://github.com/avlp12/GuruNote/compare/v0.6.0.15...v0.6.0.16

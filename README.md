@@ -435,7 +435,7 @@ GuruNote/
 주요 변경 사항은 [CHANGELOG.md](./CHANGELOG.md) 에 [Keep a Changelog](https://keepachangelog.com/)
 형식으로 기록되며 버전은 [Semantic Versioning](https://semver.org/) 을 따릅니다.
 
-현재 버전: **v0.6.0.9** — README 선행 조건(Git/Python/ffmpeg) + Windows PowerShell 5.1 `&&` 호환 가이드 (Phase D 묶음).
+현재 버전: **v0.6.0.10** — Phase E: Notion API 연동 (markdown → Notion blocks + frontmatter → DB properties).
 
 ---
 

@@ -79,6 +79,7 @@ from gurunote.search import (
     match_body as search_match_body,
 )
 from gurunote.stats import compute_stats, render_report
+from gurunote import semantic as semantic_search
 from gurunote.types import _format_ts
 from gurunote.updater import check_for_update, update_project
 
@@ -415,6 +416,12 @@ class DashboardDialog(ctk.CTkToplevel):
             header, text="Refresh", width=90, height=28,
             command=self._render,
         ).pack(side="right")
+        # Step 3.4 — 의미 검색 인덱스 재빌드 (모델 추론이 무거워 명시적 버튼)
+        ctk.CTkButton(
+            header, text="🔮 Semantic Rebuild", width=160, height=28,
+            fg_color=C_PRIMARY, hover_color=C_PRIMARY_HO,
+            command=self._on_rebuild_semantic,
+        ).pack(side="right", padx=(0, 6))
 
         self._tb = ctk.CTkTextbox(
             self, wrap="none",
@@ -424,17 +431,90 @@ class DashboardDialog(ctk.CTkToplevel):
         self._tb.pack(fill="both", expand=True, padx=16, pady=(0, 16))
 
     def _render(self) -> None:
-        """히스토리 인덱스 재로드 → 통계 계산 → 텍스트 리포트 표시."""
+        """히스토리 인덱스 재로드 → 통계 계산 → 텍스트 리포트 표시 + 의미 검색 인덱스 상태."""
         try:
             jobs = load_index()
             stats = compute_stats(jobs)
             report = render_report(stats)
         except Exception as exc:  # noqa: BLE001
             report = f"대시보드 계산 실패:\n{exc}"
+
+        # 의미 검색 인덱스 상태 블록
+        report += "\n의미 검색 인덱스 (Step 3.4)\n"
+        report += "─" * 28 + "\n"
+        if not semantic_search.is_available():
+            report += "  미설치 — `pip install -r requirements-search.txt`\n"
+        else:
+            s = semantic_search.index_stats()
+            if not s.get("built"):
+                report += "  빌드되지 않음 — 상단 'Semantic Rebuild' 버튼 클릭\n"
+            elif s.get("error"):
+                report += f"  인덱스 로드 실패: {s['error']}\n"
+            else:
+                report += (
+                    f"  모델        {s.get('model', '?')}\n"
+                    f"  chunks      {s.get('num_chunks', 0)}\n"
+                    f"  작업 수     {s.get('num_jobs', 0)}\n"
+                    f"  빌드 시각   {s.get('built_at', '?')[:19]}\n"
+                )
+
         self._tb.configure(state="normal")
         self._tb.delete("1.0", "end")
         self._tb.insert("1.0", report)
         self._tb.configure(state="disabled")
+
+    def _on_rebuild_semantic(self) -> None:
+        """의미 검색 인덱스 재빌드. 백그라운드 스레드 + after() 폴링."""
+        if not semantic_search.is_available():
+            messagebox.showwarning(
+                "의미 검색 미지원", semantic_search.missing_packages_hint(),
+            )
+            return
+        if not messagebox.askyesno(
+            "의미 검색 인덱스 재빌드",
+            "모든 저장된 작업 본문을 embedding 모델로 인덱싱합니다.\n"
+            "첫 실행 시 모델 다운로드 (~117MB) 로 수 분 걸릴 수 있습니다.\n\n"
+            "계속할까요?",
+        ):
+            return
+
+        self.configure(cursor="watch")
+        result_q: "queue.Queue" = queue.Queue()
+
+        def _worker():
+            try:
+                jobs = load_index()
+                result = semantic_search.build_index(jobs, log=lambda m: None)
+                result_q.put(("ok", result))
+            except Exception as exc:  # noqa: BLE001
+                result_q.put(("err", str(exc)))
+
+        threading.Thread(target=_worker, daemon=True).start()
+        self._poll_semantic_build(result_q)
+
+    def _poll_semantic_build(self, q: "queue.Queue") -> None:
+        try:
+            status, payload = q.get_nowait()
+        except queue.Empty:
+            try:
+                if self.winfo_exists():
+                    self.after(250, lambda: self._poll_semantic_build(q))
+            except Exception:  # noqa: BLE001
+                pass
+            return
+        try:
+            self.configure(cursor="")
+        except Exception:  # noqa: BLE001
+            pass
+        if status == "ok":
+            messagebox.showinfo(
+                "의미 검색 인덱스 빌드 완료",
+                f"작업 {payload['num_jobs']} 건 · chunks {payload['num_chunks']}"
+                + (f" · 스킵 {payload['skipped']}" if payload['skipped'] else ""),
+            )
+            self._render()
+        else:
+            messagebox.showerror("의미 검색 빌드 실패", payload)
 
 
 class NoteEditorDialog(ctk.CTkToplevel):
@@ -573,6 +653,8 @@ class HistoryDialog(ctk.CTkToplevel):
         self._sort_var = ctk.StringVar(value="최신순")
         # Phase F — 본문 전문 검색 토글. 켜면 result.md 본문도 매칭 대상.
         self._search_body_var = ctk.BooleanVar(value=False)
+        # Step 3.4 — 의미 검색 토글 (semantic/embedding 기반)
+        self._search_semantic_var = ctk.BooleanVar(value=False)
 
         # PIL 이미지 참조 유지 (GC 방지) + 렌더링 중 썸네일 요청 중복 방지
         self._thumb_refs: dict[str, object] = {}
@@ -628,6 +710,13 @@ class HistoryDialog(ctk.CTkToplevel):
         # Phase F — 본문 검색 토글 (result.md 본문 lazy load + lru_cache)
         ctk.CTkCheckBox(
             fbar, text="📄 본문 포함", variable=self._search_body_var,
+            command=self._refresh_grid,
+            font=ctk.CTkFont(size=11),
+        ).pack(side="left", padx=(8, 0), pady=10)
+
+        # Step 3.4 — 의미 검색 토글 (sentence-transformers + cosine similarity)
+        ctk.CTkCheckBox(
+            fbar, text="🔮 의미 검색", variable=self._search_semantic_var,
             command=self._refresh_grid,
             font=ctk.CTkFont(size=11),
         ).pack(side="left", padx=(8, 0), pady=10)
@@ -712,14 +801,17 @@ class HistoryDialog(ctk.CTkToplevel):
             self._render_card(r, c, job)
 
     def _apply_filters(self, jobs: list[dict]) -> list[dict]:
-        """검색어 + 분야 + (옵션)본문 검색 + 정렬 적용 (Phase F).
+        """검색어 + 분야 + (옵션) 본문/의미 검색 + 정렬 적용.
 
-        본문 검색이 켜진 경우 메타 불일치 잡도 본문 매칭이 있으면 포함.
+        - Phase F: `📄 본문 포함` 토글 — result.md substring 매칭
+        - Step 3.4: `🔮 의미 검색` 토글 — embedding cosine sim top-K
         매칭된 잡에는 `_body_snippet` 키가 추가되어 카드가 스니펫을 렌더링.
+        의미 검색 점수는 스니펫 앞에 `[0.73]` 형태로 포함.
         """
         q = self._search_var.get().strip().lower()
         field = self._field_var.get().strip()
         search_body = bool(self._search_body_var.get())
+        search_semantic = bool(self._search_semantic_var.get())
 
         def meta_match(j: dict) -> bool:
             if not q:
@@ -732,6 +824,21 @@ class HistoryDialog(ctk.CTkToplevel):
             ]).lower()
             return q in hay
 
+        # 의미 검색이 켜져 있으면 사전에 한 번만 embedding 쿼리 실행
+        semantic_hits: dict[str, dict] = {}
+        if search_semantic and q:
+            try:
+                results = semantic_search.search(
+                    self._search_var.get().strip(), top_k=20, min_score=0.25,
+                )
+                for r in results:
+                    semantic_hits[r["job_id"]] = r
+            except Exception as exc:  # noqa: BLE001
+                # 최초 호출 시 안내 (한 번만). 이후는 조용히 무시.
+                if not getattr(self, "_semantic_warned", False):
+                    messagebox.showwarning("의미 검색 오류", str(exc))
+                    self._semantic_warned = True
+
         def passes_filters(j: dict) -> Optional[dict]:
             """매치하면 job 사본 (스니펫 포함 가능) 반환, 아니면 None."""
             if field and field != "모든 분야" and (j.get("field") or "") != field:
@@ -740,9 +847,16 @@ class HistoryDialog(ctk.CTkToplevel):
                 return j
             if meta_match(j):
                 return j
-            # 본문 검색이 켜져 있으면 result.md 에서도 찾아본다
+            # 의미 검색 히트: 메타 불일치여도 포함 + 스니펫 표시
+            jid = j.get("job_id", "")
+            if search_semantic and jid in semantic_hits:
+                hit = semantic_hits[jid]
+                copy = dict(j)
+                copy["_body_snippet"] = f"[유사도 {hit['score']:.2f}] {hit['preview']}"
+                return copy
+            # 본문 substring 검색
             if search_body and j.get("has_markdown"):
-                snippet = search_match_body(j.get("job_id", ""), q)
+                snippet = search_match_body(jid, q)
                 if snippet:
                     copy = dict(j)
                     copy["_body_snippet"] = snippet
@@ -1691,7 +1805,7 @@ class GuruNoteApp(ctk.CTk):
             ).grid(row=2 + i, column=0, padx=10, pady=2, sticky="ew")
 
         ctk.CTkLabel(
-            sb, text="v0.6.0.16", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
+            sb, text="v0.6.0.17", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
         ).grid(row=7, column=0, padx=20, pady=(0, 16), sticky="sw")
 
     # ── 메인 영역 ────────────────────────────────────────────

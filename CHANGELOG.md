@@ -7,6 +7,40 @@
 
 ## [Unreleased]
 
+## [0.6.0.10] - 2026-04-17
+
+> "지식 증류기" 로드맵 **Phase E — Notion API 연동**.
+>
+> Phase D (Obsidian vault, 로컬) 에 이어 Notion workspace (클라우드) 로도
+> 결과 마크다운을 바로 전송할 수 있게 한다.
+
+### Added
+- **`gurunote/notion_sync.py` 신규** — `save_to_notion()` 이 Notion
+  Integration Token 과 parent database/page ID 를 받아 공식 `notion-client`
+  SDK 로 페이지를 생성. 주요 기능:
+  - **Markdown → Notion blocks 변환기** (내장, 의존성 없음) — heading_1/2/3,
+    paragraph, bulleted/numbered_list_item, quote, code (language 지원),
+    divider. Inline `**bold**` / `*italic*` / `` `code` `` 도 Notion rich_text
+    annotations 로 매핑. Table 은 v0.6.0.10 에선 paragraph 로 polyfill.
+  - **Frontmatter → DB properties 매핑** (parent 가 database 일 때) —
+    title / Field (select) / Tags (multi_select) / Uploader (rich_text) /
+    Upload Date (date) / Source (url). DB 스키마에 해당 property 가 없으면
+    Notion API 가 400 으로 거부하므로 사용자가 스키마를 미리 맞춰야 함.
+  - Notion 의 "한 번에 100 블록" 제한 자동 핸들링 — 초과분은
+    `blocks.children.append` 로 이어 붙임.
+- **`requirements-notion.txt` 신설 (선택 설치)** — `notion-client>=2.0`.
+  Integration 생성 + target 공유 가이드 헤더 코멘트 포함.
+- **Settings 다이얼로그 필드 3개 추가** — `NOTION_TOKEN` (secret, 마스킹),
+  `NOTION_PARENT_ID` (UUID), `NOTION_PARENT_TYPE` (database/page).
+- **GUI 버튼 추가** —
+  - 결과 카드: Save .md / Save PDF / → Obsidian 옆에 **→ Notion** 버튼
+  - HistoryDialog 카드: `.md` / `PDF` / `Obs` / **Ntn** / `Log` / `Del`
+    (6개 버튼, 너비 34px 로 재조정). Notion 버튼은 primary color 강조.
+  - 성공 시 생성된 Notion URL 을 다이얼로그에 표시 + "브라우저에서 열까요?"
+    확인 후 `webbrowser.open`.
+  - 실패 시 (401 Unauthorized / 404 parent not shared / 스키마 불일치)
+    구체적 에러 메시지 노출.
+
 ## [0.6.0.9] - 2026-04-17
 
 > 다른 채널 PR #73 의 Windows PowerShell 5.1 호환 + 선행 조건 docs 를
@@ -508,7 +542,8 @@
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.6.0.9...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.6.0.10...HEAD
+[0.6.0.10]: https://github.com/avlp12/GuruNote/compare/v0.6.0.9...v0.6.0.10
 [0.6.0.9]: https://github.com/avlp12/GuruNote/compare/v0.6.0.8...v0.6.0.9
 [0.6.0.8]: https://github.com/avlp12/GuruNote/compare/v0.6.0.7...v0.6.0.8
 [0.6.0.7]: https://github.com/avlp12/GuruNote/compare/v0.6.0.6...v0.6.0.7

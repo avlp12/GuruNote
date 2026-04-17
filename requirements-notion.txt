@@ -1,0 +1,19 @@
+# =============================================================================
+# GuruNote Notion 연동 의존성 (선택 설치)
+# -----------------------------------------------------------------------------
+# 설치:
+#   pip install -r requirements-notion.txt
+#
+# 사용자가 해야 할 것:
+#   1. https://www.notion.so/my-integrations 에서 Integration 생성 → Token 발급
+#   2. target page 또는 database 에서 "Share" → 해당 Integration 을 초대
+#   3. GuruNote Settings 에서:
+#      - NOTION_TOKEN = <secret_...>
+#      - NOTION_PARENT_ID = <database ID 또는 page ID, UUID 36자>
+#      - NOTION_PARENT_TYPE = "database" | "page" (기본 database)
+#
+# Integration Token 이 없으면 API 호출이 401 로 실패하며, target 에 share 하지
+# 않으면 parent 찾을 수 없음 에러 (404).
+# =============================================================================
+
+notion-client>=2.0

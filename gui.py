@@ -61,6 +61,7 @@ from gurunote.thumbnails import (
 from gurunote.pdf_export import is_pdf_export_available, markdown_to_pdf
 from gurunote import pdf_installer
 from gurunote.obsidian import (
+    find_vault_candidates,
     is_obsidian_vault,
     resolve_subfolder as obsidian_subfolder,
     resolve_vault_path as obsidian_vault,
@@ -1592,35 +1593,30 @@ class HistoryDialog(ctk.CTkToplevel):
             _prompt_pdf_install(self, _do_save)
 
     def _save_obsidian(self, job_id: str, title: str) -> None:
-        """저장된 마크다운을 Obsidian vault 로 전송 (Phase D)."""
+        """저장된 마크다운을 Obsidian vault 로 전송 (Phase D).
+
+        Vault 미설정 시 경고 대신 `ObsidianSetupDialog` 로 감지된 후보 + 폴더
+        피커를 띄워 즉시 설정하고 저장 플로우를 이어간다.
+        """
         md = get_job_markdown(job_id)
         if not md:
             messagebox.showinfo("없음", "마크다운 파일이 없습니다.")
             return
-        vault = obsidian_vault()
-        if vault is None:
-            messagebox.showwarning(
-                "Obsidian 미설정",
-                "Settings 다이얼로그에서 `OBSIDIAN_VAULT_PATH` 를 지정해주세요.",
-            )
-            return
-        if not is_obsidian_vault(vault):
-            if not messagebox.askyesno(
-                "Obsidian vault 확인",
-                f"경로에 `.obsidian/` 폴더가 없습니다:\n{vault}\n\n"
-                "그래도 이 폴더에 저장할까요?",
-            ):
-                return
+
         from gurunote.exporter import sanitize_filename
         filename = f"GuruNote_{sanitize_filename(title)}.md"
-        try:
-            out = obsidian_save(
-                md, filename=filename, vault_path=vault,
-                subfolder=obsidian_subfolder(),
-            )
-            messagebox.showinfo("Obsidian 저장 완료", f"{out}")
-        except Exception as e:  # noqa: BLE001
-            messagebox.showerror("Obsidian 저장 실패", str(e))
+
+        def _do_save(vault: Path) -> None:
+            try:
+                out = obsidian_save(
+                    md, filename=filename, vault_path=vault,
+                    subfolder=obsidian_subfolder(),
+                )
+                messagebox.showinfo("Obsidian 저장 완료", f"{out}")
+            except Exception as e:  # noqa: BLE001
+                messagebox.showerror("Obsidian 저장 실패", str(e))
+
+        _prompt_obsidian_setup(self, _do_save)
 
     def _save_notion(self, job_id: str, title: str) -> None:
         """저장된 마크다운을 Notion 으로 전송 (Phase E).
@@ -1881,6 +1877,159 @@ def _prompt_pdf_install(parent: ctk.CTk, on_success: Callable[[], None]) -> None
         PDFInstallDialog(parent, plan, on_success=None)
 
 
+class ObsidianSetupDialog(ctk.CTkToplevel):
+    """Obsidian vault 경로를 간편히 설정하는 다이얼로그.
+
+    자동 감지된 vault 후보를 리스트로 보여주고, 사용자가 한 번의 클릭으로
+    선택하거나 "폴더 찾아보기" 버튼으로 직접 피커를 띄울 수 있다. 저장 시
+    `save_settings({"OBSIDIAN_VAULT_PATH": ...})` 로 `.env` 에 기록되며,
+    메모리 환경변수도 갱신되어 즉시 반영된다.
+
+    `on_vault_set(vault_path)` 콜백이 성공 시 호출되면, 호출자는 원래
+    사용자가 누른 "→ Obsidian" 저장 플로우를 이어갈 수 있다.
+    """
+
+    def __init__(
+        self,
+        parent: ctk.CTk,
+        on_vault_set: Optional[Callable[[Path], None]] = None,
+    ) -> None:
+        super().__init__(parent)
+        self.title("Obsidian Vault 설정")
+        self.geometry("620x460")
+        self.transient(parent)
+        self.grab_set()
+        self._on_vault_set = on_vault_set
+        self._build_ui()
+        self.after(80, self.focus_force)
+
+    def _build_ui(self) -> None:
+        ctk.CTkLabel(
+            self, text="Obsidian Vault 선택",
+            font=ctk.CTkFont(size=16, weight="bold"),
+        ).pack(padx=20, pady=(18, 4), anchor="w")
+        ctk.CTkLabel(
+            self,
+            text=(
+                "선택한 폴더에 GuruNote 노트가 자동으로 저장됩니다. "
+                "`.obsidian/` 폴더가 있는 경로가 유효한 vault 입니다."
+            ),
+            font=ctk.CTkFont(size=11), text_color=C_TEXT_DIM,
+            wraplength=580, justify="left",
+        ).pack(padx=20, pady=(0, 10), anchor="w")
+
+        # 자동 감지 목록
+        ctk.CTkLabel(
+            self, text="자동 감지된 vault",
+            font=ctk.CTkFont(size=12, weight="bold"),
+        ).pack(padx=20, pady=(4, 2), anchor="w")
+
+        list_frame = ctk.CTkScrollableFrame(self, height=220, fg_color=C_SURFACE)
+        list_frame.pack(fill="x", expand=False, padx=20, pady=(0, 10))
+        list_frame.grid_columnconfigure(0, weight=1)
+
+        candidates = find_vault_candidates()
+        if not candidates:
+            ctk.CTkLabel(
+                list_frame,
+                text=(
+                    "감지된 vault 가 없습니다. 아래 '폴더 찾아보기' 로 수동 선택하세요."
+                ),
+                text_color=C_TEXT_DIM, font=ctk.CTkFont(size=11),
+            ).grid(row=0, column=0, padx=10, pady=12, sticky="w")
+        else:
+            home = str(Path.home())
+            for i, vault in enumerate(candidates):
+                display = str(vault)
+                # 홈 디렉토리는 `~` 로 줄여서 더 읽기 쉽게
+                if display.startswith(home):
+                    display = "~" + display[len(home):]
+                btn = ctk.CTkButton(
+                    list_frame,
+                    text=f"✓  {display}",
+                    anchor="w", height=32,
+                    fg_color="gray25", hover_color=C_PRIMARY,
+                    command=lambda v=vault: self._select_vault(v),
+                )
+                btn.grid(row=i, column=0, sticky="ew", padx=6, pady=3)
+
+        # 하단 버튼 바
+        btn_bar = ctk.CTkFrame(self, fg_color="transparent")
+        btn_bar.pack(fill="x", padx=20, pady=(6, 16))
+        ctk.CTkButton(
+            btn_bar, text="폴더 찾아보기...", width=140, height=32,
+            fg_color=C_PRIMARY, hover_color=C_PRIMARY_HO,
+            command=self._on_browse,
+        ).pack(side="left")
+        ctk.CTkButton(
+            btn_bar, text="취소", width=100, height=32,
+            fg_color="gray40", command=self.destroy,
+        ).pack(side="right")
+
+    # -------------------------------------------------------------------------
+    def _on_browse(self) -> None:
+        initial = str(Path.home() / "Documents")
+        picked = filedialog.askdirectory(
+            parent=self, title="Obsidian vault 폴더 선택", initialdir=initial,
+        )
+        if not picked:
+            return
+        self._select_vault(Path(picked))
+
+    def _select_vault(self, vault: Path) -> None:
+        vault = Path(vault).expanduser().resolve()
+        if not vault.is_dir():
+            messagebox.showerror(
+                "폴더 없음", f"존재하지 않는 폴더입니다:\n{vault}", parent=self,
+            )
+            return
+        if not is_obsidian_vault(vault):
+            if not messagebox.askyesno(
+                "Obsidian vault 아님",
+                (
+                    f"이 폴더에 `.obsidian/` 이 없습니다:\n{vault}\n\n"
+                    "그래도 이 경로를 사용할까요?\n"
+                    "(Obsidian 이 이 폴더를 처음 열면 `.obsidian/` 가 자동 생성됩니다.)"
+                ),
+                parent=self,
+            ):
+                return
+
+        # .env 저장 + 환경변수 즉시 반영
+        try:
+            save_settings({"OBSIDIAN_VAULT_PATH": str(vault)}, create_backup=True)
+            os.environ["OBSIDIAN_VAULT_PATH"] = str(vault)
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror(
+                "저장 실패", f"설정 저장 중 오류가 발생했습니다:\n{exc}", parent=self,
+            )
+            return
+
+        self.destroy()
+        if self._on_vault_set is not None:
+            try:
+                self._on_vault_set(vault)
+            except Exception as exc:  # noqa: BLE001
+                messagebox.showerror("Obsidian 저장 실패", str(exc))
+
+
+def _prompt_obsidian_setup(
+    parent: ctk.CTk,
+    on_vault_set: Callable[[Path], None],
+) -> None:
+    """Vault 미설정 시 안내 + 자동 감지/피커 다이얼로그 실행.
+
+    사용자가 이미 경로를 설정했으면 바로 `on_vault_set` 을 호출한다.
+    """
+    vault = obsidian_vault()
+    if vault is not None:
+        on_vault_set(vault)
+        return
+    # 설정되지 않은 경우: 설치형 확인 대신 즉시 ObsidianSetupDialog 오픈.
+    # (사용자가 이 단계에서 취소하면 아무 일도 일어나지 않는다.)
+    ObsidianSetupDialog(parent, on_vault_set=on_vault_set)
+
+
 class UpdateProgressDialog(ctk.CTkToplevel):
     """업데이트 진행 상황을 실시간 표시하는 다이얼로그."""
 
@@ -2093,6 +2242,24 @@ class SettingsDialog(ctk.CTkToplevel):
                 )
                 toggle_btn.grid(row=idx, column=2, padx=(4, 0), pady=6)
 
+            if env_key == "OBSIDIAN_VAULT_PATH":
+                browse_btn = ctk.CTkButton(
+                    container, text="찾아보기", width=80, height=28,
+                    fg_color=C_PRIMARY, hover_color=C_PRIMARY_HO,
+                    command=self._on_browse_vault,
+                )
+                browse_btn.grid(row=idx, column=2, padx=(4, 0), pady=6)
+                # 유효성 chip (다음 행)
+                self._vault_chip = ctk.CTkLabel(
+                    container, text="", font=ctk.CTkFont(size=10),
+                    anchor="w",
+                )
+                self._vault_chip.grid(
+                    row=idx, column=1, sticky="e", padx=(0, 8), pady=6,
+                )
+                entry.bind("<KeyRelease>", lambda _e: self._refresh_vault_chip())
+                self._refresh_vault_chip()
+
         # 다이얼로그 오픈 시 auto-detect 프리셋 적용 (사용자가 아직 .env 에 값이
         # 없는 필드에만 기본값을 채워주기 위해).
         self._apply_preset(AUTO_KEY, only_empty=True)
@@ -2133,6 +2300,56 @@ class SettingsDialog(ctk.CTkToplevel):
         self._show_vars[env_key] = not self._show_vars[env_key]
         entry = self._entries[env_key]
         entry.configure(show="" if self._show_vars[env_key] else "•")
+
+    # -------------------------------------------------------------------------
+    # Obsidian vault 편의 기능
+    # -------------------------------------------------------------------------
+    def _on_browse_vault(self) -> None:
+        """'찾아보기' 버튼 — 폴더 피커 → OBSIDIAN_VAULT_PATH Entry 업데이트."""
+        entry = self._entries.get("OBSIDIAN_VAULT_PATH")
+        if entry is None:
+            return
+        current = entry.get().strip().strip('"').strip("'")
+        initial = os.path.expanduser(current) if current else str(Path.home() / "Documents")
+        if not os.path.isdir(initial):
+            initial = str(Path.home())
+        picked = filedialog.askdirectory(
+            parent=self, title="Obsidian vault 폴더 선택", initialdir=initial,
+        )
+        if not picked:
+            return
+        entry.delete(0, "end")
+        entry.insert(0, picked)
+        self._refresh_vault_chip()
+
+    def _refresh_vault_chip(self) -> None:
+        """vault Entry 의 현재 값이 유효한 vault 인지 chip 으로 표시."""
+        if not hasattr(self, "_vault_chip"):
+            return
+        entry = self._entries.get("OBSIDIAN_VAULT_PATH")
+        if entry is None:
+            return
+        val = entry.get().strip().strip('"').strip("'")
+        if not val:
+            self._vault_chip.configure(text="", text_color=C_TEXT_DIM)
+            return
+        try:
+            p = Path(os.path.expanduser(val))
+            if not p.is_dir():
+                self._vault_chip.configure(
+                    text="경로 없음", text_color=C_DANGER,
+                )
+                return
+            if is_obsidian_vault(p):
+                self._vault_chip.configure(
+                    text="✓ vault", text_color="#22C55E",
+                )
+            else:
+                self._vault_chip.configure(
+                    text="폴더 있음 (.obsidian/ 없음)", text_color="#F59E0B",
+                )
+        except Exception:  # noqa: BLE001
+            self._vault_chip.configure(text="", text_color=C_TEXT_DIM)
 
     # -------------------------------------------------------------------------
     # 하드웨어 프리셋
@@ -2343,7 +2560,7 @@ class GuruNoteApp(ctk.CTk):
             ).grid(row=2 + i, column=0, padx=10, pady=2, sticky="ew")
 
         ctk.CTkLabel(
-            sb, text="v0.7.0.4", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
+            sb, text="v0.7.0.5", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
         ).grid(row=7, column=0, padx=20, pady=(0, 16), sticky="sw")
 
     # ── 메인 영역 ────────────────────────────────────────────
@@ -2714,36 +2931,30 @@ class GuruNoteApp(ctk.CTk):
             _prompt_pdf_install(self, _do_save)
 
     def _on_save_obsidian(self):
-        """결과 마크다운을 Obsidian vault 로 직접 저장 (Phase D)."""
+        """결과 마크다운을 Obsidian vault 로 직접 저장 (Phase D).
+
+        Vault 미설정 시 경고 대신 `ObsidianSetupDialog` 로 감지된 후보 + 폴더
+        피커를 띄워 즉시 설정하고 저장 플로우를 이어간다.
+        """
         if not self._result:
             return
-        vault = obsidian_vault()
-        if vault is None:
-            messagebox.showwarning(
-                "Obsidian 미설정",
-                "Settings 다이얼로그에서 `OBSIDIAN_VAULT_PATH` 를 지정해주세요.\n"
-                "(Obsidian 앱의 vault 폴더 루트 경로 — `.obsidian/` 폴더가 있는 곳)",
-            )
-            return
-        if not is_obsidian_vault(vault):
-            if not messagebox.askyesno(
-                "Obsidian vault 확인",
-                f"경로에 `.obsidian/` 폴더가 없습니다:\n{vault}\n\n"
-                "그래도 이 폴더에 저장할까요?",
-            ):
-                return
+
         title = self._result["audio"].video_title
         filename = f"GuruNote_{sanitize_filename(title)}.md"
-        try:
-            out = obsidian_save(
-                self._result["full_md"],
-                filename=filename,
-                vault_path=vault,
-                subfolder=obsidian_subfolder(),
-            )
-            messagebox.showinfo("Obsidian 저장 완료", f"{out}")
-        except Exception as e:  # noqa: BLE001
-            messagebox.showerror("Obsidian 저장 실패", str(e))
+        full_md = self._result["full_md"]
+
+        def _do_save(vault: Path) -> None:
+            try:
+                out = obsidian_save(
+                    full_md, filename=filename, vault_path=vault,
+                    subfolder=obsidian_subfolder(),
+                )
+                messagebox.showinfo("Obsidian 저장 완료", f"{out}")
+            except Exception as e:  # noqa: BLE001
+                messagebox.showerror("Obsidian 저장 실패", str(e))
+
+        _prompt_obsidian_setup(self, _do_save)
+        return
 
     def _on_save_notion(self):
         """결과 마크다운을 Notion 페이지로 전송 (Phase E).

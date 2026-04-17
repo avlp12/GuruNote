@@ -7,6 +7,30 @@
 
 ## [Unreleased]
 
+## [0.7.0.5] - 2026-04-17
+
+### Added
+- **Obsidian 연동 간편 설정** (`gurunote/obsidian.py`, `gui.py`
+  `ObsidianSetupDialog`) — 이전엔 Settings 로 가서 vault 경로를 **직접 입력**
+  해야 했던 플로우를 대폭 개선.
+  - `find_vault_candidates(max_depth=2)` — macOS/Windows/Linux 공통 경로
+    (`~/Documents`, iCloud Obsidian Sync, `~/OneDrive/Documents` 등) 를
+    최대 2단계까지 스캔해 `.obsidian/` 폴더가 있는 vault 자동 감지. 최근
+    수정일 내림차순 정렬.
+  - **`ObsidianSetupDialog`**: 자동 감지된 vault 를 한 번의 클릭으로 선택,
+    또는 `폴더 찾아보기...` 버튼으로 `askdirectory` 피커. 선택 시 `.env`
+    자동 저장 + `os.environ` 즉시 반영 + 원래 저장 플로우 자동 이어감.
+  - Vault 미설정 상태에서 `→ Obsidian` 클릭 시 **경고창 대신** 이
+    다이얼로그가 열림. 경로 직접 타이핑 없음.
+  - `.obsidian/` 없는 폴더 선택 시 경고 + "그래도 사용" 확인 (Obsidian 이
+    처음 열면 자동 생성됨을 안내).
+
+### Changed
+- **Settings 다이얼로그의 Obsidian Vault 경로 필드**: `찾아보기` 버튼 추가
+  (`CTkButton` 3번째 열) + 실시간 유효성 chip (`✓ vault` / `폴더 있음
+  (.obsidian/ 없음)` / `경로 없음`). 타이핑 중에도 `<KeyRelease>` 로 즉시
+  재검증.
+
 ## [0.7.0.4] - 2026-04-17
 
 ### Changed
@@ -829,7 +853,8 @@ bash run_desktop.sh
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.7.0.4...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.7.0.5...HEAD
+[0.7.0.5]: https://github.com/avlp12/GuruNote/compare/v0.7.0.4...v0.7.0.5
 [0.7.0.4]: https://github.com/avlp12/GuruNote/compare/v0.7.0.3...v0.7.0.4
 [0.7.0.3]: https://github.com/avlp12/GuruNote/compare/v0.7.0.2...v0.7.0.3
 [0.7.0.2]: https://github.com/avlp12/GuruNote/compare/v0.7.0.1...v0.7.0.2

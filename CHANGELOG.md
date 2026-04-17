@@ -7,6 +7,20 @@
 
 ## [Unreleased]
 
+## [0.6.0.2] - 2026-04-17
+
+### Fixed
+- **macOS 입력창에서 Cmd+C/V/X/A 미동작** (`gui.py`) — macOS 의 CTkEntry /
+  CTkTextbox 에서 `Cmd+V` 로 붙여넣기가 되지 않던 문제 (Settings, 오디오 URL
+  입력 등 모든 입력창). Tkinter 기본 바인딩이 Linux/Windows 의 `Ctrl+V` 는
+  `<<Paste>>` 가상 이벤트로 매핑하지만 일부 Tcl/Tk 빌드에서 macOS 의 `Command`
+  키 누락. 루트 윈도우에 `_install_clipboard_shortcuts()` 를 통해 `bind_all`
+  로 `<Command-c/v/x/a>` (대소문자 모두) 를 명시 바인딩 → 포커스된 위젯에
+  `<<Copy>>` / `<<Paste>>` / `<<Cut>>` / `<<SelectAll>>` 가상 이벤트를
+  전파하도록 수정. `Toplevel` (SettingsDialog, HistoryDialog 등) 도 같은
+  Tk 인터프리터를 공유하므로 한 번의 `bind_all` 로 전역 적용.
+  Linux/Windows 는 no-op (기본 바인딩이 이미 Ctrl+V 처리).
+
 ## [0.6.0.1] - 2026-04-17
 
 > v0.6.0 이후 머지된 UX/버그 수정 PR (#59~#66) 을 REVISION 단위로 묶은 릴리스.
@@ -312,7 +326,8 @@
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.6.0.1...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.6.0.2...HEAD
+[0.6.0.2]: https://github.com/avlp12/GuruNote/compare/v0.6.0.1...v0.6.0.2
 [0.6.0.1]: https://github.com/avlp12/GuruNote/compare/v0.6.0...v0.6.0.1
 [0.6.0]: https://github.com/avlp12/GuruNote/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/avlp12/GuruNote/compare/v0.4.1...v0.5.0

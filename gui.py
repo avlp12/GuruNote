@@ -774,6 +774,44 @@ def _card(parent, **kw):
     return ctk.CTkFrame(parent, **d)
 
 
+def _install_clipboard_shortcuts(root) -> None:
+    """macOS 에서 Cmd+C/V/X/A 가 CTkEntry 에 전달되지 않는 문제 해결.
+
+    Tkinter 의 기본 바인딩은 Linux/Windows 의 Ctrl+C/V/X/A 만 `<<Copy>>`,
+    `<<Paste>>`, `<<Cut>>`, `<<SelectAll>>` 가상 이벤트로 자동 매핑한다.
+    macOS 의 Command 키는 일부 Tcl/Tk 빌드와 한국어 IME 조합에서 누락되는
+    경우가 있어, 루트 윈도우에 `bind_all` 로 명시 바인딩을 걸어 모든 자식
+    위젯(CTkEntry 의 내부 tk.Entry 포함) 에서 동작하도록 한다.
+
+    Toplevel(SettingsDialog, HistoryDialog 등) 도 같은 Tk 인터프리터를
+    공유하므로 `bind_all` 한 번이면 전역적으로 적용됨.
+    """
+    import platform
+    if platform.system() != "Darwin":
+        return  # Linux/Windows 는 기본 바인딩이 이미 Ctrl+V 를 매핑
+
+    def _forward(virtual_event: str):
+        def handler(event):
+            try:
+                focused = root.focus_get()
+                if focused is not None:
+                    focused.event_generate(virtual_event)
+            except Exception:  # noqa: BLE001
+                pass
+            return "break"  # OS 기본 핸들러가 두 번 처리하지 않게 차단
+        return handler
+
+    root.bind_all("<Command-c>", _forward("<<Copy>>"))
+    root.bind_all("<Command-v>", _forward("<<Paste>>"))
+    root.bind_all("<Command-x>", _forward("<<Cut>>"))
+    root.bind_all("<Command-a>", _forward("<<SelectAll>>"))
+    # 한국어 키보드에서 Command+ㅊ/ㅍ/ㅌ/ㅁ 도 같은 동작 (KeySym 으로 매핑)
+    root.bind_all("<Command-C>", _forward("<<Copy>>"))
+    root.bind_all("<Command-V>", _forward("<<Paste>>"))
+    root.bind_all("<Command-X>", _forward("<<Cut>>"))
+    root.bind_all("<Command-A>", _forward("<<SelectAll>>"))
+
+
 class GuruNoteApp(ctk.CTk):
     def __init__(self):
         super().__init__()
@@ -785,6 +823,8 @@ class GuruNoteApp(ctk.CTk):
         self._result = None
         self._local_file_path = ""
         self._step_labels = []
+        # macOS Cmd+C/V/X/A 명시 바인딩 (Toplevel 포함 전역 적용)
+        _install_clipboard_shortcuts(self)
         self._build_ui()
 
     def _build_ui(self):
@@ -826,7 +866,7 @@ class GuruNoteApp(ctk.CTk):
             ).grid(row=2 + i, column=0, padx=10, pady=2, sticky="ew")
 
         ctk.CTkLabel(
-            sb, text="v0.6.0.1", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
+            sb, text="v0.6.0.2", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
         ).grid(row=6, column=0, padx=20, pady=(0, 16), sticky="sw")
 
     # ── 메인 영역 ────────────────────────────────────────────

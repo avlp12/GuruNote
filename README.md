@@ -395,7 +395,7 @@ GuruNote/
 주요 변경 사항은 [CHANGELOG.md](./CHANGELOG.md) 에 [Keep a Changelog](https://keepachangelog.com/)
 형식으로 기록되며 버전은 [Semantic Versioning](https://semver.org/) 을 따릅니다.
 
-현재 버전: **v0.6.0.4** — Phase A 후속 수정 (태그 타입 필터 + config 연동 max_tokens).
+현재 버전: **v0.6.0.5** — GUI 실시간 백엔드 진행률 (모델 다운로드 / STT frame/sec 을 로그 패널에 압축 표시).
 
 ---
 

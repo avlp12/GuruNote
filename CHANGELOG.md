@@ -7,6 +7,39 @@
 
 ## [Unreleased]
 
+## [0.6.0.5] - 2026-04-17
+
+### Added
+- **GUI 실시간 백엔드 진행률** (`gurunote/progress_tee.py` 신규, `gui.py`,
+  `app.py`) — HuggingFace 모델 다운로드 / mlx-whisper / whisperx 의 tqdm
+  진행률이 이전에는 CLI stderr 에만 찍혀 GUI 로그 패널에서는 보이지 않았다.
+  새 `install_tee()` 컨텍스트 매니저가 파이프라인 실행 동안 `sys.stderr` 를
+  tee 로 감싸 원본에는 그대로 쓰면서, 한 줄 단위로 파싱해 압축된 요약을
+  GUI 로그 콜백에 전달한다.
+
+  감지 + 압축 패턴:
+  - `39%|...| 239370/619235 [05:14<09:37, 657.42frames/s]`
+    → `[STT] 39% (239370/619235) · 05:14 경과 · ~09:37 남음 · 657.42 frames/s`
+  - `Fetching 4 files: 100%|...| 4/4 [00:44<00:00, 11.06s/it]`
+    → `[모델] Fetching 4 files — 4/4 (100%) · 남음 ~00:00`
+  - `Download complete: : 3.08GB [00:44, 255MB/s]`
+    → `[모델] 다운로드 완료 (3.08GB, 00:44 · 255 MB/s)`
+  - `Detected language: English` → `[언어] English 감지`
+  - HF 토큰 미설정 경고는 1회만 표시 (중복 억제)
+  - ANSI 컬러 escape 제거, 500ms 스로틀링으로 GUI 로그 flood 방지
+
+  **Streamlit(`app.py`) 에는 적용하지 않음** — `st.empty()` 등 Streamlit
+  위젯은 `ScriptRunContext` 가 바인딩된 메인 스레드에서만 안전하게 업데이트
+  가능하고, 백엔드 워커(mlx-whisper, whisperx)가 stderr 로 tqdm 을 찍는
+  스레드에서 위젯 업데이트 콜백이 호출되면 `MissingScriptRunContext` 경고가
+  발생하며 최악의 경우 경고 메시지 자체가 tee 로 재유입되는 재귀 위험이
+  있어서. Streamlit 은 Step 완료마다 `st.write` 로 표시되므로 실용상 충분.
+  데스크톱 GUI 에만 tee 적용.
+
+  **방어적 restore** — `install_tee` 종료 시 `sys.stderr is tee_err` 인 경우
+  에만 원본 복원해서, nested 컨텍스트 엣지케이스에서 stderr 가 영구 오염되는
+  footgun 방지.
+
 ## [0.6.0.4] - 2026-04-17
 
 ### Fixed
@@ -370,7 +403,8 @@
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.6.0.4...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.6.0.5...HEAD
+[0.6.0.5]: https://github.com/avlp12/GuruNote/compare/v0.6.0.4...v0.6.0.5
 [0.6.0.4]: https://github.com/avlp12/GuruNote/compare/v0.6.0.3...v0.6.0.4
 [0.6.0.3]: https://github.com/avlp12/GuruNote/compare/v0.6.0.2...v0.6.0.3
 [0.6.0.2]: https://github.com/avlp12/GuruNote/compare/v0.6.0.1...v0.6.0.2

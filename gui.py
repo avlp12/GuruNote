@@ -17,11 +17,18 @@ from __future__ import annotations
 
 import os
 import queue
+import sys
 import tempfile
 import threading
 from pathlib import Path
 from tkinter import filedialog, messagebox
 from typing import Callable, Optional
+
+# 네이티브 라이브러리(pyannote / weasyprint / mlx) 가 import 시점에 FD2 로
+# 쏟는 경고가 Terminal 을 포그라운드로 끌어올리는 문제를 막기 위해, 무거운
+# 모듈을 import 하기 **전에** stdout/stderr 을 로그 파일로 돌린다.
+from gurunote.log_redirect import redirect_to_log as _redirect_to_log
+_redirect_to_log()
 
 import customtkinter as ctk
 from dotenv import load_dotenv
@@ -1649,7 +1656,7 @@ class HistoryDialog(ctk.CTkToplevel):
                     md, filename=filename, vault_path=vault,
                     subfolder=obsidian_subfolder(),
                 )
-                messagebox.showinfo("Obsidian 저장 완료", f"{out}")
+                ObsidianSaveDialog(self, saved_path=out, vault_path=vault)
             except Exception as e:  # noqa: BLE001
                 messagebox.showerror("Obsidian 저장 실패", str(e))
 
@@ -2067,6 +2074,125 @@ def _prompt_obsidian_setup(
     # 설정되지 않은 경우: 설치형 확인 대신 즉시 ObsidianSetupDialog 오픈.
     # (사용자가 이 단계에서 취소하면 아무 일도 일어나지 않는다.)
     ObsidianSetupDialog(parent, on_vault_set=on_vault_set)
+
+
+class ObsidianSaveDialog(ctk.CTkToplevel):
+    """Obsidian 저장 성공 다이얼로그.
+
+    기존엔 `messagebox.showinfo` 로 긴 파일 경로만 출력하는 "성의 없는 팝업"
+    이었던 걸 교체. 파일명 + vault 요약 + 다음 액션 버튼 (Obsidian 에서 열기 /
+    폴더 보기 / 닫기) 를 제공한다.
+    """
+
+    def __init__(
+        self,
+        parent: ctk.CTk,
+        saved_path: Path,
+        vault_path: Path,
+    ) -> None:
+        super().__init__(parent)
+        _apply_app_icon(self)
+        self.title("Obsidian 저장 완료")
+        self.geometry("520x260")
+        self.resizable(False, False)
+        self.transient(parent)
+        self.grab_set()
+
+        self._saved_path = Path(saved_path)
+        self._vault_path = Path(vault_path)
+        self._build_ui()
+        self.after(80, self.focus_force)
+
+    def _build_ui(self) -> None:
+        # 제목 + 체크 아이콘
+        header = ctk.CTkFrame(self, fg_color="transparent")
+        header.pack(fill="x", padx=22, pady=(22, 8))
+        ctk.CTkLabel(
+            header, text="Obsidian 에 저장되었습니다",
+            font=ctk.CTkFont(size=16, weight="bold"),
+            text_color=C_TEXT,
+        ).pack(anchor="w")
+
+        # 파일명 + vault 경로 (요약)
+        body = ctk.CTkFrame(self, fg_color=C_SURFACE, corner_radius=10)
+        body.pack(fill="x", padx=22, pady=(0, 14))
+        ctk.CTkLabel(
+            body, text=self._saved_path.name,
+            font=ctk.CTkFont(size=13, weight="bold"),
+            text_color=C_TEXT, wraplength=460, anchor="w", justify="left",
+        ).pack(fill="x", padx=14, pady=(12, 4), anchor="w")
+
+        try:
+            rel = self._saved_path.relative_to(self._vault_path)
+            rel_display = f"Vault: {self._vault_path.name}  ·  {rel.parent if str(rel.parent) != '.' else '(루트)'}"
+        except ValueError:
+            rel_display = str(self._saved_path.parent)
+        ctk.CTkLabel(
+            body, text=rel_display,
+            font=ctk.CTkFont(size=11),
+            text_color=C_TEXT_DIM, wraplength=460, anchor="w", justify="left",
+        ).pack(fill="x", padx=14, pady=(0, 12), anchor="w")
+
+        # 버튼 바
+        btn_bar = ctk.CTkFrame(self, fg_color="transparent")
+        btn_bar.pack(fill="x", padx=22, pady=(0, 20))
+
+        ctk.CTkButton(
+            btn_bar, text="Obsidian 에서 열기", width=160, height=34,
+            fg_color=C_PRIMARY, hover_color=C_PRIMARY_HO,
+            font=ctk.CTkFont(weight="bold"),
+            command=self._open_in_obsidian,
+        ).pack(side="left")
+        ctk.CTkButton(
+            btn_bar, text="폴더 보기", width=100, height=34,
+            fg_color="gray35", hover_color="gray45",
+            command=self._reveal_in_finder,
+        ).pack(side="left", padx=(8, 0))
+        ctk.CTkButton(
+            btn_bar, text="닫기", width=80, height=34,
+            fg_color="gray40", command=self.destroy,
+        ).pack(side="right")
+
+    # -------------------------------------------------------------------------
+    def _open_in_obsidian(self) -> None:
+        """`obsidian://open?path=...` URL 스킴으로 Obsidian 앱에서 노트 열기."""
+        import subprocess
+        import urllib.parse
+
+        url = "obsidian://open?path=" + urllib.parse.quote(str(self._saved_path))
+        try:
+            if sys.platform == "darwin":
+                subprocess.run(["open", url], check=False)
+            elif sys.platform.startswith("win"):
+                os.startfile(url)  # type: ignore[attr-defined]
+            else:
+                subprocess.run(["xdg-open", url], check=False)
+            self.destroy()
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showwarning(
+                "Obsidian 열기 실패",
+                f"Obsidian 앱이 설치되어 있지 않거나 URL 처리에 실패했습니다.\n"
+                f"\n{exc}",
+                parent=self,
+            )
+
+    def _reveal_in_finder(self) -> None:
+        """파일이 위치한 폴더를 OS 기본 파일 탐색기에서 열기."""
+        import subprocess
+
+        target = self._saved_path
+        try:
+            if sys.platform == "darwin":
+                # `-R` 로 파일을 선택 상태로 보여줌
+                subprocess.run(["open", "-R", str(target)], check=False)
+            elif sys.platform.startswith("win"):
+                subprocess.run(["explorer", "/select,", str(target)], check=False)
+            else:
+                subprocess.run(["xdg-open", str(target.parent)], check=False)
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showwarning(
+                "폴더 열기 실패", str(exc), parent=self,
+            )
 
 
 class UpdateProgressDialog(ctk.CTkToplevel):
@@ -2602,7 +2728,7 @@ class GuruNoteApp(ctk.CTk):
             ).grid(row=2 + i, column=0, padx=10, pady=2, sticky="ew")
 
         ctk.CTkLabel(
-            sb, text="v0.7.1.1", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
+            sb, text="v0.7.2.0", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
         ).grid(row=7, column=0, padx=20, pady=(0, 16), sticky="sw")
 
     # ── 메인 영역 ────────────────────────────────────────────
@@ -2991,7 +3117,7 @@ class GuruNoteApp(ctk.CTk):
                     full_md, filename=filename, vault_path=vault,
                     subfolder=obsidian_subfolder(),
                 )
-                messagebox.showinfo("Obsidian 저장 완료", f"{out}")
+                ObsidianSaveDialog(self, saved_path=out, vault_path=vault)
             except Exception as e:  # noqa: BLE001
                 messagebox.showerror("Obsidian 저장 실패", str(e))
 

@@ -467,7 +467,7 @@ GuruNote/
 주요 변경 사항은 [CHANGELOG.md](./CHANGELOG.md) 에 [Keep a Changelog](https://keepachangelog.com/)
 형식으로 기록되며 버전은 [Semantic Versioning](https://semver.org/) 을 따릅니다.
 
-현재 버전: **v0.7.1.1** — README 갱신 (v0.7.0.4~v0.7.1.0 누락 기능 문서화: 트리 내비, PDF 자동 설치, Obsidian 자동 감지, macOS 런처, Material 3 UI).
+현재 버전: **v0.7.2.0** — stderr 터미널 누수 차단 + PDF 실사용 가능 smoke-test + Obsidian 저장 다이얼로그 재설계.
 
 ---
 

@@ -205,11 +205,12 @@ def run_plan(plan: InstallPlan, log: ProgressFn) -> bool:
             log(f"\n[실패] 종료 코드 {rc} — 설치를 중단합니다.")
             return False
 
-    # 검증 — 실제로 import 되는지 다시 확인
-    if not is_python_deps_ok():
+    # 검증 — import 뿐 아니라 실제 cffi native 로드까지 smoke-test
+    from gurunote.pdf_export import is_pdf_export_available
+    if not is_pdf_export_available(force_recheck=True):
         log(
-            "\n[경고] 설치 커맨드는 성공했지만 `import weasyprint` 가 여전히 실패합니다.\n"
-            "시스템 라이브러리 경로 문제일 수 있습니다. 앱을 재시작해 보세요."
+            "\n[경고] 설치 커맨드는 성공했지만 weasyprint 가 여전히 동작하지 않습니다.\n"
+            "cairo/pango 등 native 라이브러리 경로 문제일 수 있습니다. 앱을 재시작해 보세요."
         )
         return False
 

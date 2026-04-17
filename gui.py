@@ -78,6 +78,7 @@ from gurunote.search import (
     clear_cache as search_clear_cache,
     match_body as search_match_body,
 )
+from gurunote.stats import compute_stats, render_report
 from gurunote.types import _format_ts
 from gurunote.updater import check_for_update, update_project
 
@@ -377,6 +378,63 @@ _SETTINGS_FIELDS = [
     ("NOTION_PARENT_ID", "Notion Parent ID (database/page UUID)", False),
     ("NOTION_PARENT_TYPE", "Notion Parent Type (database/page)", False),
 ]
+
+
+class DashboardDialog(ctk.CTkToplevel):
+    """
+    거시적 통계 대시보드 (Step 3.3).
+
+    사용자가 쌓아둔 노트 전체에 대해:
+      - 총 작업 수 (성공/실패)
+      - 총/평균/최장 녹취 시간
+      - 분야·업로더·태그 top-N
+      - 월별 작업 추이
+
+    차트 라이브러리 의존성 없이 Unicode block 문자 (█) 로 바 차트를
+    CTkTextbox 에 렌더링. matplotlib 같은 heavy dep 없음.
+    """
+
+    def __init__(self, parent: ctk.CTk) -> None:
+        super().__init__(parent)
+        self.title("📊 GuruNote Dashboard")
+        self.geometry("760x640")
+        self.transient(parent)
+        self.grab_set()
+        self._build_ui()
+        self._render()
+        self.after(100, self.focus_force)
+
+    def _build_ui(self) -> None:
+        header = ctk.CTkFrame(self, fg_color="transparent")
+        header.pack(fill="x", padx=16, pady=(14, 6))
+        ctk.CTkLabel(
+            header, text="대시보드 — 지식 라이브러리 거시 지표",
+            font=ctk.CTkFont(size=14, weight="bold"), text_color=C_TEXT,
+        ).pack(side="left")
+        ctk.CTkButton(
+            header, text="Refresh", width=90, height=28,
+            command=self._render,
+        ).pack(side="right")
+
+        self._tb = ctk.CTkTextbox(
+            self, wrap="none",
+            font=ctk.CTkFont(family="Menlo", size=12),
+            fg_color=C_BG, text_color=C_TEXT, corner_radius=8,
+        )
+        self._tb.pack(fill="both", expand=True, padx=16, pady=(0, 16))
+
+    def _render(self) -> None:
+        """히스토리 인덱스 재로드 → 통계 계산 → 텍스트 리포트 표시."""
+        try:
+            jobs = load_index()
+            stats = compute_stats(jobs)
+            report = render_report(stats)
+        except Exception as exc:  # noqa: BLE001
+            report = f"대시보드 계산 실패:\n{exc}"
+        self._tb.configure(state="normal")
+        self._tb.delete("1.0", "end")
+        self._tb.insert("1.0", report)
+        self._tb.configure(state="disabled")
 
 
 class NoteEditorDialog(ctk.CTkToplevel):
@@ -1603,7 +1661,8 @@ class GuruNoteApp(ctk.CTk):
         sb = ctk.CTkFrame(self, fg_color=C_SIDEBAR, width=220, corner_radius=0)
         sb.grid(row=0, column=0, sticky="nsew")
         sb.grid_propagate(False)
-        sb.grid_rowconfigure(5, weight=1)
+        # 버튼 4개 + spacer row 6 + version row 7
+        sb.grid_rowconfigure(6, weight=1)
         sb.grid_columnconfigure(0, weight=1)
 
         # 브랜드 — 세로 배치 (잘림 방지)
@@ -1619,6 +1678,7 @@ class GuruNoteApp(ctk.CTk):
         # 네비게이션 — 이모지 대신 텍스트 prefix (Windows 호환)
         nav_items = [
             ("  Settings", self._on_settings),
+            ("  Dashboard", self._on_dashboard),
             ("  History", self._on_history),
             ("  Update", self._on_update_sb),
         ]
@@ -1631,8 +1691,8 @@ class GuruNoteApp(ctk.CTk):
             ).grid(row=2 + i, column=0, padx=10, pady=2, sticky="ew")
 
         ctk.CTkLabel(
-            sb, text="v0.6.0.15", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
-        ).grid(row=6, column=0, padx=20, pady=(0, 16), sticky="sw")
+            sb, text="v0.6.0.16", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
+        ).grid(row=7, column=0, padx=20, pady=(0, 16), sticky="sw")
 
     # ── 메인 영역 ────────────────────────────────────────────
     def _build_main(self):
@@ -1773,6 +1833,9 @@ class GuruNoteApp(ctk.CTk):
     # ── 이벤트 핸들러 ────────────────────────────────────────
     def _on_settings(self):
         SettingsDialog(self)
+
+    def _on_dashboard(self):
+        DashboardDialog(self)
 
     def _on_history(self):
         HistoryDialog(self)

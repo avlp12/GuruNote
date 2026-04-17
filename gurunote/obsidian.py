@@ -45,6 +45,10 @@ def resolve_vault_path() -> Optional[Path]:
     `is_obsidian_vault` 로 확인).
     """
     raw = os.environ.get("OBSIDIAN_VAULT_PATH", "").strip()
+    # 사용자가 shell 에서 복사할 때 `"~/MyVault"` 같이 따옴표가 포함되는 경우가
+    # 많아서 앞뒤 쌍/단 따옴표를 벗긴다 (`expanduser` 가 따옴표로 시작하는
+    # 문자열에서는 `~` 를 확장하지 않음).
+    raw = raw.strip('"').strip("'").strip()
     if not raw:
         return None
     try:
@@ -107,8 +111,13 @@ def save_to_vault(
     safe_name = (filename or "").strip()
     if not safe_name:
         raise ValueError("파일명이 비어 있습니다.")
-    if "/" in safe_name or "\\" in safe_name or ".." in safe_name:
-        raise ValueError(f"유효하지 않은 파일명 (경로 구분자/'..' 금지): {filename}")
+    # Windows 드라이브 레터 (`C:foo`) 는 drive-relative 경로로 vault 밖을 가리킬
+    # 수 있어서 콜론도 차단. null byte / 경로 구분자도 함께.
+    forbidden = {"/", "\\", "..", ":", "\x00"}
+    if any(token in safe_name for token in forbidden):
+        raise ValueError(
+            f"유효하지 않은 파일명 (경로 구분자, 콜론, '..' 금지): {filename}"
+        )
     if not safe_name.lower().endswith(".md"):
         safe_name += ".md"
 
@@ -124,9 +133,16 @@ def save_to_vault(
 
     out_path = target_dir / safe_name
     if out_path.exists():
-        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        stem = out_path.stem
-        out_path = target_dir / f"{stem}_{ts}.md"
+        # timestamp 에 microsecond 포함 → 같은 초에 2회 저장돼도 충돌 없음.
+        # 그래도 실패하면 `_2`, `_3` 카운터로 fallback (극단적 race 방지).
+        base_stem = out_path.stem
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        candidate = target_dir / f"{base_stem}_{ts}.md"
+        counter = 2
+        while candidate.exists():
+            candidate = target_dir / f"{base_stem}_{ts}_{counter}.md"
+            counter += 1
+        out_path = candidate
 
     out_path.write_text(full_md, encoding="utf-8")
     return out_path

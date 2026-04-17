@@ -22,6 +22,19 @@
     `HTTP 401/403` 등) 감지 시 `GitAuthError` 를 raise.
 
 ### Added
+- **저장소 공개/비공개 자동 감지 + 분기 업데이트** (`detect_repo_visibility()`,
+  `update_project()`) — 사용자가 저장소 공개/비공개를 왔다갔다 해도 항상
+  현재 상태에 맞게 동작:
+  - GitHub REST API `GET /repos/{owner}/{repo}` 를 unauth 로 호출해 `private`
+    필드 확인 (200/404/403 각각 처리).
+  - **공개 저장소** + git 인증 실패 → `update_via_tarball()` 로 자동 폴백
+    (사용자 개입 없이 성공).
+  - **비공개 저장소** (또는 감지 실패) + git 인증 실패 → `GitAuthError` 즉시
+    raise → GUI 가 `GitAuthErrorDialog` 로 `gh auth login` / PAT 옵션 안내.
+  - 업데이트 로그 상단에 `[감지] 공개 저장소 — ...` / `[감지] 비공개 저장소 — ...`
+    를 표시해 사용자가 현재 모드 확인 가능.
+
+### Added
 - **`GitAuthErrorDialog`** (`gui.py`) — 비공개 저장소 등으로 인증이 필요한
   상황에서 사용자가 해결 옵션을 한눈에 볼 수 있는 다이얼로그. 사용자가
   OAuth 로만 GitHub 에 가입해 password 가 없는 케이스를 주 대상으로 설계.

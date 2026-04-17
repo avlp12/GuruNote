@@ -2240,9 +2240,10 @@ class GitAuthErrorDialog(ctk.CTkToplevel):
         ctk.CTkLabel(
             self,
             text=(
-                "비공개 저장소 업데이트에는 인증이 필요합니다.\n"
+                "저장소가 비공개이거나 공개 여부를 확인할 수 없어 인증이 필요합니다.\n"
                 "구글 OAuth 로만 로그인한 계정은 password 가 없으므로 "
-                "아래 방법 중 하나로 토큰을 받으세요."
+                "아래 방법 중 하나로 토큰을 발급받으세요.\n"
+                "(저장소를 공개로 전환하면 인증 없이 자동 업데이트가 동작합니다.)"
             ),
             font=ctk.CTkFont(size=11), text_color=C_TEXT_DIM,
             wraplength=500, justify="left",

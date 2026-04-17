@@ -258,6 +258,70 @@ def _is_auth_error(output: str) -> bool:
     return any(p in lower for p in _AUTH_ERROR_PATTERNS)
 
 
+def detect_repo_visibility(
+    owner_repo: Optional[tuple[str, str]] = None,
+    timeout: float = 8.0,
+) -> Optional[bool]:
+    """
+    GitHub 저장소가 공개인지 비공개인지 감지.
+
+    Returns:
+        True  — 공개 (누구나 git fetch / tarball 다운로드 가능)
+        False — 비공개 (인증 필요)
+        None  — 판정 실패 (네트워크 / rate limit / GitHub 아님)
+
+    접근:
+      - GitHub REST API v3: `GET /repos/{owner}/{repo}` (unauth)
+      - 200 + `private` 필드가 False → 공개
+      - 200 + `private` True → 비공개 (API 는 unauth 접근 시 200 이 아니라 404 이지만,
+        만약 토큰이 있다면 이 케이스도 가능)
+      - 404 / 403 → 비공개 가능성 높음 (또는 존재하지 않음)
+      - 기타 오류 → None
+
+    사용자가 public ↔ private 을 왔다갔다 해도 매번 호출 시점 상태를 읽어 정확.
+    """
+    if owner_repo is None:
+        owner_repo = _detect_github_owner_repo()
+    if owner_repo is None:
+        return None
+    owner, repo = owner_repo
+
+    url = f"https://api.github.com/repos/{owner}/{repo}"
+    req = urllib.request.Request(
+        url,
+        headers={
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "GuruNote-Updater",
+            "X-GitHub-Api-Version": "2022-11-28",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            if resp.status != 200:
+                return None
+            import json as _json
+            data = _json.loads(resp.read().decode("utf-8"))
+        # `private` 키가 True 면 비공개, False 면 공개
+        private = data.get("private")
+        if isinstance(private, bool):
+            return not private  # True=public (not private)
+        # 키가 없으면 "visibility" 필드로 보조 판단 (일부 케이스)
+        vis = data.get("visibility", "").lower()
+        if vis == "public":
+            return True
+        if vis in ("private", "internal"):
+            return False
+        return None
+    except urllib.error.HTTPError as exc:
+        # 404: 존재하지 않거나 unauth 접근이 막힌 비공개 → 비공개로 간주
+        # 403: rate limit / 접근 금지 → 확정 못함
+        if exc.code in (404, 451):
+            return False
+        return None
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def update_via_tarball(
     log: LogFn,
     upgrade_deps: bool = True,
@@ -395,13 +459,29 @@ def check_for_update() -> dict:
 
 
 def update_project(log: LogFn, upgrade_deps: bool = True) -> None:
-    """저장소 pull + requirements 업그레이드.
+    """저장소 업데이트 + requirements 업그레이드.
 
-    git 인증 실패 (credential prompt / stale osxkeychain 등) 시
-    `GitAuthError` 를 raise — GUI 가 tarball 업데이트를 제안할 수 있게 한다.
+    업데이트 전에 **저장소 공개/비공개 여부를 먼저 감지** 하여 분기:
+      - 공개 저장소: git pull 시도 → 인증 실패하면 tarball 로 자동 폴백
+        (사용자 개입 없이 성공).
+      - 비공개 저장소: git pull 시도 → 인증 실패하면 즉시 `GitAuthError`
+        raise (GUI 가 GitAuthErrorDialog 로 `gh auth login` / PAT 를 안내).
+      - 감지 실패 (네트워크 / rate limit / GitHub 아님): 비공개처럼 처리
+        (안전한 기본값).
+
+    공개 저장소에서 tarball 폴백도 실패하면 `RuntimeError`.
     """
     if not check_update_ready(log):
         raise RuntimeError("Git 저장소가 아니어서 업데이트를 진행할 수 없습니다.")
+
+    owner_repo = _detect_github_owner_repo()
+    visibility = detect_repo_visibility(owner_repo) if owner_repo else None
+    if visibility is True:
+        log("[감지] 공개 저장소 — 인증 실패 시 tarball 로 자동 폴백합니다.")
+    elif visibility is False:
+        log("[감지] 비공개 저장소 — 인증이 필요합니다.")
+    else:
+        log("[감지] 저장소 공개 여부를 확인할 수 없어 비공개로 간주합니다.")
 
     remote, branch = _detect_remote_and_branch()
     git_steps = [
@@ -409,15 +489,27 @@ def update_project(log: LogFn, upgrade_deps: bool = True) -> None:
         _git_cmd(["pull", remote, branch, "--rebase"]),
     ]
 
+    git_failed_auth = False
     for cmd in git_steps:
         code, out = _run(cmd, log)
         if code != 0:
             if _is_auth_error(out):
+                if visibility is True:
+                    # 공개 저장소 — tarball 로 자동 복구
+                    git_failed_auth = True
+                    break
+                # 비공개 또는 미상 — GUI 에 인증 다이얼로그 띄우기
                 raise GitAuthError(
                     "git 원격 접속에 인증이 요구되었습니다. "
-                    "공개 저장소 tarball 로 업데이트할 수 있습니다."
+                    "비공개 저장소라면 GitHub CLI 또는 PAT 로 로그인하세요."
                 )
             raise RuntimeError(f"명령 실패: {' '.join(cmd)} (exit={code})")
+
+    if git_failed_auth:
+        log("")
+        log("[폴백] git 인증 실패 — 공개 tarball 로 자동 업데이트를 시도합니다.")
+        update_via_tarball(log, upgrade_deps=upgrade_deps, branch=branch)
+        return
 
     if upgrade_deps:
         code, _ = _run(

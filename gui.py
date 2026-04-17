@@ -21,7 +21,7 @@ import tempfile
 import threading
 from pathlib import Path
 from tkinter import filedialog, messagebox
-from typing import Optional
+from typing import Callable, Optional
 
 import customtkinter as ctk
 from dotenv import load_dotenv
@@ -58,11 +58,8 @@ from gurunote.stt_mlx import is_apple_silicon
 from gurunote.thumbnails import (
     cached_thumbnail_path, download_thumbnail_async, extract_youtube_id,
 )
-from gurunote.pdf_export import (
-    is_pdf_export_available,
-    markdown_to_pdf,
-    missing_packages_hint as pdf_missing_hint,
-)
+from gurunote.pdf_export import is_pdf_export_available, markdown_to_pdf
+from gurunote import pdf_installer
 from gurunote.obsidian import (
     is_obsidian_vault,
     resolve_subfolder as obsidian_subfolder,
@@ -1564,27 +1561,35 @@ class HistoryDialog(ctk.CTkToplevel):
             messagebox.showinfo("완료", f"저장됨:\n{path}")
 
     def _save_pdf(self, job_id: str, title: str) -> None:
-        """저장된 마크다운을 PDF 로 내보낸다 (Phase C)."""
+        """저장된 마크다운을 PDF 로 내보낸다 (Phase C).
+
+        패키지 미설치 시 설치 여부를 묻고, 승인하면 자동 설치 후 다시 저장
+        플로우를 이어간다.
+        """
         md = get_job_markdown(job_id)
         if not md:
             messagebox.showinfo("없음", "마크다운 파일이 없습니다.")
             return
-        if not is_pdf_export_available():
-            messagebox.showwarning("PDF 미지원", pdf_missing_hint())
-            return
-        from gurunote.exporter import sanitize_filename
-        path = filedialog.asksaveasfilename(
-            title="PDF 저장", defaultextension=".pdf",
-            filetypes=[("PDF", "*.pdf")],
-            initialfile=f"GuruNote_{sanitize_filename(title)}.pdf",
-        )
-        if not path:
-            return
-        try:
-            markdown_to_pdf(md, Path(path), title=title)
-            messagebox.showinfo("완료", f"PDF 저장됨:\n{path}")
-        except Exception as e:  # noqa: BLE001
-            messagebox.showerror("PDF 저장 실패", str(e))
+
+        def _do_save() -> None:
+            from gurunote.exporter import sanitize_filename
+            path = filedialog.asksaveasfilename(
+                title="PDF 저장", defaultextension=".pdf",
+                filetypes=[("PDF", "*.pdf")],
+                initialfile=f"GuruNote_{sanitize_filename(title)}.pdf",
+            )
+            if not path:
+                return
+            try:
+                markdown_to_pdf(md, Path(path), title=title)
+                messagebox.showinfo("완료", f"PDF 저장됨:\n{path}")
+            except Exception as e:  # noqa: BLE001
+                messagebox.showerror("PDF 저장 실패", str(e))
+
+        if is_pdf_export_available():
+            _do_save()
+        else:
+            _prompt_pdf_install(self, _do_save)
 
     def _save_obsidian(self, job_id: str, title: str) -> None:
         """저장된 마크다운을 Obsidian vault 로 전송 (Phase D)."""
@@ -1732,6 +1737,148 @@ class HistoryDialog(ctk.CTkToplevel):
         # 검색 캐시도 함께 클리어하고 다시 그리기
         search_clear_cache()
         self._reload_and_refresh()
+
+
+class PDFInstallDialog(ctk.CTkToplevel):
+    """PDF 출력 의존성 자동 설치 진행 다이얼로그.
+
+    `plan.can_run_automatically` 가 True 면 백그라운드 스레드에서 pip/brew
+    커맨드를 순차 실행하며 stdout 을 실시간 표시한다. False (수동 환경) 면
+    안내 텍스트만 보여주고 닫기 버튼으로 종료한다.
+
+    `on_success` 콜백은 설치 성공 시 메인 스레드에서 호출돼, 원래 사용자가
+    누른 "Save PDF" 액션을 이어 실행할 수 있게 한다.
+    """
+
+    def __init__(
+        self,
+        parent: ctk.CTk,
+        plan: "pdf_installer.InstallPlan",
+        on_success: Optional[Callable[[], None]] = None,
+    ) -> None:
+        super().__init__(parent)
+        self.title("PDF 출력 패키지 설치")
+        self.geometry("560x380")
+        self.resizable(False, False)
+        self.transient(parent)
+        self.grab_set()
+
+        self._plan = plan
+        self._on_success = on_success
+        self._msg_queue: queue.Queue[str] = queue.Queue()
+        self._done_queue: queue.Queue[dict] = queue.Queue()
+
+        ctk.CTkLabel(
+            self, text="PDF 출력 패키지 설치 중...",
+            font=ctk.CTkFont(size=15, weight="bold"),
+        ).pack(padx=20, pady=(20, 4), anchor="w")
+
+        summary = " → ".join(s.label for s in plan.steps) if plan.steps else "수동 설치 안내"
+        ctk.CTkLabel(
+            self, text=summary,
+            font=ctk.CTkFont(size=11), text_color=C_TEXT_DIM,
+            wraplength=520, justify="left",
+        ).pack(padx=20, pady=(0, 8), anchor="w")
+
+        self._log_text = ctk.CTkTextbox(
+            self, font=ctk.CTkFont(size=12), state="disabled", wrap="word",
+        )
+        self._log_text.pack(fill="both", expand=True, padx=16, pady=(0, 8))
+
+        self._close_btn = ctk.CTkButton(
+            self, text="닫기", width=100, height=32, state="disabled",
+            command=self.destroy,
+        )
+        self._close_btn.pack(padx=20, pady=(0, 16), anchor="e")
+
+        if plan.can_run_automatically and plan.steps:
+            self._thread = threading.Thread(target=self._run, daemon=True)
+            self._thread.start()
+            self._poll()
+        else:
+            # 수동 안내만 표시하고 즉시 닫기 활성화
+            self._log(plan.manual_instructions or "설치할 것이 없습니다.")
+            self._flush()
+            self._close_btn.configure(state="normal")
+
+    def _log(self, msg: str) -> None:
+        self._msg_queue.put(msg)
+
+    def _run(self) -> None:
+        try:
+            ok = pdf_installer.run_plan(self._plan, self._log)
+        except Exception as exc:  # noqa: BLE001
+            self._done_queue.put({"ok": False, "error": str(exc)})
+            return
+        self._done_queue.put({"ok": ok})
+
+    def _flush(self) -> None:
+        while True:
+            try:
+                msg = self._msg_queue.get_nowait()
+                self._log_text.configure(state="normal")
+                self._log_text.insert("end", msg + "\n")
+                self._log_text.see("end")
+                self._log_text.configure(state="disabled")
+            except queue.Empty:
+                break
+
+    def _poll(self) -> None:
+        self._flush()
+        try:
+            result = self._done_queue.get_nowait()
+        except queue.Empty:
+            self.after(100, self._poll)
+            return
+
+        self._close_btn.configure(state="normal")
+        if result.get("ok"):
+            messagebox.showinfo(
+                "설치 완료",
+                "PDF 출력 패키지가 준비되었습니다. 이어서 저장합니다.",
+                parent=self,
+            )
+            self.destroy()
+            if self._on_success is not None:
+                try:
+                    self._on_success()
+                except Exception as exc:  # noqa: BLE001
+                    messagebox.showerror("PDF 저장 실패", str(exc))
+        else:
+            messagebox.showerror(
+                "설치 실패",
+                result.get("error") or "설치 중 오류가 발생했습니다. 로그를 확인하세요.",
+                parent=self,
+            )
+
+
+def _prompt_pdf_install(parent: ctk.CTk, on_success: Callable[[], None]) -> None:
+    """PDF 의존성 미설치 시 설치 여부를 묻고, 승인하면 PDFInstallDialog 실행."""
+    plan = pdf_installer.plan_installation()
+    if plan.is_empty:
+        # 이미 설치됨 — 곧바로 실행
+        on_success()
+        return
+
+    if plan.can_run_automatically and plan.steps:
+        msg_lines = [
+            "PDF 출력에 필요한 패키지가 설치되어 있지 않습니다.",
+            "",
+            "지금 자동으로 설치하시겠습니까?",
+            "",
+            "수행할 단계:",
+        ]
+        msg_lines += [f"  {i+1}. {s.label}" for i, s in enumerate(plan.steps)]
+        if not messagebox.askyesno(
+            "PDF 출력 패키지 설치",
+            "\n".join(msg_lines),
+            parent=parent,
+        ):
+            return
+        PDFInstallDialog(parent, plan, on_success=on_success)
+    else:
+        # 수동 — 안내 다이얼로그만
+        PDFInstallDialog(parent, plan, on_success=None)
 
 
 class UpdateProgressDialog(ctk.CTkToplevel):
@@ -2196,7 +2343,7 @@ class GuruNoteApp(ctk.CTk):
             ).grid(row=2 + i, column=0, padx=10, pady=2, sticky="ew")
 
         ctk.CTkLabel(
-            sb, text="v0.7.0.3", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
+            sb, text="v0.7.0.4", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
         ).grid(row=7, column=0, padx=20, pady=(0, 16), sticky="sw")
 
     # ── 메인 영역 ────────────────────────────────────────────
@@ -2537,25 +2684,34 @@ class GuruNoteApp(ctk.CTk):
             messagebox.showerror("실패", str(e))
 
     def _on_save_pdf(self):
-        """결과 마크다운을 렌더링된 PDF 로 저장 (Phase C)."""
+        """결과 마크다운을 렌더링된 PDF 로 저장 (Phase C).
+
+        패키지 미설치 시 설치 여부를 묻고, 승인하면 자동 설치 후 저장 이어감.
+        """
         if not self._result:
             return
-        if not is_pdf_export_available():
-            messagebox.showwarning("PDF 미지원", pdf_missing_hint())
-            return
+
         title = self._result["audio"].video_title
-        name = f"GuruNote_{sanitize_filename(title)}.pdf"
-        path = filedialog.asksaveasfilename(
-            title="PDF 저장", defaultextension=".pdf",
-            filetypes=[("PDF", "*.pdf"), ("All", "*.*")], initialfile=name,
-        )
-        if not path:
-            return
-        try:
-            markdown_to_pdf(self._result["full_md"], Path(path), title=title)
-            messagebox.showinfo("완료", f"PDF 저장됨:\n{path}")
-        except Exception as e:  # noqa: BLE001
-            messagebox.showerror("PDF 저장 실패", str(e))
+        full_md = self._result["full_md"]
+
+        def _do_save() -> None:
+            name = f"GuruNote_{sanitize_filename(title)}.pdf"
+            path = filedialog.asksaveasfilename(
+                title="PDF 저장", defaultextension=".pdf",
+                filetypes=[("PDF", "*.pdf"), ("All", "*.*")], initialfile=name,
+            )
+            if not path:
+                return
+            try:
+                markdown_to_pdf(full_md, Path(path), title=title)
+                messagebox.showinfo("완료", f"PDF 저장됨:\n{path}")
+            except Exception as e:  # noqa: BLE001
+                messagebox.showerror("PDF 저장 실패", str(e))
+
+        if is_pdf_export_available():
+            _do_save()
+        else:
+            _prompt_pdf_install(self, _do_save)
 
     def _on_save_obsidian(self):
         """결과 마크다운을 Obsidian vault 로 직접 저장 (Phase D)."""

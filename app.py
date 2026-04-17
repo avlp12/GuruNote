@@ -33,7 +33,10 @@ from gurunote.audio import (
     is_probably_youtube_url,
 )
 from gurunote.exporter import autosave_result, build_gurunote_markdown, sanitize_filename
-from gurunote.llm import LLMConfig, summarize_translation, test_connection, translate_transcript
+from gurunote.llm import (
+    LLMConfig, extract_metadata, summarize_translation,
+    test_connection, translate_transcript,
+)
 from gurunote.settings import save_settings
 from gurunote.history import (
     JobLogger, get_job_log, get_job_markdown,
@@ -377,7 +380,25 @@ def run_pipeline(
                 video_context=video_ctx,
             )
             st.write("✅ 요약 완료")
-            set_progress(94, "Step 4 완료")
+            set_progress(91, "Step 4 완료")
+
+            # ----- Step 4.5: 메타데이터 자동 추출 (제목/분야/태그) -----
+            set_progress(93, "Step 4.5 분류 메타 추출 중")
+            st.write("🏷️ **Step 4.5.** 분류 메타데이터(제목/분야/태그) 추출…")
+            video_meta = {
+                "title": audio.video_title,
+                "uploader": audio.uploader,
+                "tags": getattr(audio, "tags", None) or [],
+            }
+            metadata = extract_metadata(
+                translated, video_meta=video_meta, config=llm_cfg, log=log,
+            )
+            if metadata:
+                st.write(
+                    f"✅ 분야: `{metadata.get('field', '')}` · "
+                    f"태그: {metadata.get('tags', [])}"
+                )
+            set_progress(95, "Step 4.5 완료")
 
             # ----- Step 5: 마크다운 조립 -----
             set_progress(96, "Step 5 마크다운 조립 중")
@@ -393,13 +414,16 @@ def run_pipeline(
                 upload_date=audio.upload_date,
                 chapters=audio.chapters,
                 subtitles_source=audio.subtitles_source,
+                organized_title=metadata.get("organized_title", ""),
+                field=metadata.get("field", ""),
+                tags=metadata.get("tags", []),
             )
             st.write("✅ 완료")
             set_progress(100, "모든 단계 완료")
 
             status.update(label="GuruNote 생성 완료 🎉", state="complete", expanded=False)
 
-        # 히스토리에 자동 저장
+        # 히스토리에 자동 저장 (분류 메타 포함)
         save_job(
             job_id,
             title=audio.video_title,
@@ -410,6 +434,11 @@ def run_pipeline(
             duration_sec=audio.duration_sec,
             num_speakers=len(transcript.speakers),
             full_md=full_md,
+            organized_title=metadata.get("organized_title", ""),
+            field=metadata.get("field", ""),
+            tags=metadata.get("tags", []),
+            uploader=audio.uploader or "",
+            upload_date=audio.upload_date or "",
         )
         log("💾 히스토리에 저장됨")
 

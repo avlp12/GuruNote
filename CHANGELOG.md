@@ -7,6 +7,38 @@
 
 ## [Unreleased]
 
+## [0.6.0.3] - 2026-04-17
+
+> "지식 증류기" 로드맵 **Phase A — 메타데이터 자동 추출**.
+> 이후 Phase B (History 일괄 뷰) / C (PDF 출력) / D (Obsidian) / E (Notion) /
+> F (검색) 의 기반.
+
+### Added
+- **분류용 메타데이터 자동 추출** (`gurunote/llm.py::extract_metadata`) —
+  파이프라인에 새 Step 4.5 단계 삽입. 번역된 한국어 스크립트 + YouTube 메타
+  (제목/업로더/태그) 를 LLM 으로 보내 다음 3개를 JSON 으로 추출:
+  - `organized_title` — 사람이 보기 쉬운 한국어 제목 (60자 이내, [화자]: [핵심 주제] 패턴)
+  - `field` — 분야 분류 (예: "AI/ML", "AI 하드웨어", "스타트업", "철학")
+  - `tags` — 정확히 5개 키워드 (YouTube 원본 태그 우선 활용 + 본문 보완)
+  실패 시 빈 dict 반환하여 파이프라인 진행 방해 안 함. JSON 파싱은 코드블록
+  래핑 / 앞뒤 텍스트 모두 허용.
+- **`gurunote/history.py::save_job` 스키마 확장** — `organized_title`, `field`,
+  `tags`, `uploader`, `upload_date` 5개 필드 추가. `~/.gurunote/history.json`
+  인덱스에 누적되어 향후 Phase B (필터/검색) 에서 활용.
+- **Obsidian / Notion 호환 YAML frontmatter** (`gurunote/exporter.py`) —
+  결과 마크다운 최상단에 frontmatter 자동 삽입:
+  - `title`, `original_title`, `uploader`, `upload_date`, `source_url`
+  - `field`, `tags` (Obsidian 태그 시스템 호환 — 공백→`_`, `#` prefix 제거)
+  - `stt_engine`, `duration_sec`, `num_speakers`, `created`
+  Obsidian vault 또는 Notion import 에 그대로 사용 가능.
+- **마크다운 헤더 강화** (`gurunote/exporter.py`) — 제목을 `organized_title`
+  로 표시, 원본 제목과 다르면 `원본 제목:` 라인 추가, `분야:` / `태그:` (인라인
+  `#tag` 표시) 항목 표시.
+
+### Changed
+- **파이프라인 진행률 재배분** (`gui.py`, `app.py`) — Step 4 88% → Step 4.5
+  92% → Step 5 100% 로 새 단계 반영.
+
 ## [0.6.0.2] - 2026-04-17
 
 ### Fixed
@@ -326,7 +358,8 @@
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.6.0.2...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.6.0.3...HEAD
+[0.6.0.3]: https://github.com/avlp12/GuruNote/compare/v0.6.0.2...v0.6.0.3
 [0.6.0.2]: https://github.com/avlp12/GuruNote/compare/v0.6.0.1...v0.6.0.2
 [0.6.0.1]: https://github.com/avlp12/GuruNote/compare/v0.6.0...v0.6.0.1
 [0.6.0]: https://github.com/avlp12/GuruNote/compare/v0.5.0...v0.6.0

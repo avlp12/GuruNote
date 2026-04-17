@@ -519,6 +519,141 @@ def summarize_translation(
     ).strip()
 
 
+# =============================================================================
+# 메타데이터 자동 추출 (Phase A — 지식 증류기)
+# =============================================================================
+METADATA_SYSTEM_PROMPT = """당신은 IT/AI 컨텐츠 큐레이터입니다.
+주어진 한국어로 번역된 인터뷰/팟캐스트 스크립트와 영상 메타데이터를 보고,
+지식 증류 노트를 분류·검색하기 위한 메타데이터를 JSON 형식으로 추출합니다.
+
+추출 항목:
+1. organized_title: 사람이 보기 쉬운 한국어 제목 (60자 이내)
+   - 원본 영상 제목이 충분히 명확하면 그대로 사용 가능
+   - 영어/너무 김/광고문구 포함되어 있으면 핵심 주제로 새로 작성
+   - 형식 예: "젠슨 황: NVIDIA - 4조 달러 기업과 AI 혁명" 처럼 [화자]: [핵심주제]
+2. field: 분야 (한국어, 1~3단어)
+   - 예: "AI/ML", "AI 하드웨어", "스타트업", "철학", "양자 컴퓨팅", "정치"
+3. tags: 정확히 5개의 짧은 키워드 (한글 또는 영문 약어)
+   - YouTube 의 원본 태그가 주어지면 적합한 것을 우선 활용
+   - 부족하면 본문 내용에서 핵심 주제어 추가
+   - 예: ["NVIDIA", "스케일링 법칙", "GPU", "젠슨 황", "AGI"]
+
+오로지 다음 JSON 만 출력하세요. 다른 설명/마크다운 없이 순수 JSON:
+{
+  "organized_title": "...",
+  "field": "...",
+  "tags": ["...", "...", "...", "...", "..."]
+}
+"""
+
+
+def extract_metadata(
+    translated_text: str,
+    video_meta: Optional[dict] = None,
+    config: Optional[LLMConfig] = None,
+    log: Optional[Callable[[str], None]] = None,
+) -> dict:
+    """
+    번역된 스크립트 + 영상 메타데이터에서 분류용 메타데이터를 추출.
+
+    Args:
+        translated_text: `translate_transcript` 의 결과 (전체 또는 앞부분 발췌)
+        video_meta: yt-dlp 의 영상 메타 (title, uploader, tags, description 등)
+        config: LLMConfig
+        log: 진행 로그 콜백
+
+    Returns:
+        {
+            "organized_title": str,
+            "field": str,
+            "tags": list[str] (5개),
+        }
+        실패 시 빈 dict 반환 (파이프라인 진행 방해 안 함).
+    """
+    log = log or (lambda _msg: None)
+    config = config or LLMConfig.from_env()
+    video_meta = video_meta or {}
+
+    # LLM 입력 분량 제한 — 앞부분 + 뒷부분 발췌로 토큰 절감
+    excerpt = _excerpt_for_metadata(translated_text)
+
+    youtube_title = video_meta.get("title", "") or ""
+    uploader = video_meta.get("uploader", "") or ""
+    youtube_tags = video_meta.get("tags") or []
+    youtube_tag_block = (
+        f"\n원본 YouTube 태그: {', '.join(youtube_tags[:15])}" if youtube_tags else ""
+    )
+
+    user = (
+        f"### 영상 메타\n"
+        f"- 제목: {youtube_title}\n"
+        f"- 업로더: {uploader}{youtube_tag_block}\n\n"
+        f"### 한국어 번역 발췌\n{excerpt}\n"
+    )
+
+    log("🏷️  메타데이터(제목/분야/태그) 추출 중…")
+    try:
+        raw = _call_llm(
+            config,
+            system=METADATA_SYSTEM_PROMPT,
+            user=user,
+            max_tokens=512,
+        )
+        return _parse_metadata_json(raw)
+    except Exception as exc:  # noqa: BLE001
+        log(f"  메타데이터 추출 실패 (무시하고 계속): {exc}")
+        return {}
+
+
+def _excerpt_for_metadata(text: str, max_chars: int = 6000) -> str:
+    """메타 추출용 발췌 — 앞 70% / 뒤 30% 비율로 자른다."""
+    if len(text) <= max_chars:
+        return text
+    head = int(max_chars * 0.7)
+    tail = max_chars - head
+    return text[:head] + "\n\n[…중간 생략…]\n\n" + text[-tail:]
+
+
+def _parse_metadata_json(raw: str) -> dict:
+    """LLM 응답에서 JSON 객체를 추출 (마크다운 코드블록 래핑 허용)."""
+    import json
+    import re
+
+    if not raw or not raw.strip():
+        return {}
+
+    # ```json ... ``` 또는 ``` ... ``` 코드블록 제거
+    fence = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", raw, re.DOTALL)
+    payload = fence.group(1) if fence else raw
+
+    # JSON 객체 첫 등장 부분만 추출 (LLM 이 앞뒤로 텍스트 붙이는 경우)
+    obj_match = re.search(r"\{.*\}", payload, re.DOTALL)
+    if not obj_match:
+        return {}
+
+    try:
+        data = json.loads(obj_match.group(0))
+    except json.JSONDecodeError:
+        return {}
+
+    # 스키마 검증 + 정규화
+    title = (data.get("organized_title") or "").strip()
+    field = (data.get("field") or "").strip()
+    tags_raw = data.get("tags") or []
+    if not isinstance(tags_raw, list):
+        tags_raw = []
+    tags = [str(t).strip() for t in tags_raw if str(t).strip()][:5]
+
+    if not (title or field or tags):
+        return {}
+
+    return {
+        "organized_title": title,
+        "field": field,
+        "tags": tags,
+    }
+
+
 def test_connection(config: Optional[LLMConfig] = None) -> str:
     """현재 설정으로 LLM API 연결을 테스트한다."""
     cfg = config or LLMConfig.from_env()

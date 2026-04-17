@@ -435,7 +435,7 @@ GuruNote/
 주요 변경 사항은 [CHANGELOG.md](./CHANGELOG.md) 에 [Keep a Changelog](https://keepachangelog.com/)
 형식으로 기록되며 버전은 [Semantic Versioning](https://semver.org/) 을 따릅니다.
 
-현재 버전: **v0.7.0.3** — 유튜브 썸네일 다운로드 안정화 (해상도 폴백 체인 + 실패 UX 수정).
+현재 버전: **v0.7.0.4** — PDF 출력 패키지 기본 포함 + 미설치 시 자동 설치 다이얼로그.
 
 ---
 

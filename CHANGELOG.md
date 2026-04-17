@@ -7,6 +7,29 @@
 
 ## [Unreleased]
 
+## [0.6.0.6] - 2026-04-17
+
+> "지식 증류기" 로드맵 **Phase B — History 일괄 뷰**.
+> Phase A 에서 저장한 분류 메타데이터(제목/분야/태그) 를 실제 UI 에서 활용.
+
+### Added
+- **History 카드 그리드 뷰** (`gui.py::HistoryDialog`) — 기존 단순 세로 리스트
+  를 3열 카드 그리드로 재구성. 각 카드는 YouTube 썸네일 (mqdefault 320x180) +
+  정리된 제목 + 업로더/게시일 + 길이/엔진/화자수 + 분야 + 태그 + 상태/에러를
+  한눈에 보여준다. 카드 하단에 Save .md / Log / Del 액션 버튼.
+- **필터 바** — 검색창 (제목/업로더/태그 실시간 fuzzy), 분야 드롭다운
+  (히스토리의 실제 분야 목록에서 자동 생성), 정렬 드롭다운 (최신순 / 오래된순 /
+  길이 긴 순 / 길이 짧은 순 / 제목 A-Z), 필터 초기화 버튼. 필터 상태는
+  다이얼로그가 살아있는 동안 유지.
+- **YouTube 썸네일 캐시** (`gurunote/thumbnails.py` 신규) — 표준 YouTube URL
+  패턴 5종 (watch?v= / youtu.be/ / embed/ / v/ / shorts/) 에서 11자리 비디오
+  ID 추출. `~/.gurunote/thumbnails/<id>.jpg` 에 1회만 다운로드 후 캐시.
+  `download_thumbnail_async()` 로 첫 그리드 렌더링을 차단하지 않음 —
+  플레이스홀더 (⏳) 표시 후 완료 시 메인 스레드 `after()` 폴링으로 교체.
+  YouTube 가 "영상 없음" placeholder 를 반환하는 경우 (&lt; 2KB) 를 실패로 간주.
+- **썸네일 폴백 아이콘** — 로컬 파일 소스는 🎵, URL 없음 / YouTube 아님은 🎙️,
+  다운로드 실패는 🎬 로 시각적으로 구분.
+
 ## [0.6.0.5] - 2026-04-17
 
 ### Added
@@ -403,7 +426,8 @@
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.6.0.5...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.6.0.6...HEAD
+[0.6.0.6]: https://github.com/avlp12/GuruNote/compare/v0.6.0.5...v0.6.0.6
 [0.6.0.5]: https://github.com/avlp12/GuruNote/compare/v0.6.0.4...v0.6.0.5
 [0.6.0.4]: https://github.com/avlp12/GuruNote/compare/v0.6.0.3...v0.6.0.4
 [0.6.0.3]: https://github.com/avlp12/GuruNote/compare/v0.6.0.2...v0.6.0.3

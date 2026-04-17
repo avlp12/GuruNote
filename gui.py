@@ -90,7 +90,11 @@ from gurunote.ui_state import (
     get_nav_expand, load_ui_state, save_ui_state, set_nav_expand,
 )
 from gurunote.types import _format_ts
-from gurunote.updater import check_for_update, update_project
+from gurunote.updater import (
+    GitAuthError,
+    check_for_update,
+    update_project,
+)
 from gurunote.app_icon import get_app_icon_path
 
 # 환경변수 로드
@@ -2195,6 +2199,206 @@ class ObsidianSaveDialog(ctk.CTkToplevel):
             )
 
 
+class GitAuthErrorDialog(ctk.CTkToplevel):
+    """git pull 인증 실패 시 사용자에게 해결 옵션을 제시하는 다이얼로그.
+
+    시나리오:
+      - 사용자가 GitHub 에 OAuth (구글 로그인) 로만 가입해 password 가 없음.
+      - 저장소가 **비공개** 면 tarball 도 못 받아서 반드시 인증이 필요.
+
+    제시 옵션 (비공개 저장소 기준 우선순위):
+      1. GitHub CLI `gh auth login` — 브라우저 OAuth 플로우, 로그인 후
+         git 이 자동으로 credential helper 를 통해 토큰 사용.
+         gh 미설치 시 설치 안내.
+      2. Personal Access Token — github.com/settings/tokens/new 로 이동.
+      3. 공개 저장소라면 tarball 폴백 — 버튼으로 제공.
+      4. 닫기.
+    """
+
+    def __init__(
+        self,
+        parent: ctk.CTk,
+        on_retry: Optional[Callable[[], None]] = None,
+    ) -> None:
+        super().__init__(parent)
+        _apply_app_icon(self)
+        self.title("GitHub 인증 필요")
+        self.geometry("560x400")
+        self.resizable(False, False)
+        self.transient(parent)
+        self.grab_set()
+        self._on_retry = on_retry
+        self._build_ui()
+        self.after(80, self.focus_force)
+
+    def _build_ui(self) -> None:
+        ctk.CTkLabel(
+            self, text="GitHub 인증이 필요합니다",
+            font=ctk.CTkFont(size=16, weight="bold"),
+        ).pack(padx=22, pady=(22, 4), anchor="w")
+
+        ctk.CTkLabel(
+            self,
+            text=(
+                "저장소가 비공개이거나 공개 여부를 확인할 수 없어 인증이 필요합니다.\n"
+                "구글 OAuth 로만 로그인한 계정은 password 가 없으므로 "
+                "아래 방법 중 하나로 토큰을 발급받으세요.\n"
+                "(저장소를 공개로 전환하면 인증 없이 자동 업데이트가 동작합니다.)"
+            ),
+            font=ctk.CTkFont(size=11), text_color=C_TEXT_DIM,
+            wraplength=500, justify="left",
+        ).pack(padx=22, pady=(0, 14), anchor="w")
+
+        # --- 옵션 1: GitHub CLI (권장) ---
+        opt1 = ctk.CTkFrame(self, fg_color=C_SURFACE, corner_radius=10)
+        opt1.pack(fill="x", padx=22, pady=(0, 8))
+        ctk.CTkLabel(
+            opt1, text="방법 1  ·  GitHub CLI (권장)",
+            font=ctk.CTkFont(size=13, weight="bold"),
+        ).pack(padx=14, pady=(10, 2), anchor="w")
+        ctk.CTkLabel(
+            opt1,
+            text="brew 로 gh 를 설치한 뒤 브라우저 OAuth 로 로그인합니다. 한 번 로그인하면 git 이 자동으로 토큰을 사용합니다.",
+            font=ctk.CTkFont(size=11), text_color=C_TEXT_DIM,
+            wraplength=480, justify="left",
+        ).pack(padx=14, pady=(0, 6), anchor="w")
+        ctk.CTkButton(
+            opt1, text="GitHub CLI 로 로그인하기",
+            width=220, height=32,
+            fg_color=C_PRIMARY, hover_color=C_PRIMARY_HO,
+            command=self._run_gh_auth,
+        ).pack(padx=14, pady=(0, 12), anchor="w")
+
+        # --- 옵션 2: PAT ---
+        opt2 = ctk.CTkFrame(self, fg_color=C_SURFACE, corner_radius=10)
+        opt2.pack(fill="x", padx=22, pady=(0, 8))
+        ctk.CTkLabel(
+            opt2, text="방법 2  ·  Personal Access Token",
+            font=ctk.CTkFont(size=13, weight="bold"),
+        ).pack(padx=14, pady=(10, 2), anchor="w")
+        ctk.CTkLabel(
+            opt2,
+            text="github.com 설정에서 repo 권한 토큰을 만들고, git prompt 의 password 자리에 붙여 넣으면 됩니다.",
+            font=ctk.CTkFont(size=11), text_color=C_TEXT_DIM,
+            wraplength=480, justify="left",
+        ).pack(padx=14, pady=(0, 6), anchor="w")
+        ctk.CTkButton(
+            opt2, text="토큰 생성 페이지 열기",
+            width=220, height=32,
+            fg_color="gray35", hover_color="gray45",
+            command=self._open_token_page,
+        ).pack(padx=14, pady=(0, 12), anchor="w")
+
+        # --- 하단 버튼 ---
+        btn_bar = ctk.CTkFrame(self, fg_color="transparent")
+        btn_bar.pack(fill="x", padx=22, pady=(6, 16))
+        ctk.CTkButton(
+            btn_bar, text="닫기", width=100, height=32,
+            fg_color="gray40", command=self.destroy,
+        ).pack(side="right")
+        if self._on_retry is not None:
+            ctk.CTkButton(
+                btn_bar, text="다시 시도", width=120, height=32,
+                fg_color=C_PRIMARY, hover_color=C_PRIMARY_HO,
+                command=self._retry,
+            ).pack(side="right", padx=(0, 8))
+
+    # -------------------------------------------------------------------------
+    def _retry(self) -> None:
+        cb = self._on_retry
+        self.destroy()
+        if cb is not None:
+            try:
+                cb()
+            except Exception as exc:  # noqa: BLE001
+                messagebox.showerror("업데이트 실패", str(exc))
+
+    def _open_token_page(self) -> None:
+        import webbrowser
+        webbrowser.open(
+            "https://github.com/settings/tokens/new?"
+            "scopes=repo&description=GuruNote%20updater",
+        )
+
+    def _run_gh_auth(self) -> None:
+        """GitHub CLI 로그인 — gh 설치 체크 → 미설치면 안내, 설치됨이면 실행."""
+        import shutil
+        import subprocess as _sp
+
+        gh_path = shutil.which("gh")
+        if gh_path is None:
+            if sys.platform == "darwin":
+                install_cmd = "brew install gh"
+            elif sys.platform.startswith("win"):
+                install_cmd = "winget install GitHub.cli"
+            else:
+                install_cmd = "sudo apt install gh  (또는 https://cli.github.com/)"
+            messagebox.showinfo(
+                "GitHub CLI 미설치",
+                (
+                    "GitHub CLI (gh) 가 설치되어 있지 않습니다.\n\n"
+                    "터미널에서 아래 명령으로 설치한 뒤 이 버튼을 다시 누르세요.\n\n"
+                    f"    {install_cmd}"
+                ),
+                parent=self,
+            )
+            return
+
+        # gh auth login 은 device code 입력을 요구하는 대화형 커맨드.
+        # macOS: Terminal.app 에 새 창을 띄워서 실행 → 사용자가 브라우저
+        # OAuth 완료 후 Terminal 에서 엔터를 누르면 끝. 끝나면 "다시 시도" 를
+        # 눌러 업데이트 재실행 하면 됨.
+        try:
+            if sys.platform == "darwin":
+                # AppleScript 로 새 Terminal 창에서 gh auth login 실행
+                script = (
+                    "tell application \"Terminal\"\n"
+                    "  activate\n"
+                    f"  do script \"{gh_path} auth login --hostname github.com "
+                    "--git-protocol https --web && "
+                    "echo '--- 로그인 완료. 이 창을 닫고 GuruNote 에서 \"다시 시도\" 를 누르세요. ---'\"\n"
+                    "end tell"
+                )
+                _sp.run(["osascript", "-e", script], check=False)
+            elif sys.platform.startswith("win"):
+                # cmd /K 로 새 콘솔 창에서 실행
+                _sp.Popen(
+                    ["cmd", "/K", gh_path, "auth", "login",
+                     "--hostname", "github.com", "--git-protocol", "https", "--web"],
+                    creationflags=0x00000010,  # CREATE_NEW_CONSOLE
+                )
+            else:
+                # Linux: xterm 이나 gnome-terminal 시도
+                for term in ("x-terminal-emulator", "gnome-terminal", "xterm"):
+                    if shutil.which(term):
+                        _sp.Popen([
+                            term, "-e", gh_path, "auth", "login",
+                            "--hostname", "github.com",
+                            "--git-protocol", "https", "--web",
+                        ])
+                        break
+                else:
+                    messagebox.showinfo(
+                        "터미널 필요",
+                        f"터미널에서 직접 실행해주세요:\n\n  {gh_path} auth login --web",
+                        parent=self,
+                    )
+                    return
+            messagebox.showinfo(
+                "GitHub 로그인 시작",
+                (
+                    "터미널 창에서 GitHub CLI 로그인을 완료하세요.\n"
+                    "브라우저가 열리면 device code 를 입력하고 승인하면 됩니다.\n\n"
+                    "완료 후 이 다이얼로그에서 '다시 시도' 를 누르세요."
+                ),
+                parent=self,
+            )
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror(
+                "GitHub CLI 실행 실패", str(exc), parent=self,
+            )
+
+
 class UpdateProgressDialog(ctk.CTkToplevel):
     """업데이트 진행 상황을 실시간 표시하는 다이얼로그."""
 
@@ -2235,6 +2439,9 @@ class UpdateProgressDialog(ctk.CTkToplevel):
         try:
             update_project(self._log, upgrade_deps=True)
             self._done_queue.put({"ok": True})
+        except GitAuthError as exc:
+            # 인증 실패 — 메인 스레드가 GitAuthErrorDialog 를 띄울 수 있게 표시.
+            self._done_queue.put({"ok": False, "auth_error": True, "error": str(exc)})
         except Exception as exc:  # noqa: BLE001
             self._done_queue.put({"ok": False, "error": str(exc)})
 
@@ -2257,10 +2464,20 @@ class UpdateProgressDialog(ctk.CTkToplevel):
             if result.get("ok"):
                 self._status_label.configure(text="업데이트 완료!")
                 messagebox.showinfo("완료", "업데이트 완료. 앱을 재시작하세요.")
+                self.destroy()
+            elif result.get("auth_error"):
+                # GitHub 인증 실패 — 전용 가이드 다이얼로그 (GitHub CLI / PAT)
+                self._status_label.configure(text="GitHub 인증 필요")
+                parent = self.master
+                self.destroy()
+                GitAuthErrorDialog(
+                    parent,
+                    on_retry=lambda: UpdateProgressDialog(parent),
+                )
             else:
                 self._status_label.configure(text="업데이트 실패")
                 messagebox.showerror("실패", result.get("error", "알 수 없는 오류"))
-            self.destroy()
+                self.destroy()
             return
         except queue.Empty:
             pass
@@ -2611,15 +2828,26 @@ class SettingsDialog(ctk.CTkToplevel):
     def _on_update(self) -> None:
         try:
             info = check_for_update()
-            ok = messagebox.askyesno(
-                "업데이트 확인",
-                f"{info['message']}\n\n업데이트를 실행할까요? (git pull + pip upgrade)",
-            )
-            if not ok:
-                return
-            logs: list[str] = []
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror("업데이트 확인 실패", str(exc))
+            return
+
+        ok = messagebox.askyesno(
+            "업데이트 확인",
+            f"{info['message']}\n\n업데이트를 실행할까요? (git pull + pip upgrade)",
+        )
+        if not ok:
+            return
+
+        logs: list[str] = []
+        try:
             update_project(logs.append, upgrade_deps=True)
-            messagebox.showinfo("업데이트 완료", "업데이트가 완료되었습니다.\n앱을 재시작해주세요.")
+            messagebox.showinfo(
+                "업데이트 완료", "업데이트가 완료되었습니다.\n앱을 재시작해주세요.",
+            )
+        except GitAuthError:
+            # 비공개 저장소 or 크레덴셜 꼬임 — 가이드 다이얼로그
+            GitAuthErrorDialog(self, on_retry=self._on_update)
         except Exception as exc:  # noqa: BLE001
             messagebox.showerror("업데이트 실패", str(exc))
 
@@ -2728,7 +2956,7 @@ class GuruNoteApp(ctk.CTk):
             ).grid(row=2 + i, column=0, padx=10, pady=2, sticky="ew")
 
         ctk.CTkLabel(
-            sb, text="v0.7.2.0", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
+            sb, text="v0.7.2.1", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
         ).grid(row=7, column=0, padx=20, pady=(0, 16), sticky="sw")
 
     # ── 메인 영역 ────────────────────────────────────────────

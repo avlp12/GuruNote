@@ -7,6 +7,26 @@
 
 ## [Unreleased]
 
+## [0.6.0.16] - 2026-04-17
+
+### Added
+- **거시적 통계 대시보드** (`gurunote/stats.py` 신규,
+  `gui.py::DashboardDialog`, 사이드바 **Dashboard** 네비 버튼) — 저장된
+  노트 전체에 대해 한눈에 보이는 지표. matplotlib / chart lib 의존성
+  없이 Unicode block (█) 바 차트로 CTkTextbox 에 직접 렌더링.
+  - **전체 통계**: 총 작업 수 (완료/실패 분리), 총·평균·최장 녹취 시간,
+    누적 화자 수, 최초/최근 작업 날짜
+  - **분야별 분포** (상위 10, 퍼센트 표시)
+  - **상위 업로더** (상위 10)
+  - **상위 태그** (상위 20)
+  - **월별 작업 추이** (시간 순 정렬, 라이브러리 성장 시각화)
+  - Refresh 버튼으로 재집계; 비어 있으면 "아직 저장된 작업이 없습니다" 안내
+  - 모든 지표는 `~/.gurunote/history.json` 메타만 읽음 — Phase A 메타
+    (organized_title/field/tags/uploader/upload_date/num_speakers) 가
+    없는 과거 잡은 해당 항목에서만 집계 제외되고 전체 카운트엔 포함.
+- **사이드바 네비 4개로 확장** — Settings / **Dashboard** / History /
+  Update. grid row 재배치 (spacer row 6, version row 7).
+
 ## [0.6.0.15] - 2026-04-17
 
 ### Added
@@ -654,7 +674,8 @@ bash run_desktop.sh
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.6.0.15...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.6.0.16...HEAD
+[0.6.0.16]: https://github.com/avlp12/GuruNote/compare/v0.6.0.15...v0.6.0.16
 [0.6.0.15]: https://github.com/avlp12/GuruNote/compare/v0.6.0.14...v0.6.0.15
 [0.6.0.14]: https://github.com/avlp12/GuruNote/compare/v0.6.0.13...v0.6.0.14
 [0.6.0.13]: https://github.com/avlp12/GuruNote/compare/v0.6.0.12...v0.6.0.13

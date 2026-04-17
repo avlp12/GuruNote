@@ -189,6 +189,77 @@ def get_job_log(job_id: str) -> Optional[str]:
     return None
 
 
+def rebuild_index() -> dict:
+    """
+    `~/.gurunote/jobs/` 전체를 스캔해 `history.json` 인덱스를 재생성.
+
+    용도:
+      - `history.json` 이 삭제됐거나 손상됐을 때 복구
+      - 다른 머신에서 `~/.gurunote/jobs/` 폴더만 복사해 왔을 때 마이그레이션
+      - 일부 metadata.json 이 손상됐을 때 나머지를 살려서 재인덱싱
+
+    동작:
+      - 각 `jobs/<id>/metadata.json` 을 읽어 인덱스 항목으로 변환
+      - `has_markdown` 은 실제 `result.md` 존재 여부로 재계산 (stale 메타
+        방어)
+      - 손상된 json 은 건너뛰고 `errors` 에 job_id 누적
+      - 결과 인덱스를 `created_at` 최신순으로 정렬해 원자적 write
+
+    Returns:
+        {
+            "total_scanned": int,     # 잡 폴더 총 개수
+            "indexed": int,           # 인덱스에 포함된 개수
+            "errors": list[str],      # metadata.json 파싱 실패한 job_id 리스트
+            "missing_md": list[str],  # metadata 엔 has_markdown=True 였지만
+                                      # result.md 파일이 실제로 없는 job_id
+        }
+    """
+    JOBS_DIR.mkdir(parents=True, exist_ok=True)
+
+    entries: list[dict] = []
+    errors: list[str] = []
+    missing_md: list[str] = []
+    total = 0
+
+    for job_dir in JOBS_DIR.iterdir():
+        if not job_dir.is_dir():
+            continue
+        total += 1
+        meta_path = job_dir / "metadata.json"
+        if not meta_path.exists():
+            errors.append(job_dir.name + " (metadata.json 없음)")
+            continue
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"{job_dir.name} ({exc})")
+            continue
+
+        # has_markdown 재계산 — 메타가 오래돼 파일이 사라진 경우 방어
+        md_path = job_dir / "result.md"
+        has_md = md_path.exists()
+        if meta.get("has_markdown") and not has_md:
+            missing_md.append(job_dir.name)
+        meta["has_markdown"] = has_md
+
+        # job_id 필드가 비어 있으면 폴더명으로 채움 (이전 포맷 복구)
+        if not meta.get("job_id"):
+            meta["job_id"] = job_dir.name
+
+        entries.append(meta)
+
+    # 최신순 정렬
+    entries.sort(key=lambda m: m.get("created_at") or "", reverse=True)
+    _write_index_atomic(entries)
+
+    return {
+        "total_scanned": total,
+        "indexed": len(entries),
+        "errors": errors,
+        "missing_md": missing_md,
+    }
+
+
 def delete_job(job_id: str) -> None:
     """히스토리에서 작업 삭제 (파일 + 인덱스). 원자적 write 사용."""
     job_dir = JOBS_DIR / job_id

@@ -435,7 +435,7 @@ GuruNote/
 주요 변경 사항은 [CHANGELOG.md](./CHANGELOG.md) 에 [Keep a Changelog](https://keepachangelog.com/)
 형식으로 기록되며 버전은 [Semantic Versioning](https://semver.org/) 을 따릅니다.
 
-현재 버전: **v0.6.0.13** — 이월 3건 정리 (YouTube /live/ URL 지원, history.json 원자적 write, thumb queue TclError 방어).
+현재 버전: **v0.6.0.14** — history.json 인덱스 재생성 (Rebuild 버튼): 손상/누락 복구 + 폴더 복사 마이그레이션.
 
 ---
 

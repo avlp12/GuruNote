@@ -7,6 +7,24 @@
 
 ## [Unreleased]
 
+## [0.6.0.14] - 2026-04-17
+
+### Added
+- **히스토리 인덱스 재생성** (`gurunote/history.py::rebuild_index`,
+  `gui.py` HistoryDialog "Rebuild" 버튼) — `~/.gurunote/jobs/` 폴더 전체를
+  스캔해 `history.json` 을 재작성한다. 용도:
+  - `history.json` 삭제/손상 시 복구 (각 `jobs/<id>/metadata.json` 에서 재수집)
+  - 다른 머신에서 `jobs/` 폴더만 복사해 왔을 때 히스토리 마이그레이션
+  - metadata 엔 `has_markdown=true` 인데 실제 `result.md` 가 사라진 stale
+    엔트리 자동 교정
+
+  안전 보장:
+  - 잡 파일들 자체는 절대 건드리지 않음 (read-only 스캔)
+  - 손상된 JSON / 누락된 metadata.json 은 건너뛰고 결과 리포트에 기록
+  - 결과: `{total_scanned, indexed, errors, missing_md}` 카운트 다이얼로그
+  - atomic rename (v0.6.0.13) 으로 write 도중 crash 방지
+  - 검색 본문 캐시도 함께 클리어해 stale 결과 방지
+
 ## [0.6.0.13] - 2026-04-17
 
 ### Fixed
@@ -612,7 +630,8 @@ bash run_desktop.sh
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.6.0.13...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.6.0.14...HEAD
+[0.6.0.14]: https://github.com/avlp12/GuruNote/compare/v0.6.0.13...v0.6.0.14
 [0.6.0.13]: https://github.com/avlp12/GuruNote/compare/v0.6.0.12...v0.6.0.13
 [0.6.0.12]: https://github.com/avlp12/GuruNote/compare/v0.6.0.11...v0.6.0.12
 [0.6.0.11]: https://github.com/avlp12/GuruNote/compare/v0.6.0.10...v0.6.0.11

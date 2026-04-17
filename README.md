@@ -395,7 +395,7 @@ GuruNote/
 주요 변경 사항은 [CHANGELOG.md](./CHANGELOG.md) 에 [Keep a Changelog](https://keepachangelog.com/)
 형식으로 기록되며 버전은 [Semantic Versioning](https://semver.org/) 을 따릅니다.
 
-현재 버전: **v0.6.0.7** — Phase C: 깔끔한 PDF 출력 (markdown + weasyprint, 한국어 친화 타이포그래피).
+현재 버전: **v0.6.0.8** — Phase D: Obsidian vault 직접 저장 (경로 지정 + 자동 하위 폴더 생성 + 파일명 충돌 시 timestamp suffix).
 
 ---
 

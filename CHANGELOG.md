@@ -7,6 +7,22 @@
 
 ## [Unreleased]
 
+## [0.7.0.0] - 2026-04-17
+
+### Added
+- **히스토리 우측 트리 내비게이션 패널** (`gurunote/nav_tree.py` 신규,
+  `gui.py` HistoryDialog) — Phase 1 "지식 증류기 UI" 개선안 Option A.
+  3-facet 고정 분류: **주제(분야)** / **인물(업로더)** / **제목(첫글자 버킷)**.
+  - 노드 클릭 → 해당 facet 의 `job_ids` 집합을 `_nav_filter` 로 설정 →
+    기존 검색/분야/정렬 필터와 AND 결합 (직교 필터링)
+  - 동일 노드 재클릭 / `× 필터 해제` chip / `필터 초기화` 버튼 → 해제
+  - Facet 헤더 ▾/▸ 토글 (기본 전부 펼침)
+  - 제목 버킷: A-G / H-N / O-T / U-Z / 가-마 / 바-아 / 자-하 / 기타
+    (한영 혼합 대응)
+  - 빈 인덱스 안내: "노트를 만들면 자동 분류됩니다"
+  - HistoryDialog 폭 960 → 1240px 확장 (트리 280px 추가)
+  - 노트 삭제 시 nav 필터의 job_ids 자동 정합 (stale 필터 방지)
+
 ## [0.6.0.19] - 2026-04-17
 
 ### Added
@@ -745,7 +761,8 @@ bash run_desktop.sh
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.6.0.19...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.7.0.0...HEAD
+[0.7.0.0]: https://github.com/avlp12/GuruNote/compare/v0.6.0.19...v0.7.0.0
 [0.6.0.19]: https://github.com/avlp12/GuruNote/compare/v0.6.0.18...v0.6.0.19
 [0.6.0.18]: https://github.com/avlp12/GuruNote/compare/v0.6.0.17...v0.6.0.18
 [0.6.0.17]: https://github.com/avlp12/GuruNote/compare/v0.6.0.16...v0.6.0.17

@@ -12,6 +12,7 @@ GuruNote 작업 히스토리 — 완료/실패 작업을 로컬에 보존.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
@@ -141,10 +142,25 @@ def _update_index(job_id: str, meta: dict) -> None:
     # 같은 job_id 가 있으면 덮어쓰기
     index = [j for j in index if j.get("job_id") != job_id]
     index.insert(0, meta)  # 최신이 맨 위
+    _write_index_atomic(index)
+
+
+def _write_index_atomic(index: List[dict]) -> None:
+    """
+    `history.json` 을 원자적으로 쓴다.
+
+    HistoryDialog 가 `load_index()` 를 호출하는 타이밍과 `save_job()` 의 write
+    가 겹치면 부분 기록된 파일이 읽혀 `JSONDecodeError` 가 났었다 (load_index
+    는 예외를 삼켜 빈 리스트 반환 → 사용자가 일시적으로 히스토리가 사라진 것처럼
+    봄). 임시 파일에 쓴 뒤 `os.replace` 로 대체하면 POSIX 는 원자적, Windows 도
+    대부분의 경우 sector-level 원자성을 보장.
+    """
     INDEX_PATH.parent.mkdir(parents=True, exist_ok=True)
-    INDEX_PATH.write_text(
+    tmp = INDEX_PATH.with_suffix(".json.tmp")
+    tmp.write_text(
         json.dumps(index, ensure_ascii=False, indent=2), encoding="utf-8"
     )
+    os.replace(tmp, INDEX_PATH)
 
 
 def load_index() -> List[dict]:
@@ -174,12 +190,10 @@ def get_job_log(job_id: str) -> Optional[str]:
 
 
 def delete_job(job_id: str) -> None:
-    """히스토리에서 작업 삭제 (파일 + 인덱스)."""
+    """히스토리에서 작업 삭제 (파일 + 인덱스). 원자적 write 사용."""
     job_dir = JOBS_DIR / job_id
     if job_dir.exists():
         shutil.rmtree(job_dir, ignore_errors=True)
     index = load_index()
     index = [j for j in index if j.get("job_id") != job_id]
-    INDEX_PATH.write_text(
-        json.dumps(index, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    _write_index_atomic(index)

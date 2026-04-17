@@ -7,7 +7,18 @@
 
 ## [Unreleased]
 
+## [0.6.0.1] - 2026-04-17
+
+> v0.6.0 이후 머지된 UX/버그 수정 PR (#59~#66) 을 REVISION 단위로 묶은 릴리스.
+> 앱 내장 업데이트 체크가 이 변경들을 감지할 수 있도록 `X.Y.Z.W` 4자리 버전
+> 정책을 신규 도입 (`CLAUDE.md`). 이후 모든 코드 변경 PR 은 REVISION (`W`) 자리를
+> +1 로 올린다.
+
 ### Added
+- **4자리 버전 정책 `MAJOR.MINOR.PATCH.REVISION`** (`CLAUDE.md`) — 모든 코드
+  변경 PR 마다 REVISION (`W`) 자리를 +1. `gurunote/updater.py` 의 업데이트 체크
+  (`local == remote` 문자열 비교) 가 매 PR 의 변경을 감지 가능하도록 하는 목적.
+  PEP 440 `N.N.N.N` 호환. 상위 자리 변경 시 하위는 0 리셋.
 - **하드웨어 프리셋 자동 감지** (`gurunote/hardware.py` 신규) —
   NVIDIA GPU VRAM (`torch.cuda.get_device_properties`) 와 Apple Silicon
   Unified Memory (`sysctl hw.memsize`) 를 감지해 8개 프리셋 중 가장 적합한
@@ -22,6 +33,17 @@
 - **MLX Whisper 모델 설정 필드** (`gui.py`) — Apple Silicon 사용자를 위한
   `MLX_WHISPER_MODEL` 환경변수를 Settings 다이얼로그에 추가. 기본값
   `mlx-community/whisper-large-v3-mlx`.
+- **실행 래퍼 스크립트** — `run_desktop.sh` / `run_web.sh` (macOS/Linux) +
+  `run_desktop.bat` / `run_web.bat` (Windows). `.venv` 를 activate 없이 직접
+  호출해 macOS 의 `command not found: python` / `streamlit` 문제를 근본 차단.
+  `.venv` 미존재 시 친절한 에러 메시지로 `setup.sh` 실행 안내. setup.sh/bat
+  의 최종 메시지도 래퍼 스크립트를 1순위로 안내하도록 갱신.
+- **README "🗑️ 제거" 섹션** — 프로젝트 폴더 / `~/.gurunote/` / HuggingFace
+  모델 캐시의 OS 별 삭제 명령과 경로별 용량 요약. `.env` API 키 백업/폐기
+  보안 안내, 공유 HuggingFace 캐시 조심 경고, 임시 파일 정책 설명 포함.
+- **README Troubleshooting FAQ** — macOS 에서 `python` / `streamlit` 명령을
+  찾지 못하는 상황과 해결법 명시. "▶️ 실행" 섹션에 래퍼 스크립트 + venv
+  activate 대안을 모두 제시.
 
 ### Changed
 - **Settings 다이얼로그 LLM Provider 드롭다운화** (`gui.py`) — 이전엔 자유
@@ -29,6 +51,15 @@
   방지. 선택지: `openai` / `anthropic` / `gemini` / `openai_compatible`.
   `_entries` 딕셔너리가 CTkEntry 와 CTkOptionMenu(StringVar) 를 혼재하여 보관
   하도록 타입 확장 (`.get()` 인터페이스 통일).
+- **데스크톱 배포 패키지 OS별 분리 + CI 의존성 정합성 수정**
+  (`.github/workflows/release-desktop.yml`, `scripts/package_desktop.py`,
+  `README.md`) — Release 아티팩트 이름에 플랫폼 suffix 추가
+  (`GuruNote-Windows.exe`, `GuruNote-Windows-Installer.exe`,
+  `GuruNote-macOS.dmg`, `GuruNote-macOS.pkg`). CI 의 hardcoded pip 리스트를
+  `pip install -r requirements.txt` 로 교체해 v0.5.0 추가된 `google-genai`
+  누락 문제 해결 (Gemini 선택 시 ImportError 방지). README 에 "데스크톱 패키지
+  vs 소스 실행" 비교 표 추가 — 번들 패키지는 UI + 클라우드 STT(AssemblyAI)
+  전용, 로컬 GPU STT(WhisperX/MLX) 가 필요하면 소스 실행 안내.
 
 ### Fixed
 - **ffmpeg/ffprobe 누락 감지 + 친절한 에러** (`gurunote/audio.py`,
@@ -40,19 +71,10 @@
   `winget install ffmpeg` / `apt install ffmpeg`) 을 포함한 한국어 RuntimeError
   발생. setup.sh / setup.bat 에도 같은 감지 단계(`[0/4]`)를 추가해 setup 단계에서
   자동 설치 제안(brew/winget 감지 시) 또는 명확한 실패 메시지 출력.
-
-
 - **Apple Silicon 세대 표기 M5 반영** — README / `requirements-mac.txt` / `stt.py`
   / `stt_mlx.py` 의 "M1/M2/M3/M4", "M1~M4" 표기 9곳을 M5 포함으로 갱신. 실제
   코드는 `platform.machine() == "arm64"` 로 세대 무관 동작하나 문서 표기는
   최신 세대 반영이 맞음.
-
-### Added
-- **README "🗑️ 제거" 섹션** — 프로젝트 폴더 / `~/.gurunote/` / HuggingFace
-  모델 캐시의 OS 별 삭제 명령과 경로별 용량 요약. `.env` API 키 백업/폐기
-  보안 안내, 공유 HuggingFace 캐시 조심 경고, 임시 파일 정책 설명 포함.
-
-### Fixed
 - **README "🚀 설치" 모순 제거** — "빠른 시작" 은 `bash setup.sh` 바로 실행을
   안내하는데 "🚀 설치" 는 `python -m venv .venv && source .venv/bin/activate`
   수동 단계를 추가로 요구해 모순됐고, macOS 의 `python` 명령 부재로 이 수동
@@ -60,38 +82,11 @@
   "🚀 설치" 섹션에서 수동 venv 단계를 제거하고, 대신 setup 스크립트가 자동
   수행하는 5단계 (venv 생성 → 플랫폼 감지 → 공통 의존성 → 플랫폼별 STT → 검증)
   를 명시적으로 문서화.
-
-### Added
-- **실행 래퍼 스크립트** — `run_desktop.sh` / `run_web.sh` (macOS/Linux) +
-  `run_desktop.bat` / `run_web.bat` (Windows). `.venv` 를 activate 없이 직접
-  호출해 macOS 의 `command not found: python` / `streamlit` 문제를 근본 차단.
-  `.venv` 미존재 시 친절한 에러 메시지로 `setup.sh` 실행 안내. setup.sh/bat
-  의 최종 메시지도 래퍼 스크립트를 1순위로 안내하도록 갱신.
-- **README Troubleshooting FAQ** — macOS 에서 `python` / `streamlit` 명령을
-  찾지 못하는 상황과 해결법 명시. "▶️ 실행" 섹션에 래퍼 스크립트 + venv
-  activate 대안을 모두 제시.
-
-### Changed
-- **데스크톱 배포 패키지 OS별 분리 + CI 의존성 정합성 수정**
-  (`.github/workflows/release-desktop.yml`, `scripts/package_desktop.py`,
-  `README.md`) — Release 아티팩트 이름에 플랫폼 suffix 추가
-  (`GuruNote-Windows.exe`, `GuruNote-Windows-Installer.exe`,
-  `GuruNote-macOS.dmg`, `GuruNote-macOS.pkg`). CI 의 hardcoded pip 리스트를
-  `pip install -r requirements.txt` 로 교체해 v0.5.0 추가된 `google-genai`
-  누락 문제 해결 (Gemini 선택 시 ImportError 방지). README 에 "데스크톱 패키지
-  vs 소스 실행" 비교 표 추가 — 번들 패키지는 UI + 클라우드 STT(AssemblyAI)
-  전용, 로컬 GPU STT(WhisperX/MLX) 가 필요하면 소스 실행 안내. Release 본문에도
-  동일한 안내가 자동 추가됨. 번들 미포함 사유(native binary 크기, CUDA 러너
-  부재, PyInstaller venv 폐쇄성) 를 `package_desktop.py` docstring 에 명시.
-
-### Fixed
 - **업데이트 다이얼로그 NameError** (`gui.py`) — `SettingsDialog._on_update` 가
   import 되지 않은 `check_updates(...)` 를 호출해 NameError 발생. 다른 위치
   (`_on_update_sb`) 와 동일하게 `check_for_update()` 호출 후 `info["message"]`
   사용하도록 수정. 사이드바 ⚙️ 설정 다이얼로그에서 "업데이트 확인" 버튼이 정상
   동작.
-
-### Changed
 - **README VibeVoice 잔재 정리** — STT 섹션, 파이프라인 다이어그램, 60분 제한
   안내, GPU/VRAM 요구사항 표, 환경변수 예시, 사용 흐름, 최초 실행 안내, 프로젝트
   구조, FAQ 4개 항목 등 ~15곳을 현재 코드 (WhisperX + MLX + AssemblyAI 라우터)
@@ -317,7 +312,8 @@
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.6.0.1...HEAD
+[0.6.0.1]: https://github.com/avlp12/GuruNote/compare/v0.6.0...v0.6.0.1
 [0.6.0]: https://github.com/avlp12/GuruNote/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/avlp12/GuruNote/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/avlp12/GuruNote/compare/v0.4.0...v0.4.1

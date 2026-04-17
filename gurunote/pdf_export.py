@@ -25,12 +25,18 @@ _FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
 
 
 def is_pdf_export_available() -> bool:
-    """`markdown` 과 `weasyprint` 모두 import 가능한지 확인."""
+    """`markdown` + `weasyprint` 가 **실제로 import 가능**한지 확인.
+
+    weasyprint 는 순수 파이썬 import 가 성공해도 cairo/pango 시스템 라이브러리
+    부재 시 import 시점에 `OSError` 또는 `cffi.VerificationError` 로 실패
+    하므로, 모든 예외를 포괄해 첫 클릭 시 크래시 대신 친절한 안내 대화상자를
+    띄울 수 있게 한다.
+    """
     try:
         import markdown  # type: ignore  # noqa: F401
         import weasyprint  # type: ignore  # noqa: F401
         return True
-    except ImportError:
+    except Exception:  # noqa: BLE001
         return False
 
 
@@ -43,12 +49,13 @@ def missing_packages_hint() -> str:
         sys_hint = (
             "\n  macOS: weasyprint 는 cairo/pango 시스템 라이브러리가 필요합니다.\n"
             "    brew install cairo pango gdk-pixbuf libffi\n"
-            f"    {cmd}"
+            f"    {cmd}\n"
+            "  (한국어 폰트가 없다면: brew install --cask font-noto-sans-cjk-kr)"
         )
     elif system == "Linux":
         sys_hint = (
             "\n  Linux (Debian/Ubuntu):\n"
-            "    sudo apt install -y libpango-1.0-0 libpangoft2-1.0-0\n"
+            "    sudo apt install -y libpango-1.0-0 libpangoft2-1.0-0 fonts-noto-cjk\n"
             f"    {cmd}"
         )
     else:

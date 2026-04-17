@@ -154,10 +154,19 @@ def _properties_for_page(title: str) -> dict:
 def _properties_for_database(title: str, meta: dict) -> dict:
     """Parent 가 database 인 경우 — title + optional field/tags/uploader/date/source.
 
-    DB 스키마에 해당 property 가 없거나 타입이 달라 Notion API 가 거부하면
-    최소 집합 (title) 으로 fallback 시도. Notion SDK 는 unknown property 에
-    대해 400 을 반환하므로 호출자가 retry 를 구현해야 하나, 현재는 최선 매핑만
-    하고 실패는 위 save_to_notion 의 try/except 가 사용자에게 노출.
+    ⚠️ **주의**: DB 스키마에 해당 컬럼명 ("Field", "Tags", "Uploader",
+    "Upload Date", "Source") 이 존재하지 않으면 Notion API 가 400 으로
+    페이지 생성 전체를 거부한다 (개별 property 단위 silent skip 아님).
+
+    사용자는 target DB 에 다음 컬럼을 미리 생성해야 frontmatter 가 매핑된다:
+      - Field: Select
+      - Tags: Multi-select
+      - Uploader: Text
+      - Upload Date: Date
+      - Source: URL
+
+    컬럼이 없으면 `_properties_for_page` (title 만) 를 쓰도록 `is_database=False`
+    로 호출하는 것이 안전.
     """
     props: dict = {
         # DB 의 default title column 이름은 각 DB 마다 다를 수 있음 — "Name" 과
@@ -408,8 +417,11 @@ def _markdown_to_blocks(body: str) -> list[dict]:
             i += 1
             continue
 
-        # 기본 — 단락 (연속된 non-empty 줄 묶음)
-        para_lines = [stripped]
+        # 기본 — 단락 (연속된 non-empty 줄 묶음).
+        # H4+ (`####+ `) 는 Notion heading 타입이 없어 paragraph 로 떨어지는데,
+        # 앞쪽 `#+ ` prefix 가 본문에 그대로 남으면 보기 흉하므로 제거.
+        first = re.sub(r"^#{4,}\s+", "", stripped)
+        para_lines = [first]
         i += 1
         while i < len(lines):
             s = lines[i].strip()

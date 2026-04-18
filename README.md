@@ -467,7 +467,7 @@ GuruNote/
 주요 변경 사항은 [CHANGELOG.md](./CHANGELOG.md) 에 [Keep a Changelog](https://keepachangelog.com/)
 형식으로 기록되며 버전은 [Semantic Versioning](https://semver.org/) 을 따릅니다.
 
-현재 버전: **v0.8.0.4** — UI 리프레시 Phase 2a-ii: 설정 화면에서 LLM Provider 선택에 따라 관련 API 키/모델 필드만 노출 + Secret 필드 "지우기" 버튼 추가.
+현재 버전: **v0.8.0.5** — History 카드 버튼 행의 Del 버튼이 26px 로 잘리던 버그 수정 (pack side="right" → grid uniform 컬럼으로 7개 균등 배치).
 
 ---
 

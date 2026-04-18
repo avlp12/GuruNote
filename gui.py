@@ -2864,39 +2864,169 @@ def _card(parent, **kw):
 def _install_clipboard_shortcuts(root) -> None:
     """macOS 에서 Cmd+C/V/X/A 가 CTkEntry 에 전달되지 않는 문제 해결.
 
-    Tkinter 의 기본 바인딩은 Linux/Windows 의 Ctrl+C/V/X/A 만 `<<Copy>>`,
-    `<<Paste>>`, `<<Cut>>`, `<<SelectAll>>` 가상 이벤트로 자동 매핑한다.
-    macOS 의 Command 키는 일부 Tcl/Tk 빌드와 한국어 IME 조합에서 누락되는
-    경우가 있어, 루트 윈도우에 `bind_all` 로 명시 바인딩을 걸어 모든 자식
-    위젯(CTkEntry 의 내부 tk.Entry 포함) 에서 동작하도록 한다.
+    이전 구현은 `event_generate("<<Paste>>")` 로 가상 이벤트를 dispatch 했지만,
+    (1) `focus_get()` 가 CTkEntry 의 wrapper Frame 을 돌려주면 가상 이벤트
+    바인딩이 없어 무시되고, (2) Tk 가 가상 이벤트를 tail 큐에 넣는 동작이
+    macOS Aqua + 한국어 IME 조합에서 종종 누락되어 사용자가 "붙여넣기가
+    동작하지 않는다" 고 보고했다.
+
+    이번 구현은 클립보드를 직접 읽어 포커스 위젯에 삽입하므로 Tk 가상
+    이벤트 dispatch 를 거치지 않는다. CTkEntry/CTkTextbox 의 내부 tk 위젯
+    (`_entry` / `_textbox`) 으로 자동 위임한다.
 
     Toplevel(SettingsDialog, HistoryDialog 등) 도 같은 Tk 인터프리터를
-    공유하므로 `bind_all` 한 번이면 전역적으로 적용됨.
+    공유하므로 `bind_all` 한 번이면 전역 적용됨.
     """
     import platform
     if platform.system() != "Darwin":
         return  # Linux/Windows 는 기본 바인딩이 이미 Ctrl+V 를 매핑
 
-    def _forward(virtual_event: str):
-        def handler(event):
-            try:
-                focused = root.focus_get()
-                if focused is not None:
-                    focused.event_generate(virtual_event)
-            except Exception:  # noqa: BLE001
-                pass
-            return "break"  # OS 기본 핸들러가 두 번 처리하지 않게 차단
-        return handler
+    import tkinter as _tk
 
-    root.bind_all("<Command-c>", _forward("<<Copy>>"))
-    root.bind_all("<Command-v>", _forward("<<Paste>>"))
-    root.bind_all("<Command-x>", _forward("<<Cut>>"))
-    root.bind_all("<Command-a>", _forward("<<SelectAll>>"))
-    # 한국어 키보드에서 Command+ㅊ/ㅍ/ㅌ/ㅁ 도 같은 동작 (KeySym 으로 매핑)
-    root.bind_all("<Command-C>", _forward("<<Copy>>"))
-    root.bind_all("<Command-V>", _forward("<<Paste>>"))
-    root.bind_all("<Command-X>", _forward("<<Cut>>"))
-    root.bind_all("<Command-A>", _forward("<<SelectAll>>"))
+    def _resolve(w):
+        """CTkEntry/CTkTextbox wrapper → 내부 tk.Entry/tk.Text 위젯으로 위임."""
+        if w is None:
+            return None
+        if isinstance(w, (_tk.Entry, _tk.Text)):
+            return w
+        for attr in ("_entry", "_textbox"):
+            inner = getattr(w, attr, None)
+            if isinstance(inner, (_tk.Entry, _tk.Text)):
+                return inner
+        return w
+
+    def _focused():
+        try:
+            return _resolve(root.focus_get())
+        except Exception:  # noqa: BLE001
+            return None
+
+    def _is_text(w):
+        return isinstance(w, _tk.Text)
+
+    def _do_paste(_event=None):
+        w = _focused()
+        if w is None:
+            return "break"
+        try:
+            text = root.clipboard_get()
+        except _tk.TclError:
+            return "break"  # 클립보드 비어있거나 텍스트 아님
+        try:
+            try:
+                w.delete("sel.first", "sel.last")
+            except _tk.TclError:
+                pass  # 선택 영역 없음
+            w.insert("insert", text)
+            if _is_text(w):
+                w.see("insert")
+        except Exception:  # noqa: BLE001
+            pass
+        return "break"
+
+    def _do_copy(_event=None):
+        w = _focused()
+        if w is None:
+            return "break"
+        try:
+            if _is_text(w):
+                text = w.get("sel.first", "sel.last")
+            else:
+                text = w.selection_get()
+        except _tk.TclError:
+            return "break"
+        try:
+            root.clipboard_clear()
+            root.clipboard_append(text)
+        except _tk.TclError:
+            pass
+        return "break"
+
+    def _do_cut(_event=None):
+        w = _focused()
+        if w is None:
+            return "break"
+        try:
+            if _is_text(w):
+                text = w.get("sel.first", "sel.last")
+            else:
+                text = w.selection_get()
+            w.delete("sel.first", "sel.last")
+        except _tk.TclError:
+            return "break"
+        try:
+            root.clipboard_clear()
+            root.clipboard_append(text)
+        except _tk.TclError:
+            pass
+        return "break"
+
+    def _do_select_all(_event=None):
+        w = _focused()
+        if w is None:
+            return "break"
+        try:
+            if _is_text(w):
+                w.tag_add("sel", "1.0", "end-1c")
+                w.mark_set("insert", "end-1c")
+                w.see("insert")
+            else:
+                w.select_range(0, "end")
+                w.icursor("end")
+        except Exception:  # noqa: BLE001
+            pass
+        return "break"
+
+    # 소문자 + 대문자(Shift 동시) 모두 바인딩 — 한국어 IME 가 Cmd 와 함께
+    # 대문자 keysym 을 보내는 경우 대비.
+    for key, action in (
+        ("c", _do_copy), ("C", _do_copy),
+        ("v", _do_paste), ("V", _do_paste),
+        ("x", _do_cut), ("X", _do_cut),
+        ("a", _do_select_all), ("A", _do_select_all),
+    ):
+        root.bind_all(f"<Command-{key}>", action)
+
+    # 우클릭 컨텍스트 메뉴 — Cmd+V 가 어떤 이유로든 실패해도 마우스로 paste
+    # 가능하도록 안전망 제공. macOS 는 Button-2 (한 손가락 우클릭/Ctrl+클릭)
+    # 와 Button-3 (두 손가락 클릭) 둘 다 발생할 수 있어 모두 바인딩.
+    def _show_context_menu(event):
+        try:
+            w = _resolve(event.widget)
+        except Exception:  # noqa: BLE001
+            return
+        if not isinstance(w, (_tk.Entry, _tk.Text)):
+            return
+        try:
+            w.focus_set()
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            has_sel = bool(w.tag_ranges("sel")) if _is_text(w) else bool(w.selection_present())
+        except Exception:  # noqa: BLE001
+            has_sel = False
+        try:
+            root.clipboard_get()
+            has_clip = True
+        except _tk.TclError:
+            has_clip = False
+        menu = _tk.Menu(root, tearoff=0)
+        menu.add_command(label="잘라내기", command=_do_cut,
+                         state=("normal" if has_sel else "disabled"))
+        menu.add_command(label="복사", command=_do_copy,
+                         state=("normal" if has_sel else "disabled"))
+        menu.add_command(label="붙여넣기", command=_do_paste,
+                         state=("normal" if has_clip else "disabled"))
+        menu.add_separator()
+        menu.add_command(label="전체 선택", command=_do_select_all)
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
+
+    root.bind_all("<Button-2>", _show_context_menu, add="+")
+    root.bind_all("<Button-3>", _show_context_menu, add="+")
+    root.bind_all("<Control-Button-1>", _show_context_menu, add="+")
 
 
 class GuruNoteApp(ctk.CTk):
@@ -2956,7 +3086,7 @@ class GuruNoteApp(ctk.CTk):
             ).grid(row=2 + i, column=0, padx=10, pady=2, sticky="ew")
 
         ctk.CTkLabel(
-            sb, text="v0.7.2.1", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
+            sb, text="v0.7.2.2", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
         ).grid(row=7, column=0, padx=20, pady=(0, 16), sticky="sw")
 
     # ── 메인 영역 ────────────────────────────────────────────

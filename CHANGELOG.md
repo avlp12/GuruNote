@@ -7,6 +7,31 @@
 
 ## [Unreleased]
 
+## [0.8.0.1] - 2026-04-18
+
+### Changed
+- **UI 리프레시 Phase 2a-i — 설정 화면 섹션화** (`gui.py:SettingsDialog`).
+  긴 단일 폼을 5개 섹션 구조로 재배치해 "어디에 무엇이 있는지" 인지 부담
+  감소. 필드 자체·저장 로직·프리셋 연동은 전부 그대로 — `self._entries`
+  dict 에 widget 참조를 보관하므로 `_on_save` / `_on_test_connection` /
+  `_apply_preset` 가 unchanged.
+  - **5개 섹션**: `일반` (LLM Provider) / `AI Provider` (OpenAI / Anthropic
+    / Gemini 키·모델) / `STT · 하드웨어` (하드웨어 프리셋 + WhisperX / MLX
+    / AssemblyAI / HuggingFace) / `연동` (Obsidian / Notion) / `고급` (LLM
+    temperature / max_tokens).
+  - **헤더**: 페이지 제목 "설정" (FONT_HEADING) + 서브타이틀 + 하드웨어
+    자동 감지 결과 표시.
+  - **섹션 구분**: 섹션 간 얇은 divider (`uc.divider`).
+  - **하단 sticky footer**: 좌측 `연결 테스트` (ghost) / 우측 `취소` +
+    `저장` (primary). 스크롤되지 않음.
+  - **다이얼로그 크기**: 620×640 → 680×760.
+  - **디자인 토큰 이관**: 모든 패딩/색/폰트를 `ui_theme` 토큰 + `uc.*`
+    factory 로 통일 (기존 하드코딩 색상 `"gray55"`, `"#22C55E"` 등 제거).
+
+### Removed
+- **`SettingsDialog._on_update`** + **Update 버튼** — 사이드바에 이미
+  Update 메뉴가 있어 중복. 사이드바 진입점으로 단일화.
+
 ## [0.8.0.0] - 2026-04-18
 
 ### Changed
@@ -1174,7 +1199,8 @@ bash run_desktop.sh
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.8.0.0...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.8.0.1...HEAD
+[0.8.0.1]: https://github.com/avlp12/GuruNote/compare/v0.8.0.0...v0.8.0.1
 [0.8.0.0]: https://github.com/avlp12/GuruNote/compare/v0.7.2.5...v0.8.0.0
 [0.7.2.5]: https://github.com/avlp12/GuruNote/compare/v0.7.2.4...v0.7.2.5
 [0.7.2.4]: https://github.com/avlp12/GuruNote/compare/v0.7.2.3...v0.7.2.4

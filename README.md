@@ -467,7 +467,7 @@ GuruNote/
 주요 변경 사항은 [CHANGELOG.md](./CHANGELOG.md) 에 [Keep a Changelog](https://keepachangelog.com/)
 형식으로 기록되며 버전은 [Semantic Versioning](https://semver.org/) 을 따릅니다.
 
-현재 버전: **v0.8.0.0** — UI 리프레시 Phase 1 완결: 메인 화면(입력/진행/결과) 재설계 + 메타 헤더 + 내보내기 dropdown + empty state + non-blocking toast.
+현재 버전: **v0.8.0.1** — UI 리프레시 Phase 2a-i: 설정 화면을 5섹션(일반 / AI Provider / STT·하드웨어 / 연동 / 고급) 구조로 재배치 + sticky footer + Update 버튼 제거(사이드바 중복).
 
 ---
 

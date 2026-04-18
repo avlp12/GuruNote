@@ -467,7 +467,7 @@ GuruNote/
 주요 변경 사항은 [CHANGELOG.md](./CHANGELOG.md) 에 [Keep a Changelog](https://keepachangelog.com/)
 형식으로 기록되며 버전은 [Semantic Versioning](https://semver.org/) 을 따릅니다.
 
-현재 버전: **v0.7.2.4** — UI 리프레시 Phase 1b: 메인 입력 카드 3행 재배치 + 처리 모드 프리셋(빠름/균형/품질/직접) + 고급 설정 접힘 토글.
+현재 버전: **v0.7.2.5** — UI 리프레시 Phase 1c: 진행 카드 상태 라인 한국어화 (단계명 + 경과 + ETA) + 처리 로그 접힘 드로어.
 
 ---
 

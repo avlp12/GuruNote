@@ -7,6 +7,25 @@
 
 ## [Unreleased]
 
+## [0.8.0.3] - 2026-04-18
+
+### Changed
+- **업데이트 완료 후 앱 자동 재시작** (`gui.py:UpdateProgressDialog._poll`,
+  신규 `_restart_app`). 기존에는 "앱을 재시작하세요" messagebox 만 띄우고
+  사용자가 수동으로 앱을 껐다 켜야 했음. 이제 업데이트 성공 시
+  `_status_label` 에 `"업데이트 완료! · 재시작 중…"` 을 0.7초간 표시한 뒤
+  자동으로 프로세스를 교체.
+  - **전략**: PyInstaller 번들은 `sys.executable` 자체를 재실행. 일반
+    `python gui.py` 실행은 `[sys.executable, *sys.argv]` 로 재실행.
+  - **1차**: `os.execv` 로 현재 프로세스 in-place 교체 — 가장 깔끔.
+  - **2차 폴백**: 일부 macOS .app 번들에서 execv 가 launchd 와 충돌하는
+    케이스를 대비해 `subprocess.Popen(start_new_session=True)` + Tk root
+    destroy + `sys.exit(0)`.
+  - **3차 폴백**: 두 방법 모두 실패 시 "재시작 실패" 경고 dialog 후 종료
+    (사용자가 수동 재실행).
+  - 업데이트 실행 중인 파이프라인 worker 는 강제 종료됨 (업데이트 시작
+    시점에 사용자가 작업 중단을 이미 수락한 것으로 간주).
+
 ## [0.8.0.2] - 2026-04-18
 
 ### Fixed
@@ -1214,7 +1233,8 @@ bash run_desktop.sh
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.8.0.2...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.8.0.3...HEAD
+[0.8.0.3]: https://github.com/avlp12/GuruNote/compare/v0.8.0.2...v0.8.0.3
 [0.8.0.2]: https://github.com/avlp12/GuruNote/compare/v0.8.0.1...v0.8.0.2
 [0.8.0.1]: https://github.com/avlp12/GuruNote/compare/v0.8.0.0...v0.8.0.1
 [0.8.0.0]: https://github.com/avlp12/GuruNote/compare/v0.7.2.5...v0.8.0.0

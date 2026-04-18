@@ -2633,8 +2633,13 @@ class SettingsDialog(ctk.CTkToplevel):
         self._entries: dict[str, object] = {}
         # env_key → bool (secret 보기 토글 상태)
         self._show_vars: dict[str, bool] = {}
+        # env_key → [label, input, aux_btn, ...] — Phase 2a-ii provider 조건부 토글용
+        self._field_widgets: dict[str, list] = {}
 
         self._build_ui()
+        # 초기 provider 에 맞춰 조건부 필드 가시성 적용
+        initial_provider = self._entries["LLM_PROVIDER"].get()
+        self._apply_provider_visibility(initial_provider)
         self.after(100, self.focus_force)
 
     # ── 레이아웃 ─────────────────────────────────────────────
@@ -2740,13 +2745,23 @@ class SettingsDialog(ctk.CTkToplevel):
     def _render_field_row(
         self, parent, row: int, env_key: str, label: str, is_secret: bool,
     ) -> int:
-        """단일 필드 — 좌측 라벨, 중앙 입력, 우측 보조 버튼(secret/vault)."""
-        ctk.CTkLabel(
+        """단일 필드 — 좌측 라벨, 중앙 입력, 우측 보조 버튼(secret/vault).
+
+        Phase 2a-ii: 필드별 위젯을 `self._field_widgets[env_key]` 리스트로
+        기록해 provider 조건부 show/hide 토글 시 한꺼번에 grid/grid_forget
+        할 수 있도록 함. Secret 필드는 `보기` + `지우기` 두 버튼을 묶어서
+        column 2 에 배치.
+        """
+        field_widgets: list = []
+
+        lbl = ctk.CTkLabel(
             parent, text=label,
             font=ctk.CTkFont(size=ut.FONT_BODY),
             text_color=ut.C_TEXT, anchor="w",
-        ).grid(row=row, column=0, sticky="w", padx=(0, ut.SPACE_MD),
-               pady=ut.SPACE_XS)
+        )
+        lbl.grid(row=row, column=0, sticky="w", padx=(0, ut.SPACE_MD),
+                 pady=ut.SPACE_XS)
+        field_widgets.append(lbl)
 
         current_val = os.environ.get(env_key, "")
 
@@ -2754,13 +2769,17 @@ class SettingsDialog(ctk.CTkToplevel):
         if env_key == "LLM_PROVIDER":
             default = current_val if current_val in _LLM_PROVIDERS else "openai"
             provider_var = ctk.StringVar(value=default)
-            ctk.CTkOptionMenu(
+            menu = ctk.CTkOptionMenu(
                 parent, variable=provider_var, values=_LLM_PROVIDERS,
                 fg_color=ut.C_SURFACE_HI, button_color=ut.C_BORDER,
                 text_color=ut.C_TEXT,
-            ).grid(row=row, column=1, columnspan=2, sticky="ew",
-                   pady=ut.SPACE_XS)
+                command=self._apply_provider_visibility,
+            )
+            menu.grid(row=row, column=1, columnspan=2, sticky="ew",
+                      pady=ut.SPACE_XS)
+            field_widgets.append(menu)
             self._entries[env_key] = provider_var
+            self._field_widgets[env_key] = field_widgets
             return row + 1
 
         ph = "미설정" if is_secret else self._PLACEHOLDERS.get(env_key, "")
@@ -2773,28 +2792,45 @@ class SettingsDialog(ctk.CTkToplevel):
         if current_val:
             entry.insert(0, current_val)
         entry.grid(row=row, column=1, sticky="ew", pady=ut.SPACE_XS)
+        field_widgets.append(entry)
         self._entries[env_key] = entry
         self._show_vars[env_key] = False
 
         if is_secret:
+            # 보기 + 지우기 두 버튼을 transparent frame 으로 묶어 column 2 배치.
+            aux = ctk.CTkFrame(parent, fg_color="transparent", height=1)
+            aux.grid(row=row, column=2, padx=(ut.SPACE_XS, 0),
+                     pady=ut.SPACE_XS, sticky="w")
             ctk.CTkButton(
-                parent, text="보기", width=56, height=ut.HEIGHT_SM,
+                aux, text="보기", width=48, height=ut.HEIGHT_SM,
                 corner_radius=ut.RADIUS_SM,
                 fg_color=ut.C_SURFACE_HI, hover_color=ut.C_BORDER,
                 text_color=ut.C_TEXT,
                 font=ctk.CTkFont(size=ut.FONT_META),
                 command=lambda k=env_key: self._toggle_show(k),
-            ).grid(row=row, column=2, padx=(ut.SPACE_XS, 0), pady=ut.SPACE_XS)
+            ).pack(side="left")
+            ctk.CTkButton(
+                aux, text="지우기", width=56, height=ut.HEIGHT_SM,
+                corner_radius=ut.RADIUS_SM,
+                fg_color=ut.C_SURFACE_HI, hover_color=ut.C_DANGER,
+                text_color=ut.C_TEXT,
+                font=ctk.CTkFont(size=ut.FONT_META),
+                command=lambda k=env_key: self._clear_secret(k),
+            ).pack(side="left", padx=(ut.SPACE_XS, 0))
+            field_widgets.append(aux)
 
         if env_key == "OBSIDIAN_VAULT_PATH":
-            ctk.CTkButton(
+            browse = ctk.CTkButton(
                 parent, text="찾아보기", width=80, height=ut.HEIGHT_SM,
                 corner_radius=ut.RADIUS_SM,
                 fg_color=ut.C_PRIMARY, hover_color=ut.C_PRIMARY_HO,
                 text_color=ut.C_ON_PRIMARY,
                 font=ctk.CTkFont(size=ut.FONT_META),
                 command=self._on_browse_vault,
-            ).grid(row=row, column=2, padx=(ut.SPACE_XS, 0), pady=ut.SPACE_XS)
+            )
+            browse.grid(row=row, column=2, padx=(ut.SPACE_XS, 0),
+                        pady=ut.SPACE_XS)
+            field_widgets.append(browse)
             # 유효성 chip (다음 row)
             self._vault_chip = ctk.CTkLabel(
                 parent, text="",
@@ -2804,10 +2840,13 @@ class SettingsDialog(ctk.CTkToplevel):
                 row=row + 1, column=1, columnspan=2, sticky="w",
                 pady=(0, ut.SPACE_XS),
             )
+            field_widgets.append(self._vault_chip)
             entry.bind("<KeyRelease>", lambda _e: self._refresh_vault_chip())
             self._refresh_vault_chip()
+            self._field_widgets[env_key] = field_widgets
             return row + 2
 
+        self._field_widgets[env_key] = field_widgets
         return row + 1
 
     def _build_action_bar(self) -> None:
@@ -2842,6 +2881,70 @@ class SettingsDialog(ctk.CTkToplevel):
         self._show_vars[env_key] = not self._show_vars[env_key]
         entry = self._entries[env_key]
         entry.configure(show="" if self._show_vars[env_key] else "•")
+
+    def _clear_secret(self, env_key: str) -> None:
+        """API Key 필드 초기화 — 저장 시 .env 에서 해당 항목이 지워짐."""
+        entry = self._entries.get(env_key)
+        if entry is None:
+            return
+        try:
+            entry.delete(0, "end")
+        except Exception:  # noqa: BLE001
+            pass
+
+    # ── Provider 조건부 필드 노출 (Phase 2a-ii) ──────────────
+    # 선택한 LLM Provider 와 관련 없는 필드는 숨김. 예: anthropic 선택
+    # 시 OPENAI_* / GOOGLE_* / GEMINI_* 필드는 grid_forget() 으로 숨김.
+    _PROVIDER_FIELD_MAP: dict[str, tuple[str, ...]] = {
+        "openai": ("OPENAI_API_KEY", "OPENAI_BASE_URL", "OPENAI_MODEL"),
+        "openai_compatible": ("OPENAI_API_KEY", "OPENAI_BASE_URL", "OPENAI_MODEL"),
+        "anthropic": ("ANTHROPIC_API_KEY", "ANTHROPIC_MODEL"),
+        "gemini": ("GOOGLE_API_KEY", "GEMINI_MODEL"),
+    }
+
+    # AI Provider 섹션에 속한 전체 provider-specific 필드 (숨김 후보)
+    _ALL_PROVIDER_FIELDS: tuple[str, ...] = (
+        "OPENAI_API_KEY", "OPENAI_BASE_URL", "OPENAI_MODEL",
+        "ANTHROPIC_API_KEY", "ANTHROPIC_MODEL",
+        "GOOGLE_API_KEY", "GEMINI_MODEL",
+    )
+
+    def _apply_provider_visibility(self, provider: str) -> None:
+        """선택된 provider 에 맞춰 provider-specific 필드만 노출."""
+        visible = set(self._PROVIDER_FIELD_MAP.get(provider, ()))
+        for env_key in self._ALL_PROVIDER_FIELDS:
+            widgets = self._field_widgets.get(env_key, [])
+            should_show = env_key in visible
+            for w in widgets:
+                if should_show:
+                    # 최초 빌드 시 지정한 원래 grid 정보를 재사용.
+                    try:
+                        info = w.grid_info()
+                    except Exception:  # noqa: BLE001
+                        info = None
+                    if info:
+                        # 이미 grid 상태 — 아무것도 안 함
+                        continue
+                    # grid_forget 된 위젯을 다시 보여줘야 함. 하지만 원래
+                    # grid 인자(row/column/padx/pady/sticky) 가 저장돼 있지
+                    # 않으므로, 이 케이스에서는 재빌드를 요구. 대신 더 간단한
+                    # 구현: 위젯의 grid 원래 설정은 `grid_configure` 히스토리
+                    # 에서 복원 불가하므로, `_saved_grid_info` 로 이전 상태를
+                    # 기록해둠.
+                    saved = getattr(w, "_saved_grid_info", None)
+                    if saved:
+                        w.grid(**saved)
+                else:
+                    # 숨기기 전에 현재 grid 정보를 보존
+                    try:
+                        info = w.grid_info()
+                        if info:
+                            # 'in' 키는 grid() 호출 시 부모 프레임으로 대체
+                            saved = {k: v for k, v in info.items() if k != "in"}
+                            w._saved_grid_info = saved  # type: ignore[attr-defined]
+                            w.grid_forget()
+                    except Exception:  # noqa: BLE001
+                        pass
 
     # -------------------------------------------------------------------------
     # Obsidian vault 편의 기능
@@ -3213,7 +3316,7 @@ class GuruNoteApp(ctk.CTk):
             ).grid(row=2 + i, column=0, padx=10, pady=2, sticky="ew")
 
         ctk.CTkLabel(
-            sb, text="v0.8.0.3", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
+            sb, text="v0.8.0.4", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
         ).grid(row=7, column=0, padx=20, pady=(0, 16), sticky="sw")
 
     # ── 메인 영역 ────────────────────────────────────────────

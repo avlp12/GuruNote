@@ -7,6 +7,32 @@
 
 ## [Unreleased]
 
+## [0.8.0.4] - 2026-04-18
+
+### Changed
+- **UI 리프레시 Phase 2a-ii — Provider 조건부 필드 노출** (`gui.py:
+  SettingsDialog`). LLM Provider 선택에 따라 AI Provider 섹션 내
+  관련 API 키·모델 필드만 grid 되고 나머지는 `grid_forget` 으로 숨김.
+  화면 밀도 감소 → 사용자가 "내가 쓰는 provider 의 키는 어디에 넣지?"
+  고민하지 않아도 됨.
+  - `openai` / `openai_compatible` → `OPENAI_API_KEY` ·
+    `OPENAI_BASE_URL` · `OPENAI_MODEL`
+  - `anthropic` → `ANTHROPIC_API_KEY` · `ANTHROPIC_MODEL`
+  - `gemini` → `GOOGLE_API_KEY` · `GEMINI_MODEL`
+  - 구현: `_field_widgets[env_key]` 에 필드별 위젯 리스트(label, input,
+    aux 버튼 등) 저장 → `_apply_provider_visibility(provider)` 가 show/
+    hide 일괄 적용. 위젯의 원본 grid 정보는 `_saved_grid_info` 속성에
+    백업해 restore 가능.
+  - 다이얼로그 초기 오픈 시 + Provider dropdown 변경 시 모두 트리거.
+
+### Added
+- **Secret 필드 "지우기" 버튼** — API Key 필드 옆 `보기` 버튼 옆에
+  `지우기` 추가. 클릭 시 entry 내용 즉시 clear. 저장 시 `.env` 에서
+  해당 항목이 제거됨 (또는 빈 값으로 기록).
+  - 기존 secret 필드 레이아웃: `[entry]  [보기]`
+  - 변경 후: `[entry]  [보기] [지우기]` — transparent frame 하나로 묶어
+    column 2 에 배치.
+
 ## [0.8.0.3] - 2026-04-18
 
 ### Changed
@@ -1233,7 +1259,8 @@ bash run_desktop.sh
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.8.0.3...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.8.0.4...HEAD
+[0.8.0.4]: https://github.com/avlp12/GuruNote/compare/v0.8.0.3...v0.8.0.4
 [0.8.0.3]: https://github.com/avlp12/GuruNote/compare/v0.8.0.2...v0.8.0.3
 [0.8.0.2]: https://github.com/avlp12/GuruNote/compare/v0.8.0.1...v0.8.0.2
 [0.8.0.1]: https://github.com/avlp12/GuruNote/compare/v0.8.0.0...v0.8.0.1

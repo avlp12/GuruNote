@@ -467,7 +467,7 @@ GuruNote/
 주요 변경 사항은 [CHANGELOG.md](./CHANGELOG.md) 에 [Keep a Changelog](https://keepachangelog.com/)
 형식으로 기록되며 버전은 [Semantic Versioning](https://semver.org/) 을 따릅니다.
 
-현재 버전: **v0.8.0.2** — 결과 카드 empty state 잘림 수정 (메타 헤더 빈 프레임의 CTkFrame 기본 200×200 크기로 인해 empty state 가 58px 로 찌그러지던 버그).
+현재 버전: **v0.8.0.3** — 업데이트 완료 시 메시지 박스만 띄우던 동작을 앱 자동 재시작(execv + subprocess 폴백)으로 교체.
 
 ---
 

@@ -2464,9 +2464,12 @@ class UpdateProgressDialog(ctk.CTkToplevel):
         try:
             result = self._done_queue.get_nowait()
             if result.get("ok"):
-                self._status_label.configure(text="업데이트 완료!")
-                messagebox.showinfo("완료", "업데이트 완료. 앱을 재시작하세요.")
-                self.destroy()
+                # 업데이트 성공 → 자동 재시작.
+                # 짧은 지연(700ms) 으로 사용자가 "완료 · 재시작 중..." 상태를
+                # 인지할 수 있게 함. 이후 `_restart_app` 가 현재 프로세스를
+                # 교체 (execv) 또는 subprocess Popen + sys.exit 폴백.
+                self._status_label.configure(text="업데이트 완료!  ·  재시작 중…")
+                self.after(700, self._restart_app)
             elif result.get("auth_error"):
                 # GitHub 인증 실패 — 전용 가이드 다이얼로그 (GitHub CLI / PAT)
                 self._status_label.configure(text="GitHub 인증 필요")
@@ -2485,6 +2488,60 @@ class UpdateProgressDialog(ctk.CTkToplevel):
             pass
 
         self.after(100, self._poll)
+
+    def _restart_app(self) -> None:
+        """현재 Python 프로세스를 교체해 앱을 재시작.
+
+        전략:
+        1. PyInstaller 번들: `sys.executable` 자체가 번들 바이너리이므로
+           그대로 재실행.
+        2. `python gui.py` 실행: `sys.executable + sys.argv` 로 재실행.
+        3. `os.execv` 로 in-place 교체 시도 → 실패 시 `subprocess.Popen` +
+           `sys.exit` 로 폴백 (일부 macOS .app 번들에서 execv 가 부모
+           launchd 와 충돌하는 경우 대비).
+
+        주의:
+        - 실행 중인 파이프라인 worker 가 있다면 강제 종료됨 (프로세스 종료
+          → daemon 스레드 함께 종료). 업데이트를 시작한 시점에 이미 user
+          가 작업 중단을 선택한 것으로 간주.
+        - Tkinter root 는 `sys.exit` 직전 destroy 하지 않음 — subprocess
+          폴백 시에만 destroy (execv 는 즉시 프로세스 교체라 불필요).
+        """
+        import subprocess as _sp
+
+        # 재실행 인자 결정
+        if getattr(sys, "frozen", False):
+            # PyInstaller 번들 — sys.executable 이 곧 앱 바이너리
+            args = [sys.executable]
+        else:
+            # `python gui.py` 계열 실행
+            args = [sys.executable, *sys.argv]
+
+        # 1차 시도: os.execv 로 현재 프로세스 in-place 교체
+        try:
+            os.execv(args[0], args)
+            return  # execv 가 성공하면 이 줄은 실행되지 않음
+        except OSError:
+            pass
+
+        # 2차 폴백: detached subprocess 로 새 프로세스 띄우고 현재 종료
+        try:
+            _sp.Popen(args, close_fds=True, start_new_session=True)
+        except Exception:  # noqa: BLE001
+            # 마지막 수단 — 재시작 실패 알림 후 그대로 종료
+            messagebox.showwarning(
+                "재시작 실패",
+                "자동 재시작이 불가능합니다. 앱을 수동으로 다시 실행해주세요.",
+            )
+        finally:
+            # 현재 Tk root 정리 + 프로세스 종료
+            try:
+                root = self.master
+                if root is not None:
+                    root.destroy()
+            except Exception:  # noqa: BLE001
+                pass
+            sys.exit(0)
 
 
 class SettingsDialog(ctk.CTkToplevel):
@@ -3156,7 +3213,7 @@ class GuruNoteApp(ctk.CTk):
             ).grid(row=2 + i, column=0, padx=10, pady=2, sticky="ew")
 
         ctk.CTkLabel(
-            sb, text="v0.8.0.2", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
+            sb, text="v0.8.0.3", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
         ).grid(row=7, column=0, padx=20, pady=(0, 16), sticky="sw")
 
     # ── 메인 영역 ────────────────────────────────────────────

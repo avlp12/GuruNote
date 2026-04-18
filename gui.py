@@ -96,6 +96,8 @@ from gurunote.updater import (
     update_project,
 )
 from gurunote.app_icon import get_app_icon_path
+from gurunote import ui_components as uc
+from gurunote import ui_theme as ut
 
 # 환경변수 로드
 load_dotenv()
@@ -3086,7 +3088,7 @@ class GuruNoteApp(ctk.CTk):
             ).grid(row=2 + i, column=0, padx=10, pady=2, sticky="ew")
 
         ctk.CTkLabel(
-            sb, text="v0.7.2.3", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
+            sb, text="v0.7.2.4", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
         ).grid(row=7, column=0, padx=20, pady=(0, 16), sticky="sw")
 
     # ── 메인 영역 ────────────────────────────────────────────
@@ -3099,40 +3101,198 @@ class GuruNoteApp(ctk.CTk):
         self._build_progress_card(m, 1)
         self._build_result_card(m, 2)
 
+    # ── 프리셋 ↔ STT 엔진 매핑 ──
+    # 초보자가 엔진 이름(whisperx/mlx/assemblyai) 대신 속도/품질 트레이드오프로
+    # 선택할 수 있게 4개 프리셋 제공. 내부적으로는 기존 STT_OPTIONS 로 변환.
+    _PRESETS = ("빠름", "균형", "품질", "직접")
+
+    def _preset_to_stt(self, preset: str) -> str | None:
+        """프리셋 → STT 엔진. '직접' 이면 None 반환 (사용자 수동 선택 유지)."""
+        if preset == "빠름":
+            return "assemblyai"  # 클라우드 API — 빠른 시동 + GPU 불필요
+        if preset == "품질":
+            # 플랫폼별 로컬 GPU 엔진. whisperx 미설치 / 키 없음은 기존
+            # _check_whisperx_available() / _check_api_keys() 가 처리.
+            return "mlx" if is_apple_silicon() else "whisperx"
+        if preset == "균형":
+            return "auto"  # 플랫폼별 자동 선택
+        return None  # "직접" — 사용자 선택 유지
+
+    def _stt_to_preset(self, stt: str) -> str:
+        """STT 엔진 → 현재 프리셋 (초기화용 역매핑)."""
+        if stt == "assemblyai":
+            return "빠름"
+        if stt in ("mlx", "whisperx"):
+            return "품질"
+        if stt == "auto":
+            return "균형"
+        return "직접"
+
     def _build_input_card(self, p, r):
-        c = _card(p)
-        c.grid(row=r, column=0, padx=20, pady=(20, 8), sticky="ew")
-        c.grid_columnconfigure(1, weight=1)
-        ctk.CTkLabel(c, text="오디오 소스", font=ctk.CTkFont(size=14, weight="bold"),
-                     text_color=C_TEXT).grid(row=0, column=0, columnspan=4, padx=16, pady=(14, 8), sticky="w")
-        ctk.CTkButton(c, text="File", width=44, height=40, corner_radius=8,
-                      fg_color=C_SURFACE_HI, hover_color=C_BORDER,
-                      command=self._on_pick_file).grid(row=1, column=0, padx=(16, 6), pady=(0, 14))
-        self._url_entry = ctk.CTkEntry(c, height=40, corner_radius=8,
-                                       placeholder_text="유튜브 URL 붙여넣기 또는 File 버튼으로 로컬 파일 선택",
-                                       fg_color=C_BG, border_color=C_BORDER, text_color=C_TEXT)
-        self._url_entry.grid(row=1, column=1, padx=4, pady=(0, 14), sticky="ew")
-        of = ctk.CTkFrame(c, fg_color="transparent")
-        of.grid(row=2, column=0, columnspan=2, padx=16, pady=(0, 14), sticky="ew")
-        of.grid_columnconfigure(4, weight=1)
-        ctk.CTkLabel(of, text="STT", text_color=C_TEXT_DIM, font=ctk.CTkFont(size=12)).grid(row=0, column=0, padx=(0, 6))
+        c = uc.card(p)
+        c.grid(row=r, column=0, padx=ut.SPACE_XL, pady=(ut.SPACE_XL, ut.SPACE_SM), sticky="ew")
+        c.grid_columnconfigure(0, weight=1)
+
+        # ── 섹션 헤더 ──
+        header = uc.section_header(
+            c, title="오디오 소스",
+            subtitle="유튜브 URL 을 붙여넣거나 로컬 파일을 선택하세요",
+        )
+        header.grid(row=0, column=0, padx=ut.SPACE_LG,
+                    pady=(ut.SPACE_LG, ut.SPACE_MD), sticky="ew")
+
+        # ── 행 1: 파일 선택 버튼 + URL Entry ──
+        row1 = ctk.CTkFrame(c, fg_color="transparent")
+        row1.grid(row=1, column=0, padx=ut.SPACE_LG,
+                  pady=(0, ut.SPACE_MD), sticky="ew")
+        row1.grid_columnconfigure(1, weight=1)
+
+        uc.button(
+            row1, text="파일 선택", variant=ut.BTN_SECONDARY,
+            command=self._on_pick_file, width=100, height=ut.HEIGHT_LG,
+        ).grid(row=0, column=0, padx=(0, ut.SPACE_SM))
+
+        self._url_entry = ctk.CTkEntry(
+            row1, height=ut.HEIGHT_LG, corner_radius=ut.RADIUS_SM,
+            placeholder_text="유튜브 URL 붙여넣기 (예: https://www.youtube.com/watch?v=...)",
+            fg_color=ut.C_BG, border_color=ut.C_BORDER, text_color=ut.C_TEXT,
+            font=ctk.CTkFont(size=ut.FONT_BODY),
+        )
+        self._url_entry.grid(row=0, column=1, sticky="ew")
+
+        # ── 행 2: 프리셋 세그먼트 + Primary CTA (GuruNote 생성) ──
+        row2 = ctk.CTkFrame(c, fg_color="transparent")
+        row2.grid(row=2, column=0, padx=ut.SPACE_LG,
+                  pady=(0, ut.SPACE_MD), sticky="ew")
+        row2.grid_columnconfigure(0, weight=1)
+
+        preset_wrap = ctk.CTkFrame(row2, fg_color="transparent")
+        preset_wrap.grid(row=0, column=0, sticky="w")
+        ctk.CTkLabel(
+            preset_wrap, text="처리 모드",
+            text_color=ut.C_TEXT_DIM, font=ctk.CTkFont(size=ut.FONT_META),
+        ).grid(row=0, column=0, padx=(0, ut.SPACE_SM))
+
+        # 초기 preset 은 현재 STT 엔진값에서 역추론 (env GURUNOTE_STT_ENGINE 존중)
         _env_stt = os.environ.get("GURUNOTE_STT_ENGINE", "auto").lower().strip()
         if _env_stt not in STT_OPTIONS:
-            _env_stt = "auto"  # vibevoice 등 삭제된 엔진이 남아있으면 auto 폴백
+            _env_stt = "auto"
+        _initial_preset = self._stt_to_preset(_env_stt)
+        self._preset_var = ctk.StringVar(value=_initial_preset)
+        self._preset_segment = ctk.CTkSegmentedButton(
+            preset_wrap,
+            values=list(self._PRESETS),
+            variable=self._preset_var,
+            command=self._on_preset_change,
+            height=ut.HEIGHT_MD,
+            corner_radius=ut.RADIUS_SM,
+            fg_color=ut.C_SURFACE_HI,
+            selected_color=ut.C_PRIMARY,
+            selected_hover_color=ut.C_PRIMARY_HO,
+            unselected_color=ut.C_SURFACE_HI,
+            unselected_hover_color=ut.C_BORDER,
+            text_color=ut.C_TEXT,
+            font=ctk.CTkFont(size=ut.FONT_META),
+        )
+        self._preset_segment.grid(row=0, column=1)
+
+        cta_wrap = ctk.CTkFrame(row2, fg_color="transparent")
+        cta_wrap.grid(row=0, column=1, sticky="e")
+        self._run_btn = uc.button(
+            cta_wrap, text="▶  GuruNote 생성", variant=ut.BTN_PRIMARY,
+            command=self._on_run,
+            height=ut.HEIGHT_LG, width=200,
+            font_size=ut.FONT_BODY, font_weight=ut.WEIGHT_BOLD,
+        )
+        self._run_btn.grid(row=0, column=0, padx=(ut.SPACE_SM, ut.SPACE_XS))
+        self._stop_btn = uc.button(
+            cta_wrap, text="⏹", variant=ut.BTN_SECONDARY,
+            command=self._on_stop, state="disabled",
+            height=ut.HEIGHT_LG, width=40,
+        )
+        self._stop_btn.grid(row=0, column=1)
+
+        # ── 행 3: 고급 설정 토글 + 숨겨진 STT/LLM 드롭다운 ──
+        self._advanced_open = False
+        self._advanced_toggle = ctk.CTkButton(
+            c, text="▸  고급 설정",
+            fg_color="transparent", hover_color=ut.C_SURFACE_HI,
+            text_color=ut.C_TEXT_DIM,
+            border_width=0, anchor="w",
+            height=ut.HEIGHT_MD, corner_radius=ut.RADIUS_SM,
+            font=ctk.CTkFont(size=ut.FONT_META),
+            command=self._toggle_advanced,
+        )
+        self._advanced_toggle.grid(row=3, column=0, padx=ut.SPACE_LG,
+                                   pady=(0, ut.SPACE_SM), sticky="ew")
+
+        self._advanced_frame = ctk.CTkFrame(c, fg_color="transparent")
+        self._advanced_frame.grid_columnconfigure(4, weight=1)
+
+        ctk.CTkLabel(
+            self._advanced_frame, text="STT 엔진",
+            text_color=ut.C_TEXT_DIM, font=ctk.CTkFont(size=ut.FONT_META),
+        ).grid(row=0, column=0, padx=(0, ut.SPACE_SM), pady=ut.SPACE_XS, sticky="w")
+
         self._stt_var = ctk.StringVar(value=_env_stt)
-        ctk.CTkOptionMenu(of, variable=self._stt_var, values=STT_OPTIONS, width=130, height=32,
-                          corner_radius=8, fg_color=C_SURFACE_HI, button_color=C_BORDER).grid(row=0, column=1, padx=(0, 16))
-        ctk.CTkLabel(of, text="LLM", text_color=C_TEXT_DIM, font=ctk.CTkFont(size=12)).grid(row=0, column=2, padx=(0, 6))
+        self._stt_menu = ctk.CTkOptionMenu(
+            self._advanced_frame, variable=self._stt_var, values=STT_OPTIONS,
+            width=140, height=ut.HEIGHT_MD, corner_radius=ut.RADIUS_SM,
+            fg_color=ut.C_SURFACE_HI, button_color=ut.C_BORDER,
+            font=ctk.CTkFont(size=ut.FONT_META),
+            command=self._on_stt_manual_change,
+        )
+        self._stt_menu.grid(row=0, column=1, padx=(0, ut.SPACE_LG),
+                            pady=ut.SPACE_XS, sticky="w")
+
+        ctk.CTkLabel(
+            self._advanced_frame, text="LLM",
+            text_color=ut.C_TEXT_DIM, font=ctk.CTkFont(size=ut.FONT_META),
+        ).grid(row=0, column=2, padx=(0, ut.SPACE_SM), pady=ut.SPACE_XS, sticky="w")
+
         self._llm_var = ctk.StringVar(value=os.environ.get("LLM_PROVIDER", "openai"))
-        ctk.CTkOptionMenu(of, variable=self._llm_var, values=LLM_OPTIONS, width=160, height=32,
-                          corner_radius=8, fg_color=C_SURFACE_HI, button_color=C_BORDER).grid(row=0, column=3, padx=(0, 16))
-        self._run_btn = ctk.CTkButton(of, text="▶  GuruNote 생성하기", height=36, width=200, corner_radius=8,
-                                      font=ctk.CTkFont(size=13, weight="bold"),
-                                      fg_color=C_PRIMARY, hover_color=C_PRIMARY_HO, command=self._on_run)
-        self._run_btn.grid(row=0, column=5, padx=(0, 6))
-        self._stop_btn = ctk.CTkButton(of, text="⏹", height=36, width=36, corner_radius=8,
-                                       fg_color=C_SURFACE_HI, hover_color=C_DANGER, state="disabled", command=self._on_stop)
-        self._stop_btn.grid(row=0, column=6)
+        self._llm_menu = ctk.CTkOptionMenu(
+            self._advanced_frame, variable=self._llm_var, values=LLM_OPTIONS,
+            width=180, height=ut.HEIGHT_MD, corner_radius=ut.RADIUS_SM,
+            fg_color=ut.C_SURFACE_HI, button_color=ut.C_BORDER,
+            font=ctk.CTkFont(size=ut.FONT_META),
+        )
+        self._llm_menu.grid(row=0, column=3, padx=(0, 0),
+                            pady=ut.SPACE_XS, sticky="w")
+
+        # 기본 preset 이 "직접" 이면 고급 영역 자동 확장 (env 에서 명시 선택된 경우)
+        if _initial_preset == "직접":
+            self._open_advanced()
+
+    def _on_preset_change(self, preset: str) -> None:
+        """프리셋 선택 시 STT 엔진 자동 매핑. '직접' 선택 시 고급 영역 자동 확장."""
+        stt = self._preset_to_stt(preset)
+        if stt is not None:
+            self._stt_var.set(stt)  # variable 변경은 OptionMenu command 를 트리거하지 않음 — 의도된 동작.
+        if preset == "직접" and not self._advanced_open:
+            self._open_advanced()
+
+    def _on_stt_manual_change(self, _value: str) -> None:
+        """사용자가 STT 드롭다운을 직접 변경 → 프리셋을 '직접' 으로 전환."""
+        if self._preset_var.get() != "직접":
+            self._preset_var.set("직접")
+
+    def _toggle_advanced(self) -> None:
+        if self._advanced_open:
+            self._close_advanced()
+        else:
+            self._open_advanced()
+
+    def _open_advanced(self) -> None:
+        self._advanced_open = True
+        self._advanced_toggle.configure(text="▾  고급 설정")
+        self._advanced_frame.grid(row=4, column=0, padx=ut.SPACE_LG,
+                                  pady=(0, ut.SPACE_MD), sticky="ew")
+
+    def _close_advanced(self) -> None:
+        self._advanced_open = False
+        self._advanced_toggle.configure(text="▸  고급 설정")
+        self._advanced_frame.grid_forget()
 
     def _build_progress_card(self, p, r):
         c = _card(p)
@@ -3201,7 +3361,7 @@ class GuruNoteApp(ctk.CTk):
         self._log_text = self._make_tb(self._tab_log)
         self._set_text(self._summary_text,
                        "유튜브 URL 또는 로컬 파일을 선택하고\n"
-                       "'GuruNote 생성하기' 를 눌러주세요.\n\n"
+                       "'GuruNote 생성' 을 눌러주세요.\n\n"
                        "화자 분리된 한국어 요약본이 이 자리에 표시됩니다.")
 
     @staticmethod
@@ -3384,7 +3544,7 @@ class GuruNoteApp(ctk.CTk):
         self.after(100, self._poll_worker)
 
     def _on_pipeline_done(self, result):
-        self._run_btn.configure(state="normal", text="▶  GuruNote 생성하기")
+        self._run_btn.configure(state="normal", text="▶  GuruNote 생성")
         self._stop_btn.configure(state="disabled")
         if not result.get("ok"):
             self._title_label.configure(text="[Error] 오류 발생")

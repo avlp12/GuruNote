@@ -7,6 +7,20 @@
 
 ## [Unreleased]
 
+## [0.8.0.5] - 2026-04-18
+
+### Fixed
+- **History 카드 Del 버튼 잘림** (`gui.py:HistoryDialog._render_card`) —
+  사용자 스크린샷에서 `Log` 버튼 옆 버튼이 일부만 보이고 잘려 보이던 버그.
+  - **원인**: 기존 버튼 행은 `.md · Edit · PDF · Obs · Ntn · Log` 6개를
+    `pack(side="left")` 로, `Del` 하나만 `pack(side="right")` 로 배치.
+    카드 폭 280px → 내부 btn_row 268px 인데, 좌측 6개 버튼이 실제 렌더 폭
+    합계 242px 를 차지해 Del 이 26px 로 squeeze 되며 "Del" 텍스트가 clip.
+  - **수정**: `grid_columnconfigure(..., weight=1, uniform="hist_btn")` 로
+    7개 컬럼 균등 배치. 각 버튼은 `grid(column=i, sticky="ew", padx=1)` —
+    모든 버튼이 ~36px 동일 폭으로 렌더되며 누구도 clip 되지 않음.
+  - Phase 3 (히스토리 카드 전면 재설계, 2버튼 + 더보기) 전까지 임시 유지.
+
 ## [0.8.0.4] - 2026-04-18
 
 ### Changed
@@ -1259,7 +1273,8 @@ bash run_desktop.sh
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.8.0.4...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.8.0.5...HEAD
+[0.8.0.5]: https://github.com/avlp12/GuruNote/compare/v0.8.0.4...v0.8.0.5
 [0.8.0.4]: https://github.com/avlp12/GuruNote/compare/v0.8.0.3...v0.8.0.4
 [0.8.0.3]: https://github.com/avlp12/GuruNote/compare/v0.8.0.2...v0.8.0.3
 [0.8.0.2]: https://github.com/avlp12/GuruNote/compare/v0.8.0.1...v0.8.0.2

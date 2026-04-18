@@ -1416,46 +1416,54 @@ class HistoryDialog(ctk.CTkToplevel):
                 wraplength=self._CARD_W - 30, anchor="w", justify="left",
             ).grid(row=5, column=0, padx=10, pady=(2, 4), sticky="w")
 
-        # 액션 버튼 바
+        # 액션 버튼 바 — 그리드 uniform 컬럼으로 7개 버튼 균등 배치
+        # (기존 pack side="right" 방식은 카드 좁을 때 Del 버튼이 26px 로
+        # 잘리는 문제가 있어 grid + uniform 으로 전환.)
         btn_row = ctk.CTkFrame(card, fg_color="transparent")
         btn_row.grid(row=6, column=0, padx=8, pady=(4, 10), sticky="ew")
         job_id = job.get("job_id", "")
-        # 7버튼 레이아웃 (카드 inner ~264px, 7×32+6×2=236 ← 여유 28px)
-        #   .md · Edit | PDF · Obs · Ntn | Log · Del
+
+        # 버튼 목록 — has_markdown 여부에 따라 다른 개수. grid 균등 배치용으로
+        # 먼저 모으고 한 번에 column 설정.
+        btns: list[ctk.CTkButton] = []
         if job.get("has_markdown"):
-            ctk.CTkButton(
-                btn_row, text=".md", width=32, height=28,
+            btns.append(ctk.CTkButton(
+                btn_row, text=".md", height=28,
                 command=lambda jid=job_id, t=title: self._save_md(jid, t),
-            ).pack(side="left", padx=(0, 2))
-            ctk.CTkButton(
-                btn_row, text="Edit", width=36, height=28,
+            ))
+            btns.append(ctk.CTkButton(
+                btn_row, text="Edit", height=28,
                 fg_color=C_SURFACE_HI, hover_color=C_PRIMARY,
                 command=lambda jid=job_id, t=title: self._edit_note(jid, t),
-            ).pack(side="left", padx=2)
-            ctk.CTkButton(
-                btn_row, text="PDF", width=32, height=28,
+            ))
+            btns.append(ctk.CTkButton(
+                btn_row, text="PDF", height=28,
                 command=lambda jid=job_id, t=title: self._save_pdf(jid, t),
-            ).pack(side="left", padx=2)
-            ctk.CTkButton(
-                btn_row, text="Obs", width=32, height=28,
+            ))
+            btns.append(ctk.CTkButton(
+                btn_row, text="Obs", height=28,
                 fg_color=C_PRIMARY, hover_color=C_PRIMARY_HO,
                 command=lambda jid=job_id, t=title: self._save_obsidian(jid, t),
-            ).pack(side="left", padx=2)
-            ctk.CTkButton(
-                btn_row, text="Ntn", width=32, height=28,
+            ))
+            btns.append(ctk.CTkButton(
+                btn_row, text="Ntn", height=28,
                 fg_color=C_PRIMARY, hover_color=C_PRIMARY_HO,
                 command=lambda jid=job_id, t=title: self._save_notion(jid, t),
-            ).pack(side="left", padx=2)
-        ctk.CTkButton(
-            btn_row, text="Log", width=32, height=28,
+            ))
+        btns.append(ctk.CTkButton(
+            btn_row, text="Log", height=28,
             fg_color="gray35",
             command=lambda jid=job_id: self._show_log(jid),
-        ).pack(side="left", padx=2)
-        ctk.CTkButton(
-            btn_row, text="Del", width=32, height=28,
+        ))
+        btns.append(ctk.CTkButton(
+            btn_row, text="Del", height=28,
             fg_color="gray35", hover_color=C_DANGER,
             command=lambda jid=job_id: self._delete(jid),
-        ).pack(side="right", padx=2)
+        ))
+
+        for col, btn in enumerate(btns):
+            btn_row.grid_columnconfigure(col, weight=1, uniform="hist_btn")
+            btn.grid(row=0, column=col, padx=1, sticky="ew")
 
     def _attach_thumbnail(self, holder: ctk.CTkFrame, job: dict) -> None:
         """
@@ -3316,7 +3324,7 @@ class GuruNoteApp(ctk.CTk):
             ).grid(row=2 + i, column=0, padx=10, pady=2, sticky="ew")
 
         ctk.CTkLabel(
-            sb, text="v0.8.0.4", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
+            sb, text="v0.8.0.5", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
         ).grid(row=7, column=0, padx=20, pady=(0, 16), sticky="sw")
 
     # ── 메인 영역 ────────────────────────────────────────────

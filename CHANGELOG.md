@@ -7,6 +7,21 @@
 
 ## [Unreleased]
 
+## [0.8.0.2] - 2026-04-18
+
+### Fixed
+- **결과 카드 empty state 잘림** (`gui.py:_build_result_meta_header`) — 사용자
+  스크린샷에서 🎙️ 아이콘 외 empty state 텍스트(`아직 결과가 없습니다` /
+  3단계 흐름 / 지원 파일) 가 보이지 않던 버그.
+  - **원인**: `self._meta_row = ctk.CTkFrame(...)` 를 빈 상태로 생성 시
+    CustomTkinter 의 CTkFrame 기본 크기(200×200) 가 적용돼 메타 헤더 row 0
+    이 232px 로 부풀었고, 결과 카드 row 1 (weight=1) 에 할당된 공간이
+    58px 로 찌그러지면서 empty state 의 4개 라벨 중 🎙️ 만 보이고 나머지
+    3개가 clip 됨.
+  - **수정**: `_meta_row` 생성 시 `height=1` 명시. `grid_propagate(True,
+    기본값)` 가 children(labels/chips) 추가 시 자연스럽게 expand.
+    populated 후 433×28, clear 후 children 없음 확인.
+
 ## [0.8.0.1] - 2026-04-18
 
 ### Changed
@@ -1199,7 +1214,8 @@ bash run_desktop.sh
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.8.0.1...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.8.0.2...HEAD
+[0.8.0.2]: https://github.com/avlp12/GuruNote/compare/v0.8.0.1...v0.8.0.2
 [0.8.0.1]: https://github.com/avlp12/GuruNote/compare/v0.8.0.0...v0.8.0.1
 [0.8.0.0]: https://github.com/avlp12/GuruNote/compare/v0.7.2.5...v0.8.0.0
 [0.7.2.5]: https://github.com/avlp12/GuruNote/compare/v0.7.2.4...v0.7.2.5

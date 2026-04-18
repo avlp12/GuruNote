@@ -467,7 +467,7 @@ GuruNote/
 주요 변경 사항은 [CHANGELOG.md](./CHANGELOG.md) 에 [Keep a Changelog](https://keepachangelog.com/)
 형식으로 기록되며 버전은 [Semantic Versioning](https://semver.org/) 을 따릅니다.
 
-현재 버전: **v0.7.2.2** — macOS 입력창 붙여넣기 안정화 (Cmd+V 직접 클립보드 처리 + 우클릭 컨텍스트 메뉴).
+현재 버전: **v0.7.2.3** — UI 리프레시 Phase 1a: 디자인 토큰·버튼/칩/카드 factory·Toast 매니저 신규 모듈 추가 (gui.py 변경 없음, 후속 Phase 에서 적용).
 
 ---
 

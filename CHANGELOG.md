@@ -7,6 +7,33 @@
 
 ## [Unreleased]
 
+## [0.7.2.3] - 2026-04-18
+
+### Added
+- **UI 리프레시 Phase 1a — 디자인 시스템 / 컴포넌트 라이브러리 기반 구축**
+  (`gurunote/ui_theme.py`, `gurunote/ui_components.py`, `gurunote/ui_toast.py`
+  신규). Phase 1 UI 리프레시의 **첫 번째 단계** — 후속 Phase (1b/1c/1d) 에서
+  실제 화면에 적용할 재료를 준비한다. `gui.py` 는 이번 PR 에서 **건드리지
+  않아** 동작 회귀 위험이 0 이다.
+  - **`ui_theme.py`** — 분산돼 있던 색상/간격/반경/폰트/높이 상수를 단일
+    출처로 통합. Material 3 다크 팔레트(purple tonal)는 기존 `gui.py` 의
+    `C_*` 값을 그대로 이관해 시각적 변화 없음. 추가 토큰:
+    `SPACE_XXS~XXXL` (2·4·8·12·16·24·32·48), `RADIUS_SM/MD/LG` (8/12/16),
+    `HEIGHT_SM/MD/LG/XL` (28/32/40/48), `FONT_PAGE_TITLE~META` (27/21/16/14/13/11),
+    `BTN_PRIMARY/SECONDARY/GHOST/DANGER` 변형 상수, `STATUS_COLORS` 맵
+    (완료/실패/처리 중/대기).
+  - **`ui_components.py`** — factory 함수 6종:
+    - `button(...)` — 변형 기반 CTkButton (primary/secondary/ghost/danger)
+    - `card(...)` — RADIUS_MD + border 로 표준 카드 frame
+    - `section_header(...)` — title + optional subtitle
+    - `status_pill(...)` — 작업 상태 표시용 pill
+    - `tag_chip(...)` — 태그/분류용 chip (default/accent)
+    - `divider(...)` — 수평/수직 분리선
+  - **`ui_toast.py`** — `ToastManager` 클래스. `messagebox` 의 blocking
+    modal 대신 우측 하단에 non-blocking 토스트 표시. 여러 개 스택 가능,
+    레벨(info/success/warning/error) 별 색상, 클릭 시 즉시 dismiss,
+    `after()` 로 자동 자동 dismiss (기본 2.5초).
+
 ## [0.7.2.2] - 2026-04-18
 
 ### Fixed
@@ -1012,7 +1039,8 @@ bash run_desktop.sh
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.7.2.2...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.7.2.3...HEAD
+[0.7.2.3]: https://github.com/avlp12/GuruNote/compare/v0.7.2.2...v0.7.2.3
 [0.7.2.2]: https://github.com/avlp12/GuruNote/compare/v0.7.2.1...v0.7.2.2
 [0.7.2.1]: https://github.com/avlp12/GuruNote/compare/v0.7.2.0...v0.7.2.1
 [0.7.2.0]: https://github.com/avlp12/GuruNote/compare/v0.7.1.1...v0.7.2.0

@@ -7,6 +7,30 @@
 
 ## [Unreleased]
 
+## [0.7.2.2] - 2026-04-18
+
+### Fixed
+- **macOS 오디오 소스 입력창 붙여넣기 안정화** (`gui.py` —
+  `_install_clipboard_shortcuts`) — 사용자가 "오디오 소스 URL 입력창에
+  붙여넣기가 동작하지 않는다" 고 보고. 이전 v0.6.0.2 의 fix 가
+  `event_generate("<<Paste>>")` 로 가상 이벤트를 dispatch 했지만 두 가지
+  실패 경로가 남아 있었음:
+  1. `focus_get()` 가 CTkEntry 의 wrapper Frame 을 돌려주는 케이스 —
+     Frame 에는 `<<Paste>>` 바인딩이 없어 가상 이벤트가 무시됨.
+  2. macOS Aqua + 한국어 IME 조합에서 Tk 의 가상 이벤트 tail 큐
+     dispatch 가 누락되는 케이스.
+  - 이번 fix 는 가상 이벤트를 거치지 않고 `clipboard_get()` 으로 직접
+    텍스트를 읽어 포커스 위젯에 `insert()` 한다. CTkEntry/CTkTextbox
+    wrapper 가 포커스 대상이면 내부 `_entry`/`_textbox` 로 자동 위임.
+  - 복사/잘라내기/전체선택도 동일한 직접 호출 방식으로 통일 (선택 영역
+    없으면 silent no-op).
+
+### Added
+- **우클릭 컨텍스트 메뉴 (macOS)** — Cmd+V 가 어떤 이유로든 실패해도
+  마우스로 잘라내기/복사/붙여넣기/전체 선택 가능. Button-2 (한 손가락
+  우클릭), Button-3 (두 손가락 클릭), Ctrl+클릭 모두 지원. 클립보드/선택
+  상태에 따라 메뉴 항목이 자동 활성/비활성.
+
 ## [0.7.2.1] - 2026-04-17
 
 ### Fixed
@@ -988,7 +1012,8 @@ bash run_desktop.sh
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.7.2.1...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.7.2.2...HEAD
+[0.7.2.2]: https://github.com/avlp12/GuruNote/compare/v0.7.2.1...v0.7.2.2
 [0.7.2.1]: https://github.com/avlp12/GuruNote/compare/v0.7.2.0...v0.7.2.1
 [0.7.2.0]: https://github.com/avlp12/GuruNote/compare/v0.7.1.1...v0.7.2.0
 [0.7.1.1]: https://github.com/avlp12/GuruNote/compare/v0.7.1.0...v0.7.1.1

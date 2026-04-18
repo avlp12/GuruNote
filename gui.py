@@ -3043,8 +3043,12 @@ class GuruNoteApp(ctk.CTk):
         self._result = None
         self._local_file_path = ""
         self._step_labels = []
+        self._last_saved_path: Optional[str] = None  # 폴더 열기 용 — 마지막 .md/.pdf 저장 경로
         # macOS Cmd+C/V/X/A 명시 바인딩 (Toplevel 포함 전역 적용)
         _install_clipboard_shortcuts(self)
+        # Non-blocking 토스트 매니저 (저장 성공 등 소소한 피드백용)
+        from gurunote.ui_toast import ToastManager as _ToastManager
+        self._toast = _ToastManager(self)
         self._build_ui()
 
     def _build_ui(self):
@@ -3088,7 +3092,7 @@ class GuruNoteApp(ctk.CTk):
             ).grid(row=2 + i, column=0, padx=10, pady=2, sticky="ew")
 
         ctk.CTkLabel(
-            sb, text="v0.7.2.5", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
+            sb, text="v0.8.0.0", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
         ).grid(row=7, column=0, padx=20, pady=(0, 16), sticky="sw")
 
     # ── 메인 영역 ────────────────────────────────────────────
@@ -3410,48 +3414,189 @@ class GuruNoteApp(ctk.CTk):
         self._progress_log_toggle.configure(text="▸  처리 로그 보기")
         self._progress_log_text.grid_forget()
 
+    # 지원 오디오 파일 확장자 (empty state 표시용) — SUPPORTED_EXTS 는 import 시점에 없을 수 있음
+    @property
+    def _supported_ext_hint(self) -> str:
+        try:
+            exts = sorted(SUPPORTED_EXTS)
+            return "지원 파일: " + "  ".join(exts)
+        except Exception:  # noqa: BLE001
+            return "지원 파일: .mp3 .wav .mp4 .m4a .webm .ogg"
+
+    @staticmethod
+    def _format_duration_meta(sec: float) -> str:
+        """오디오 길이를 '01시간 42분' 또는 '12분 30초' 로 포맷."""
+        s = int(sec or 0)
+        h, rem = divmod(s, 3600)
+        m, ss = divmod(rem, 60)
+        if h > 0:
+            return f"{h}시간 {m}분"
+        return f"{m}분 {ss}초"
+
     def _build_result_card(self, p, r):
-        c = _card(p)
-        c.grid(row=r, column=0, padx=20, pady=(8, 20), sticky="nsew")
+        c = uc.card(p)
+        c.grid(row=r, column=0, padx=ut.SPACE_XL,
+               pady=(ut.SPACE_SM, ut.SPACE_XL), sticky="nsew")
         c.grid_rowconfigure(1, weight=1)
         c.grid_columnconfigure(0, weight=1)
-        top = ctk.CTkFrame(c, fg_color="transparent")
-        top.grid(row=0, column=0, padx=16, pady=(14, 4), sticky="ew")
-        top.grid_columnconfigure(0, weight=1)
-        self._title_label = ctk.CTkLabel(top, text="결과", font=ctk.CTkFont(size=14, weight="bold"), text_color=C_TEXT)
-        self._title_label.grid(row=0, column=0, sticky="w")
-        self._save_btn = ctk.CTkButton(top, text="Save .md", height=32, width=90, corner_radius=8,
-                                       fg_color=C_SURFACE_HI, hover_color=C_PRIMARY, state="disabled", command=self._on_save)
-        self._save_btn.grid(row=0, column=1, sticky="e", padx=(0, 4))
-        self._save_pdf_btn = ctk.CTkButton(top, text="Save PDF", height=32, width=90, corner_radius=8,
-                                           fg_color=C_SURFACE_HI, hover_color=C_PRIMARY, state="disabled",
-                                           command=self._on_save_pdf)
-        self._save_pdf_btn.grid(row=0, column=2, sticky="e", padx=(0, 4))
-        self._save_obsidian_btn = ctk.CTkButton(top, text="→ Obsidian", height=32, width=100, corner_radius=8,
-                                                fg_color=C_SURFACE_HI, hover_color=C_PRIMARY, state="disabled",
-                                                command=self._on_save_obsidian)
-        self._save_obsidian_btn.grid(row=0, column=3, sticky="e", padx=(0, 4))
-        self._save_notion_btn = ctk.CTkButton(top, text="→ Notion", height=32, width=100, corner_radius=8,
-                                              fg_color=C_SURFACE_HI, hover_color=C_PRIMARY, state="disabled",
-                                              command=self._on_save_notion)
-        self._save_notion_btn.grid(row=0, column=4, sticky="e")
-        self._tabview = ctk.CTkTabview(c, height=300, corner_radius=8, fg_color=C_SURFACE,
-                                       segmented_button_fg_color=C_SURFACE_HI,
-                                       segmented_button_selected_color=C_PRIMARY,
-                                       segmented_button_unselected_color=C_SURFACE_HI)
-        self._tabview.grid(row=1, column=0, padx=12, pady=(0, 12), sticky="nsew")
-        self._tab_summary = self._tabview.add("Summary")
-        self._tab_translated = self._tabview.add("Korean")
-        self._tab_original = self._tabview.add("English")
-        self._tab_log = self._tabview.add("Log")
+
+        # ── 상단 meta 헤더 + 내보내기 버튼 ──
+        self._build_result_meta_header(c)
+
+        # ── 결과 tabview (한국어 탭 이름) ──
+        self._tabview = ctk.CTkTabview(
+            c, height=300, corner_radius=ut.RADIUS_SM,
+            fg_color=ut.C_SURFACE,
+            segmented_button_fg_color=ut.C_SURFACE_HI,
+            segmented_button_selected_color=ut.C_PRIMARY,
+            segmented_button_unselected_color=ut.C_SURFACE_HI,
+        )
+        self._tab_summary = self._tabview.add("요약")
+        self._tab_translated = self._tabview.add("한국어 전문")
+        self._tab_original = self._tabview.add("원문")
+        self._tab_log = self._tabview.add("처리 로그")
         self._summary_text = self._make_tb(self._tab_summary)
         self._translated_text = self._make_tb(self._tab_translated)
         self._original_text = self._make_tb(self._tab_original)
         self._log_text = self._make_tb(self._tab_log)
-        self._set_text(self._summary_text,
-                       "유튜브 URL 또는 로컬 파일을 선택하고\n"
-                       "'GuruNote 생성' 을 눌러주세요.\n\n"
-                       "화자 분리된 한국어 요약본이 이 자리에 표시됩니다.")
+
+        # ── Empty state 프레임 ──
+        self._empty_state = self._build_result_empty_state(c)
+        # 초기 상태: empty state 표시, tabview 숨김
+        self._show_empty_state()
+
+    def _build_result_meta_header(self, parent):
+        """결과 카드 상단 — 영상 제목 / 메타 row / 내보내기 버튼.
+
+        파이프라인 완료 전: 제목은 "결과가 여기에 표시됩니다", meta row 는 빈 상태.
+        완료 후 `_update_result_meta` 가 제목/업로더/게시일/길이/화자수/STT/LLM 을
+        채움.
+        """
+        header = ctk.CTkFrame(parent, fg_color="transparent")
+        header.grid(row=0, column=0, padx=ut.SPACE_LG,
+                    pady=ut.SPACE_LG, sticky="ew")
+        header.grid_columnconfigure(0, weight=1)
+
+        title_wrap = ctk.CTkFrame(header, fg_color="transparent")
+        title_wrap.grid(row=0, column=0, sticky="ew")
+        title_wrap.grid_columnconfigure(0, weight=1)
+
+        self._title_label = ctk.CTkLabel(
+            title_wrap, text="결과가 여기에 표시됩니다",
+            font=ctk.CTkFont(size=ut.FONT_HEADING, weight=ut.WEIGHT_BOLD),
+            text_color=ut.C_TEXT, anchor="w", wraplength=700, justify="left",
+        )
+        self._title_label.grid(row=0, column=0, sticky="w")
+
+        # Meta row — `_update_result_meta` 가 위젯을 동적으로 채움
+        self._meta_row = ctk.CTkFrame(title_wrap, fg_color="transparent")
+        self._meta_row.grid(row=1, column=0, pady=(ut.SPACE_XS, 0), sticky="w")
+
+        # 내보내기 dropdown 트리거 버튼
+        self._export_btn = uc.button(
+            header, text="내보내기  ▾",
+            variant=ut.BTN_PRIMARY,
+            command=self._show_export_menu,
+            state="disabled",
+            height=ut.HEIGHT_LG, width=130,
+            font_weight=ut.WEIGHT_BOLD,
+        )
+        self._export_btn.grid(row=0, column=1, padx=(ut.SPACE_MD, 0), sticky="e")
+
+    def _build_result_empty_state(self, parent) -> ctk.CTkFrame:
+        """파이프라인 실행 전 결과 영역에 표시할 안내 프레임."""
+        frame = ctk.CTkFrame(
+            parent, fg_color=ut.C_BG, corner_radius=ut.RADIUS_SM,
+            border_color=ut.C_BORDER, border_width=1,
+        )
+        frame.grid_rowconfigure(0, weight=1)
+        frame.grid_columnconfigure(0, weight=1)
+
+        inner = ctk.CTkFrame(frame, fg_color="transparent")
+        inner.grid(row=0, column=0)
+
+        ctk.CTkLabel(
+            inner, text="🎙️",
+            font=ctk.CTkFont(size=48),
+            text_color=ut.C_PRIMARY_BRIGHT,
+        ).grid(row=0, column=0, pady=(ut.SPACE_XL, ut.SPACE_SM))
+
+        ctk.CTkLabel(
+            inner, text="아직 결과가 없습니다",
+            font=ctk.CTkFont(size=ut.FONT_SECTION, weight=ut.WEIGHT_BOLD),
+            text_color=ut.C_TEXT,
+        ).grid(row=1, column=0, pady=(0, ut.SPACE_LG))
+
+        steps = (
+            "1.   상단 입력창에 유튜브 URL 을 붙여넣거나  '파일 선택'\n"
+            "2.   처리 모드 선택  (빠름  ·  균형  ·  품질)\n"
+            "3.   ▶   GuruNote 생성   클릭"
+        )
+        ctk.CTkLabel(
+            inner, text=steps,
+            font=ctk.CTkFont(size=ut.FONT_BODY),
+            text_color=ut.C_TEXT_DIM, justify="left", anchor="w",
+        ).grid(row=2, column=0, pady=(0, ut.SPACE_MD))
+
+        ctk.CTkLabel(
+            inner, text=self._supported_ext_hint,
+            font=ctk.CTkFont(size=ut.FONT_META),
+            text_color=ut.C_TEXT_MUTED,
+        ).grid(row=3, column=0, pady=(0, ut.SPACE_XL))
+
+        return frame
+
+    def _show_empty_state(self) -> None:
+        """결과 영역을 empty state 로 전환."""
+        try:
+            self._tabview.grid_forget()
+        except Exception:  # noqa: BLE001
+            pass
+        self._empty_state.grid(
+            row=1, column=0, padx=ut.SPACE_LG,
+            pady=(0, ut.SPACE_LG), sticky="nsew",
+        )
+
+    def _show_result_tabs(self) -> None:
+        """결과 영역을 tabview 로 전환."""
+        try:
+            self._empty_state.grid_forget()
+        except Exception:  # noqa: BLE001
+            pass
+        self._tabview.grid(
+            row=1, column=0, padx=ut.SPACE_MD,
+            pady=(0, ut.SPACE_MD), sticky="nsew",
+        )
+
+    def _update_result_meta(self, audio, transcript) -> None:
+        """결과 meta row 를 파이프라인 결과로 채움."""
+        for w in self._meta_row.winfo_children():
+            w.destroy()
+
+        parts = []
+        if getattr(audio, "uploader", None):
+            parts.append(audio.uploader)
+        if getattr(audio, "upload_date", None):
+            parts.append(audio.upload_date)
+        parts.append(self._format_duration_meta(getattr(audio, "duration_sec", 0.0)))
+        speaker_count = len(transcript.speakers) if transcript.speakers else 0
+        if speaker_count > 0:
+            parts.append(f"화자 {speaker_count}명")
+
+        meta_text = "  ·  ".join(parts)
+        ctk.CTkLabel(
+            self._meta_row, text=meta_text,
+            font=ctk.CTkFont(size=ut.FONT_META),
+            text_color=ut.C_TEXT_DIM,
+        ).pack(side="left", padx=(0, ut.SPACE_SM))
+
+        engine = getattr(transcript, "engine", "") or self._stt_var.get() or "—"
+        uc.tag_chip(
+            self._meta_row, text=f"STT  {engine}", variant="default",
+        ).pack(side="left", padx=(0, ut.SPACE_XS))
+        uc.tag_chip(
+            self._meta_row, text=f"LLM  {self._llm_var.get()}", variant="accent",
+        ).pack(side="left")
 
     @staticmethod
     def _make_tb(parent):
@@ -3589,13 +3734,11 @@ class GuruNoteApp(ctk.CTk):
             return
         self._run_btn.configure(state="disabled", text="처리 중…")
         self._stop_btn.configure(state="normal")
-        self._save_btn.configure(state="disabled")
-        self._save_pdf_btn.configure(state="disabled")
-        self._save_obsidian_btn.configure(state="disabled")
-        self._save_notion_btn.configure(state="disabled")
+        self._export_btn.configure(state="disabled")
         self._clear_log()
         self._clear_results()
-        self._title_label.configure(text="파이프라인 실행 중…")
+        self._show_result_tabs()  # empty state → tabview 전환 (로그 탭에서 라이브 진행 확인)
+        self._title_label.configure(text="처리 중…")
         self._set_progress(0.01)
         for sl in self._step_labels:
             sl.configure(fg_color=C_SURFACE_HI, text_color=C_TEXT_DIM)
@@ -3636,24 +3779,83 @@ class GuruNoteApp(ctk.CTk):
         self._run_btn.configure(state="normal", text="▶  GuruNote 생성")
         self._stop_btn.configure(state="disabled")
         if not result.get("ok"):
-            self._title_label.configure(text="[Error] 오류 발생")
+            self._title_label.configure(text="[오류] 파이프라인 실패")
             messagebox.showerror("오류", result.get("error", "알 수 없는 오류"))
             return
         self._result = result
         audio = result["audio"]
         transcript = result["transcript"]
-        self._title_label.configure(text=f"🎉 {audio.video_title}")
-        self._save_btn.configure(state="normal")
-        self._save_pdf_btn.configure(state="normal")
-        self._save_obsidian_btn.configure(state="normal")
-        self._save_notion_btn.configure(state="normal")
+        # 제목 + 메타 + tabview 전환
+        self._title_label.configure(text=audio.video_title)
+        self._update_result_meta(audio, transcript)
+        self._export_btn.configure(state="normal")
         self._set_text(self._summary_text, result["summary_md"])
         self._set_text(self._translated_text, result["translated"])
         lines = [f"[{_format_ts(s.start)}] Speaker {s.speaker}: {s.text}" for s in transcript.segments]
         self._set_text(self._original_text, "\n\n".join(lines))
-        self._tabview.set("Summary")
+        self._show_result_tabs()
+        self._tabview.set("요약")
         self._set_progress(1.0)
         self._last_log_label.configure(text="[Done] GuruNote 생성 완료")
+
+    # ── 내보내기 dropdown ─────────────────────────────────────
+    def _show_export_menu(self) -> None:
+        """Primary 버튼에 달린 드롭다운 메뉴 — 복사/저장/보내기/폴더 열기."""
+        import tkinter as _tk
+        if not self._result:
+            return
+        menu = _tk.Menu(self, tearoff=0)
+        menu.add_command(label="복사", command=self._on_copy_markdown)
+        menu.add_separator()
+        menu.add_command(label="Markdown 저장", command=self._on_save)
+        menu.add_command(label="PDF 저장", command=self._on_save_pdf)
+        menu.add_separator()
+        menu.add_command(label="Obsidian 으로 보내기", command=self._on_save_obsidian)
+        menu.add_command(label="Notion 으로 보내기", command=self._on_save_notion)
+        menu.add_separator()
+        last = getattr(self, "_last_saved_path", None)
+        if last and Path(last).parent.exists():
+            menu.add_command(label="폴더 열기", command=self._on_open_saved_folder)
+        else:
+            menu.add_command(label="폴더 열기", state="disabled")
+        # 버튼 바로 아래에 띄우기
+        btn = self._export_btn
+        x = btn.winfo_rootx()
+        y = btn.winfo_rooty() + btn.winfo_height()
+        try:
+            menu.tk_popup(x, y)
+        finally:
+            menu.grab_release()
+
+    def _on_copy_markdown(self) -> None:
+        """결과 마크다운 전체를 클립보드로 복사."""
+        if not self._result:
+            return
+        try:
+            self.clipboard_clear()
+            self.clipboard_append(self._result.get("full_md", ""))
+            self._toast.show("클립보드에 복사됨", level="success")
+        except Exception as e:  # noqa: BLE001
+            self._toast.show(f"복사 실패: {e}", level="error")
+
+    def _on_open_saved_folder(self) -> None:
+        """가장 최근 저장된 파일의 폴더를 OS 기본 파일 탐색기로 열기."""
+        last = getattr(self, "_last_saved_path", None)
+        if not last:
+            return
+        folder = str(Path(last).parent)
+        import platform
+        import subprocess
+        try:
+            system = platform.system()
+            if system == "Darwin":
+                subprocess.Popen(["open", folder])
+            elif system == "Windows":
+                subprocess.Popen(["explorer", folder])
+            else:
+                subprocess.Popen(["xdg-open", folder])
+        except Exception as e:  # noqa: BLE001
+            messagebox.showerror("폴더 열기 실패", str(e))
 
     def _on_stop(self):
         if self._worker:
@@ -3665,15 +3867,16 @@ class GuruNoteApp(ctk.CTk):
         if not self._result:
             return
         name = f"GuruNote_{sanitize_filename(self._result['audio'].video_title)}.md"
-        path = filedialog.asksaveasfilename(title="저장", defaultextension=".md",
+        path = filedialog.asksaveasfilename(title="Markdown 저장", defaultextension=".md",
                                             filetypes=[("Markdown", "*.md"), ("All", "*.*")], initialfile=name)
         if not path:
             return
         try:
             Path(path).write_text(self._result["full_md"], encoding="utf-8")
-            messagebox.showinfo("완료", f"저장됨:\n{path}")
+            self._last_saved_path = path
+            self._toast.show(f"저장됨  ·  {Path(path).name}", level="success")
         except Exception as e:
-            messagebox.showerror("실패", str(e))
+            messagebox.showerror("저장 실패", str(e))
 
     def _on_save_pdf(self):
         """결과 마크다운을 렌더링된 PDF 로 저장 (Phase C).
@@ -3696,7 +3899,8 @@ class GuruNoteApp(ctk.CTk):
                 return
             try:
                 markdown_to_pdf(full_md, Path(path), title=title)
-                messagebox.showinfo("완료", f"PDF 저장됨:\n{path}")
+                self._last_saved_path = path
+                self._toast.show(f"PDF 저장됨  ·  {Path(path).name}", level="success")
             except Exception as e:  # noqa: BLE001
                 messagebox.showerror("PDF 저장 실패", str(e))
 
@@ -3758,8 +3962,9 @@ class GuruNoteApp(ctk.CTk):
         md = self._result["full_md"]
         is_db = (parent_type == "database")
 
-        # 전송 중 버튼 비활성화 + 라벨 변경
-        self._save_notion_btn.configure(state="disabled", text="전송 중…")
+        # 전송 중 내보내기 버튼 비활성화 + toast 안내 (blocking 없음)
+        self._export_btn.configure(state="disabled")
+        self._toast.show("Notion 으로 전송 중…", level="info", duration=4000)
         result_q: queue.Queue = queue.Queue()
 
         def _worker():
@@ -3780,8 +3985,8 @@ class GuruNoteApp(ctk.CTk):
         except queue.Empty:
             self.after(200, lambda: self._poll_notion_result(q))
             return
-        # 완료: 버튼 복구 + 결과 다이얼로그
-        self._save_notion_btn.configure(state="normal", text="→ Notion")
+        # 완료: 내보내기 버튼 복구 + 결과 다이얼로그
+        self._export_btn.configure(state="normal")
         if status == "ok":
             if messagebox.askyesno("Notion 전송 완료", f"{payload}\n\n브라우저에서 열까요?"):
                 import webbrowser
@@ -3869,6 +4074,12 @@ class GuruNoteApp(ctk.CTk):
     def _clear_results(self):
         for tb in (self._summary_text, self._translated_text, self._original_text):
             self._set_text(tb, "")
+        # Meta row 초기화 — 새 파이프라인 실행 전 UI 상태 리셋
+        try:
+            for w in self._meta_row.winfo_children():
+                w.destroy()
+        except Exception:  # noqa: BLE001
+            pass
 
     def _on_closing(self):
         self.destroy()

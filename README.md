@@ -467,7 +467,7 @@ GuruNote/
 주요 변경 사항은 [CHANGELOG.md](./CHANGELOG.md) 에 [Keep a Changelog](https://keepachangelog.com/)
 형식으로 기록되며 버전은 [Semantic Versioning](https://semver.org/) 을 따릅니다.
 
-현재 버전: **v0.8.0.3** — 업데이트 완료 시 메시지 박스만 띄우던 동작을 앱 자동 재시작(execv + subprocess 폴백)으로 교체.
+현재 버전: **v0.8.0.4** — UI 리프레시 Phase 2a-ii: 설정 화면에서 LLM Provider 선택에 따라 관련 API 키/모델 필드만 노출 + Secret 필드 "지우기" 버튼 추가.
 
 ---
 

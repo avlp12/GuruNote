@@ -3156,7 +3156,7 @@ class GuruNoteApp(ctk.CTk):
             ).grid(row=2 + i, column=0, padx=10, pady=2, sticky="ew")
 
         ctk.CTkLabel(
-            sb, text="v0.8.0.1", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
+            sb, text="v0.8.0.2", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
         ).grid(row=7, column=0, padx=20, pady=(0, 16), sticky="sw")
 
     # ── 메인 영역 ────────────────────────────────────────────
@@ -3552,8 +3552,12 @@ class GuruNoteApp(ctk.CTk):
         )
         self._title_label.grid(row=0, column=0, sticky="w")
 
-        # Meta row — `_update_result_meta` 가 위젯을 동적으로 채움
-        self._meta_row = ctk.CTkFrame(title_wrap, fg_color="transparent")
+        # Meta row — `_update_result_meta` 가 위젯을 동적으로 채움.
+        # CTkFrame 기본 크기가 200×200 이라 빈 상태에서 메타 헤더 행이 200px
+        # 이상 세로로 부풀어 empty state 영역을 58px 로 찌그러뜨리는 버그가
+        # 있었음 → `height=1` 로 시작해 children(labels/chips) 이 추가되면
+        # grid_propagate(True, 기본) 에 의해 자연스럽게 expand 되도록 수정.
+        self._meta_row = ctk.CTkFrame(title_wrap, fg_color="transparent", height=1)
         self._meta_row.grid(row=1, column=0, pady=(ut.SPACE_XS, 0), sticky="w")
 
         # 내보내기 dropdown 트리거 버튼

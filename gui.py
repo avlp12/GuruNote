@@ -3088,7 +3088,7 @@ class GuruNoteApp(ctk.CTk):
             ).grid(row=2 + i, column=0, padx=10, pady=2, sticky="ew")
 
         ctk.CTkLabel(
-            sb, text="v0.7.2.4", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
+            sb, text="v0.7.2.5", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
         ).grid(row=7, column=0, padx=20, pady=(0, 16), sticky="sw")
 
     # ── 메인 영역 ────────────────────────────────────────────
@@ -3178,12 +3178,12 @@ class GuruNoteApp(ctk.CTk):
         if _env_stt not in STT_OPTIONS:
             _env_stt = "auto"
         _initial_preset = self._stt_to_preset(_env_stt)
-        self._preset_var = ctk.StringVar(value=_initial_preset)
-        self._preset_segment = ctk.CTkSegmentedButton(
+        self._processing_preset_var = ctk.StringVar(value=_initial_preset)
+        self._processing_preset_segment = ctk.CTkSegmentedButton(
             preset_wrap,
             values=list(self._PRESETS),
-            variable=self._preset_var,
-            command=self._on_preset_change,
+            variable=self._processing_preset_var,
+            command=self._on_processing_preset_change,
             height=ut.HEIGHT_MD,
             corner_radius=ut.RADIUS_SM,
             fg_color=ut.C_SURFACE_HI,
@@ -3194,7 +3194,7 @@ class GuruNoteApp(ctk.CTk):
             text_color=ut.C_TEXT,
             font=ctk.CTkFont(size=ut.FONT_META),
         )
-        self._preset_segment.grid(row=0, column=1)
+        self._processing_preset_segment.grid(row=0, column=1)
 
         cta_wrap = ctk.CTkFrame(row2, fg_color="transparent")
         cta_wrap.grid(row=0, column=1, sticky="e")
@@ -3264,8 +3264,12 @@ class GuruNoteApp(ctk.CTk):
         if _initial_preset == "직접":
             self._open_advanced()
 
-    def _on_preset_change(self, preset: str) -> None:
-        """프리셋 선택 시 STT 엔진 자동 매핑. '직접' 선택 시 고급 영역 자동 확장."""
+    def _on_processing_preset_change(self, preset: str) -> None:
+        """처리 모드 프리셋 선택 시 STT 엔진 자동 매핑. '직접' 선택 시 고급 영역 자동 확장.
+
+        이름 주의: `SettingsDialog._on_preset_change` 는 별도 메서드 (하드웨어
+        프리셋용). 혼동 방지 위해 이 메서드는 `_on_processing_preset_change`.
+        """
         stt = self._preset_to_stt(preset)
         if stt is not None:
             self._stt_var.set(stt)  # variable 변경은 OptionMenu command 를 트리거하지 않음 — 의도된 동작.
@@ -3273,9 +3277,9 @@ class GuruNoteApp(ctk.CTk):
             self._open_advanced()
 
     def _on_stt_manual_change(self, _value: str) -> None:
-        """사용자가 STT 드롭다운을 직접 변경 → 프리셋을 '직접' 으로 전환."""
-        if self._preset_var.get() != "직접":
-            self._preset_var.set("직접")
+        """사용자가 STT 드롭다운을 직접 변경 → 처리 모드 프리셋을 '직접' 으로 전환."""
+        if self._processing_preset_var.get() != "직접":
+            self._processing_preset_var.set("직접")
 
     def _toggle_advanced(self) -> None:
         if self._advanced_open:
@@ -3294,32 +3298,117 @@ class GuruNoteApp(ctk.CTk):
         self._advanced_toggle.configure(text="▸  고급 설정")
         self._advanced_frame.grid_forget()
 
+    # 진행률 → 현재 단계 인덱스 매핑 (STEP_LABELS 와 동일한 5단계 기준)
+    _STEP_THRESHOLDS = (0.18, 0.55, 0.78, 0.90, 1.0)
+
+    def _current_step_name(self, pct: float) -> str:
+        """현재 진행률에 해당하는 단계 이름. pct>=1.0 이면 '완료'."""
+        if pct >= 1.0:
+            return "완료"
+        if pct <= 0.01:
+            return "대기 중"
+        for i, th in enumerate(self._STEP_THRESHOLDS):
+            if pct < th:
+                return STEP_LABELS[i]
+        return STEP_LABELS[-1]
+
     def _build_progress_card(self, p, r):
-        c = _card(p)
-        c.grid(row=r, column=0, padx=20, pady=8, sticky="ew")
+        c = uc.card(p)
+        c.grid(row=r, column=0, padx=ut.SPACE_XL, pady=ut.SPACE_SM, sticky="ew")
         c.grid_columnconfigure(0, weight=1)
+
+        # ── 단계 pill (5단계 인디케이터) ──
         sf = ctk.CTkFrame(c, fg_color="transparent")
-        sf.grid(row=0, column=0, padx=16, pady=(14, 6), sticky="ew")
+        sf.grid(row=0, column=0, padx=ut.SPACE_LG,
+                pady=(ut.SPACE_LG, ut.SPACE_XS), sticky="ew")
         self._step_labels = []
         for i, lb in enumerate(STEP_LABELS):
             if i > 0:
-                ctk.CTkLabel(sf, text="───", text_color=C_BORDER, font=ctk.CTkFont(size=10)).pack(side="left", padx=2)
-            sl = ctk.CTkLabel(sf, text=f" {i+1}. {lb} ", font=ctk.CTkFont(size=11),
-                              text_color=C_TEXT_DIM, fg_color=C_SURFACE_HI, corner_radius=6)
-            sl.pack(side="left", padx=2)
+                ctk.CTkLabel(
+                    sf, text="─", text_color=ut.C_BORDER,
+                    font=ctk.CTkFont(size=ut.FONT_META),
+                ).pack(side="left", padx=ut.SPACE_XXS)
+            sl = ctk.CTkLabel(
+                sf, text=f" {i+1}. {lb} ",
+                font=ctk.CTkFont(size=ut.FONT_META),
+                text_color=ut.C_TEXT_DIM,
+                fg_color=ut.C_SURFACE_HI,
+                corner_radius=ut.RADIUS_SM,
+            )
+            sl.pack(side="left", padx=ut.SPACE_XXS)
             self._step_labels.append(sl)
+
+        # ── 진행률 bar + 상태 라인 ──
         pw = ctk.CTkFrame(c, fg_color="transparent")
-        pw.grid(row=1, column=0, padx=16, pady=(0, 4), sticky="ew")
+        pw.grid(row=1, column=0, padx=ut.SPACE_LG,
+                pady=(ut.SPACE_SM, ut.SPACE_XS), sticky="ew")
         pw.grid_columnconfigure(0, weight=1)
-        self._progress = ctk.CTkProgressBar(pw, height=6, corner_radius=3,
-                                            fg_color=C_SURFACE_HI, progress_color=C_ACCENT)
+        self._progress = ctk.CTkProgressBar(
+            pw, height=6, corner_radius=3,
+            fg_color=ut.C_SURFACE_HI, progress_color=ut.C_PRIMARY_BRIGHT,
+        )
         self._progress.grid(row=0, column=0, sticky="ew")
         self._progress.set(0)
-        self._progress_label = ctk.CTkLabel(pw, text="대기 중", font=ctk.CTkFont(size=11), text_color=C_TEXT_DIM)
-        self._progress_label.grid(row=1, column=0, sticky="w", pady=(2, 0))
-        self._last_log_label = ctk.CTkLabel(c, text="", font=ctk.CTkFont(size=11),
-                                            text_color=C_TEXT_DIM, anchor="w", wraplength=800)
-        self._last_log_label.grid(row=2, column=0, padx=16, pady=(0, 12), sticky="ew")
+        # 상태 라인: "번역 중 · 2m 15s 경과 · ~3m 25s 남음" 형식
+        self._progress_label = ctk.CTkLabel(
+            pw, text="대기 중",
+            font=ctk.CTkFont(size=ut.FONT_META),
+            text_color=ut.C_TEXT_DIM, anchor="w",
+        )
+        self._progress_label.grid(row=1, column=0, sticky="w",
+                                  pady=(ut.SPACE_XXS, 0))
+
+        # ── 마지막 로그 1줄 ──
+        self._last_log_label = ctk.CTkLabel(
+            c, text="",
+            font=ctk.CTkFont(size=ut.FONT_META),
+            text_color=ut.C_TEXT_DIM, anchor="w", wraplength=900,
+        )
+        self._last_log_label.grid(row=2, column=0, padx=ut.SPACE_LG,
+                                  pady=(0, ut.SPACE_SM), sticky="ew")
+
+        # ── 처리 로그 드로어 토글 ──
+        self._progress_log_open = False
+        self._progress_log_toggle = ctk.CTkButton(
+            c, text="▸  처리 로그 보기",
+            fg_color="transparent", hover_color=ut.C_SURFACE_HI,
+            text_color=ut.C_TEXT_DIM,
+            border_width=0, anchor="w",
+            height=ut.HEIGHT_MD, corner_radius=ut.RADIUS_SM,
+            font=ctk.CTkFont(size=ut.FONT_META),
+            command=self._toggle_progress_log,
+        )
+        self._progress_log_toggle.grid(row=3, column=0, padx=ut.SPACE_LG,
+                                       pady=(0, ut.SPACE_SM), sticky="ew")
+
+        # 드로어 본문 (기본 숨김 — row 4 에 grid/ungrid 토글)
+        self._progress_log_text = ctk.CTkTextbox(
+            c, height=160, state="disabled", wrap="word",
+            font=ctk.CTkFont(size=ut.FONT_META),
+            fg_color=ut.C_BG, text_color=ut.C_TEXT_DIM,
+            border_color=ut.C_BORDER, border_width=1,
+            corner_radius=ut.RADIUS_SM,
+        )
+        # 초기 grid() 호출 안 함 — 토글 열릴 때만 grid().
+
+    def _toggle_progress_log(self) -> None:
+        if self._progress_log_open:
+            self._close_progress_log()
+        else:
+            self._open_progress_log()
+
+    def _open_progress_log(self) -> None:
+        self._progress_log_open = True
+        self._progress_log_toggle.configure(text="▾  처리 로그 보기")
+        self._progress_log_text.grid(
+            row=4, column=0, padx=ut.SPACE_LG,
+            pady=(0, ut.SPACE_MD), sticky="ew",
+        )
+
+    def _close_progress_log(self) -> None:
+        self._progress_log_open = False
+        self._progress_log_toggle.configure(text="▸  처리 로그 보기")
+        self._progress_log_text.grid_forget()
 
     def _build_result_card(self, p, r):
         c = _card(p)
@@ -3702,15 +3791,22 @@ class GuruNoteApp(ctk.CTk):
 
     # ── 유틸 ─────────────────────────────────────────────────
     def _append_log(self, msg):
-        self._log_text.configure(state="normal")
-        self._log_text.insert("end", msg + "\n")
-        self._log_text.see("end")
-        self._log_text.configure(state="disabled")
+        # 결과 카드의 로그 탭과 진행 카드의 드로어 양쪽에 동일한 로그를 미러.
+        for tb in (self._log_text, getattr(self, "_progress_log_text", None)):
+            if tb is None:
+                continue
+            tb.configure(state="normal")
+            tb.insert("end", msg + "\n")
+            tb.see("end")
+            tb.configure(state="disabled")
 
     def _clear_log(self):
-        self._log_text.configure(state="normal")
-        self._log_text.delete("1.0", "end")
-        self._log_text.configure(state="disabled")
+        for tb in (self._log_text, getattr(self, "_progress_log_text", None)):
+            if tb is None:
+                continue
+            tb.configure(state="normal")
+            tb.delete("1.0", "end")
+            tb.configure(state="disabled")
         self._last_log_label.configure(text="")
 
     def _set_progress(self, pct):
@@ -3722,7 +3818,10 @@ class GuruNoteApp(ctk.CTk):
         self._refresh_eta_label()
 
     def _refresh_eta_label(self):
-        """ETA 라벨을 현재 시점 기준으로 갱신. poll 에서도 호출."""
+        """상태 라인 갱신 — "<단계> 중 · <경과> 경과 · ~<ETA> 남음" 포맷.
+
+        poll 에서도 호출되므로 진행률 업데이트 없이도 경과 시간은 흐름.
+        """
         import time as _time
         pct = getattr(self, "_last_progress_pct", 0.0)
         if not (self._worker and self._worker._start_time and pct > 0.01):
@@ -3732,25 +3831,32 @@ class GuruNoteApp(ctk.CTk):
         em, es = divmod(int(elapsed), 60)
         elapsed_str = f"{em}m {es}s"
 
-        # 진행률이 마지막으로 바뀐 후 경과 시간
-        since_update = _time.monotonic() - getattr(self, "_last_progress_time", _time.monotonic())
+        since_update = _time.monotonic() - getattr(
+            self, "_last_progress_time", _time.monotonic()
+        )
+
+        step = self._current_step_name(pct)
 
         if pct >= 1.0:
-            self._progress_label.configure(text=f"100%  |  {elapsed_str} total")
+            self._progress_label.configure(
+                text=f"완료  ·  총 {elapsed_str}"
+            )
         elif since_update > 30:
             # 30초 이상 진행 없음 → ETA 예측 불가, 경과 시간만 표시
             self._progress_label.configure(
-                text=f"{int(pct * 100)}%  |  {elapsed_str} elapsed  |  처리 중..."
+                text=f"{step} 중  ·  {elapsed_str} 경과  ·  진행 대기 중…"
             )
         elif pct > 0.02:
             total_est = elapsed / pct
             remaining = max(0, total_est - elapsed)
             rm, rs = divmod(int(remaining), 60)
             self._progress_label.configure(
-                text=f"{int(pct * 100)}%  |  {elapsed_str} elapsed  |  ~{rm}m {rs}s left"
+                text=f"{step} 중  ·  {elapsed_str} 경과  ·  ~{rm}m {rs}s 남음"
             )
         else:
-            self._progress_label.configure(text=f"{int(pct * 100)}%  |  {elapsed_str} elapsed")
+            self._progress_label.configure(
+                text=f"{step} 중  ·  {elapsed_str} 경과"
+            )
         self._update_steps(pct)
 
     @staticmethod

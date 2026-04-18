@@ -7,6 +7,37 @@
 
 ## [Unreleased]
 
+## [0.7.2.5] - 2026-04-18
+
+### Changed
+- **UI 리프레시 Phase 1c — 진행 카드 재설계** (`gui.py` `_build_progress_card`
+  + `_refresh_eta_label`).
+  - **상태 라인 한국어화** — 기존 `"45%  |  2m 15s elapsed  |  ~3m left"`
+    → `"번역 중  ·  2m 15s 경과  ·  ~3m 25s 남음"` (현재 단계명 + 경과 +
+    ETA). 완료 시 `"완료  ·  총 {elapsed}"`, 30s 동안 진행률 변화 없으면
+    `"... 진행 대기 중…"` 표시.
+  - **현재 단계 자동 도출** (`_current_step_name(pct)`) — progress 퍼센트
+    에서 STEP_LABELS (오디오/STT/번역/요약/조립) 중 현재 단계를 도출.
+    임계값 (`_STEP_THRESHOLDS = 0.18/0.55/0.78/0.90/1.0`) 은 기존
+    `_update_steps` 와 동일해 pill 과 라벨이 항상 일관됨.
+  - **처리 로그 드로어** — 카드 하단에 `▸ 처리 로그 보기` ghost 토글
+    추가. 열면 전체 파이프라인 로그가 카드 내에 160px 높이
+    `CTkTextbox` 로 표시됨. 결과 카드의 `처리 로그` 탭과 **동일한
+    내용을 미러** — `_append_log` / `_clear_log` 가 두 textbox 에 동시
+    write. 기본 접힘.
+  - **진행률 bar 색상** — `C_ACCENT` (soft lavender) → `C_PRIMARY_BRIGHT`
+    (tone 80) 로 변경해 대비 향상.
+  - 모든 패딩/폰트/반경을 `ui_theme` 토큰 사용 (`uc.card`,
+    `ut.SPACE_*`, `ut.RADIUS_SM`, `ut.FONT_META` 등).
+
+### Changed (리팩터링)
+- **`GuruNoteApp._preset_var` → `_processing_preset_var`**, **`_on_preset_change`
+  → `_on_processing_preset_change`**, **`_preset_segment` →
+  `_processing_preset_segment`**. `SettingsDialog` 의 **하드웨어 프리셋**
+  과 이름이 겹쳐 향후 panel 구조 전환 시 혼동 위험이 있어 처리 모드
+  프리셋(Phase 1b 도입)에 명시적 prefix 추가. 서로 다른 클래스의
+  같은 속성명이라 파이썬 레벨 버그는 아니었음 — 선제적 정리.
+
 ## [0.7.2.4] - 2026-04-18
 
 ### Changed
@@ -1080,7 +1111,8 @@ bash run_desktop.sh
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.7.2.4...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.7.2.5...HEAD
+[0.7.2.5]: https://github.com/avlp12/GuruNote/compare/v0.7.2.4...v0.7.2.5
 [0.7.2.4]: https://github.com/avlp12/GuruNote/compare/v0.7.2.3...v0.7.2.4
 [0.7.2.3]: https://github.com/avlp12/GuruNote/compare/v0.7.2.2...v0.7.2.3
 [0.7.2.2]: https://github.com/avlp12/GuruNote/compare/v0.7.2.1...v0.7.2.2

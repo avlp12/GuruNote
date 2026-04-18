@@ -2488,11 +2488,14 @@ class UpdateProgressDialog(ctk.CTkToplevel):
 
 
 class SettingsDialog(ctk.CTkToplevel):
-    """API 키와 모델 설정을 입력/저장하는 모달 다이얼로그.
+    """API 키/모델/통합 설정 다이얼로그 — 5섹션 구조 (일반 / AI Provider /
+    STT·하드웨어 / 연동 / 고급).
 
-    하드웨어 프리셋 드롭다운을 상단에 두고, 선택 시 STT/LLM 관련 필드를 일괄
-    채운다. LLM Provider 는 드롭다운으로 선택하며, 나머지 필드는 여전히 수동
-    수정 가능.
+    Phase 2a-i 에서 긴 단일 폼을 섹션형으로 재배치. 필드 자체와 저장/테스트
+    로직은 이전과 동일 — `self._entries[env_key]` dict 에 widget 참조를
+    보관하므로 `_on_save` / `_on_test_connection` / `_apply_preset` 가 그대로
+    동작. Provider 조건부 노출(필드 숨김), secret 지우기 액션, sticky footer,
+    dirty state 는 후속 2a-ii / 2a-iii 에서 추가.
     """
 
     # 하드웨어 프리셋이 자동으로 채워주는 필드 목록
@@ -2505,183 +2508,279 @@ class SettingsDialog(ctk.CTkToplevel):
         "MLX_WHISPER_MODEL",
     )
 
+    # 섹션별 필드 그룹 — 렌더 순서대로. LLM_PROVIDER 는 '일반' 섹션에서 특수
+    # 처리 (드롭다운), 나머지는 Entry. 하드웨어 프리셋 드롭다운은 STT 섹션
+    # 헤더 바로 아래에 별도로 삽입.
+    _FIELD_GROUPS: dict[str, list[tuple[str, str, bool]]] = {
+        "일반": [
+            ("LLM_PROVIDER", "LLM Provider", False),
+        ],
+        "AI Provider": [
+            ("OPENAI_API_KEY", "OpenAI API Key", True),
+            ("OPENAI_BASE_URL", "OpenAI Base URL (Local/Compatible)", False),
+            ("OPENAI_MODEL", "OpenAI 모델", False),
+            ("ANTHROPIC_API_KEY", "Anthropic API Key", True),
+            ("ANTHROPIC_MODEL", "Anthropic 모델", False),
+            ("GOOGLE_API_KEY", "Google Gemini API Key", True),
+            ("GEMINI_MODEL", "Gemini 모델", False),
+        ],
+        "STT · 하드웨어": [
+            ("ASSEMBLYAI_API_KEY", "AssemblyAI API Key (폴백용)", True),
+            ("WHISPERX_MODEL", "WhisperX 모델 (NVIDIA)", False),
+            ("WHISPERX_BATCH_SIZE", "WhisperX 배치 사이즈 (NVIDIA)", False),
+            ("MLX_WHISPER_MODEL", "MLX Whisper 모델 (Apple Silicon)", False),
+            ("HUGGINGFACE_TOKEN", "HuggingFace 토큰 (화자 분리용)", True),
+        ],
+        "연동": [
+            ("OBSIDIAN_VAULT_PATH", "Obsidian Vault 경로", False),
+            ("OBSIDIAN_SUBFOLDER", "Obsidian 하위 폴더 (기본 GuruNote)", False),
+            ("NOTION_TOKEN", "Notion Integration Token", True),
+            ("NOTION_PARENT_ID", "Notion Parent ID (database/page UUID)", False),
+            ("NOTION_PARENT_TYPE", "Notion Parent Type (database/page)", False),
+        ],
+        "고급": [
+            ("LLM_TEMPERATURE", "LLM Temperature", False),
+            ("LLM_TRANSLATION_MAX_TOKENS", "번역 Max Tokens", False),
+            ("LLM_SUMMARY_MAX_TOKENS", "요약 Max Tokens", False),
+        ],
+    }
+
+    _PLACEHOLDERS: dict[str, str] = {
+        "OPENAI_MODEL": "gpt-5.4",
+        "OPENAI_BASE_URL": "http://127.0.0.1:8000/v1",
+        "ANTHROPIC_MODEL": "claude-sonnet-4-6",
+        "GEMINI_MODEL": "gemini-2.5-flash",
+        "LLM_TEMPERATURE": "0.2",
+        "LLM_TRANSLATION_MAX_TOKENS": "8192",
+        "LLM_SUMMARY_MAX_TOKENS": "4096",
+        "WHISPERX_MODEL": "distil-large-v3",
+        "WHISPERX_BATCH_SIZE": "16",
+        "MLX_WHISPER_MODEL": "mlx-community/whisper-large-v3-mlx",
+        "OBSIDIAN_VAULT_PATH": "/Users/me/Documents/MyVault",
+        "OBSIDIAN_SUBFOLDER": "GuruNote",
+        "NOTION_PARENT_ID": "1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
+        "NOTION_PARENT_TYPE": "database",
+    }
+
     def __init__(self, parent: ctk.CTk) -> None:
         super().__init__(parent)
         _apply_app_icon(self)
         self.title("GuruNote · 설정")
-        self.geometry("620x640")
+        self.geometry("680x760")
         self.resizable(False, False)
         self.transient(parent)
         self.grab_set()
+        self.configure(fg_color=ut.C_BG)
 
-        # _entries 는 CTkEntry 또는 CTkOptionMenu (둘 다 .get() / .set() 지원) 보관.
+        # env_key → widget (CTkEntry / ctk.StringVar for LLM_PROVIDER)
         self._entries: dict[str, object] = {}
+        # env_key → bool (secret 보기 토글 상태)
         self._show_vars: dict[str, bool] = {}
 
         self._build_ui()
         self.after(100, self.focus_force)
 
+    # ── 레이아웃 ─────────────────────────────────────────────
     def _build_ui(self) -> None:
-        # 스크롤 가능한 프레임
-        container = ctk.CTkScrollableFrame(self)
-        container.pack(fill="both", expand=True, padx=16, pady=(16, 8))
-        container.grid_columnconfigure(1, weight=1)
-
-        ctk.CTkLabel(
-            container,
-            text="API 키 및 모델 설정",
-            font=ctk.CTkFont(size=16, weight="bold"),
-        ).grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 12))
-
-        ctk.CTkLabel(
-            container,
-            text="저장 시 .env 파일에 기록되며, 앱 재시작 없이 즉시 반영됩니다.",
-            font=ctk.CTkFont(size=11),
-            text_color="gray55",
-        ).grid(row=1, column=0, columnspan=3, sticky="w", pady=(0, 12))
-
-        # --- 하드웨어 프리셋 섹션 ---
-        ctk.CTkLabel(
-            container,
-            text=f"하드웨어 프리셋  ·  {detect_description()}",
-            font=ctk.CTkFont(size=13, weight="bold"),
-        ).grid(row=2, column=0, columnspan=3, sticky="w", pady=(8, 4))
-
-        self._preset_var = ctk.StringVar(value=hw_key_to_label(AUTO_KEY))
-        preset_menu = ctk.CTkOptionMenu(
-            container,
-            variable=self._preset_var,
-            values=hw_dropdown_options(),
-            width=580,
-            command=self._on_preset_change,
+        # 1) 상단 헤더 (고정)
+        self._build_header()
+        # 2) 중앙 스크롤 본문 — 5개 섹션
+        body = ctk.CTkScrollableFrame(
+            self, fg_color="transparent",
         )
-        preset_menu.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(0, 4))
+        body.pack(fill="both", expand=True, padx=ut.SPACE_LG, pady=(0, ut.SPACE_SM))
+        body.grid_columnconfigure(1, weight=1)
 
-        ctk.CTkLabel(
-            container,
-            text="프리셋을 고르면 STT/LLM 관련 아래 필드가 자동으로 채워집니다. "
-                 "'직접 입력' 또는 개별 필드 수정으로 override 가능.",
-            font=ctk.CTkFont(size=10),
-            text_color="gray55",
-        ).grid(row=4, column=0, columnspan=3, sticky="w", pady=(0, 12))
+        row = 0
+        for section_name, fields in self._FIELD_GROUPS.items():
+            row = self._render_section_header(body, row, section_name)
 
-        # --- 일반 필드 (LLM Provider 는 드롭다운, 그 외 Entry) ---
-        _placeholders = {
-            "OPENAI_MODEL": "gpt-5.4",
-            "OPENAI_BASE_URL": "http://127.0.0.1:8000/v1",
-            "ANTHROPIC_MODEL": "claude-sonnet-4-6",
-            "GEMINI_MODEL": "gemini-2.5-flash",
-            "LLM_TEMPERATURE": "0.2",
-            "LLM_TRANSLATION_MAX_TOKENS": "8192",
-            "LLM_SUMMARY_MAX_TOKENS": "4096",
-            "WHISPERX_MODEL": "distil-large-v3",
-            "WHISPERX_BATCH_SIZE": "16",
-            "MLX_WHISPER_MODEL": "mlx-community/whisper-large-v3-mlx",
-            "OBSIDIAN_VAULT_PATH": "/Users/me/Documents/MyVault",
-            "OBSIDIAN_SUBFOLDER": "GuruNote",
-            "NOTION_PARENT_ID": "1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
-            "NOTION_PARENT_TYPE": "database",
-        }
+            # STT 섹션 헤더 바로 아래에 하드웨어 프리셋 드롭다운 + helper 삽입
+            if section_name == "STT · 하드웨어":
+                row = self._render_hw_preset_row(body, row)
 
-        for idx, (env_key, label, is_secret) in enumerate(_SETTINGS_FIELDS, start=5):
-            ctk.CTkLabel(
-                container, text=label, font=ctk.CTkFont(size=13)
-            ).grid(row=idx, column=0, sticky="w", padx=(0, 10), pady=6)
+            for env_key, label, is_secret in fields:
+                row = self._render_field_row(body, row, env_key, label, is_secret)
 
-            current_val = os.environ.get(env_key, "")
-
-            if env_key == "LLM_PROVIDER":
-                # 드롭다운 특수 처리
-                default_provider = current_val if current_val in _LLM_PROVIDERS else "openai"
-                provider_var = ctk.StringVar(value=default_provider)
-                menu = ctk.CTkOptionMenu(
-                    container,
-                    variable=provider_var,
-                    values=_LLM_PROVIDERS,
-                    width=300,
-                )
-                menu.grid(row=idx, column=1, sticky="ew", pady=6)
-                # _entries 에는 StringVar 를 보관하여 .get()/.set() 인터페이스 통일
-                self._entries[env_key] = provider_var
-                continue
-
-            ph = "미설정" if is_secret else _placeholders.get(env_key, "")
-            entry = ctk.CTkEntry(
-                container,
-                width=300,
-                show="•" if is_secret and current_val else "",
-                placeholder_text=ph,
-            )
-            if current_val:
-                entry.insert(0, current_val)
-            entry.grid(row=idx, column=1, sticky="ew", pady=6)
-            self._entries[env_key] = entry
-            self._show_vars[env_key] = False
-
-            if is_secret:
-                toggle_btn = ctk.CTkButton(
-                    container,
-                    text="Show",
-                    width=36,
-                    height=28,
-                    command=lambda k=env_key: self._toggle_show(k),
-                )
-                toggle_btn.grid(row=idx, column=2, padx=(4, 0), pady=6)
-
-            if env_key == "OBSIDIAN_VAULT_PATH":
-                browse_btn = ctk.CTkButton(
-                    container, text="찾아보기", width=80, height=28,
-                    fg_color=C_PRIMARY, hover_color=C_PRIMARY_HO,
-                    command=self._on_browse_vault,
-                )
-                browse_btn.grid(row=idx, column=2, padx=(4, 0), pady=6)
-                # 유효성 chip (다음 행)
-                self._vault_chip = ctk.CTkLabel(
-                    container, text="", font=ctk.CTkFont(size=10),
-                    anchor="w",
-                )
-                self._vault_chip.grid(
-                    row=idx, column=1, sticky="e", padx=(0, 8), pady=6,
-                )
-                entry.bind("<KeyRelease>", lambda _e: self._refresh_vault_chip())
-                self._refresh_vault_chip()
-
-        # 다이얼로그 오픈 시 auto-detect 프리셋 적용 (사용자가 아직 .env 에 값이
-        # 없는 필드에만 기본값을 채워주기 위해).
+        # 다이얼로그 첫 오픈 시 auto 프리셋을 빈 필드에만 채움 (기존 .env 값 보존)
         self._apply_preset(AUTO_KEY, only_empty=True)
 
-        # 하단 버튼 바
-        btn_frame = ctk.CTkFrame(self, fg_color="transparent")
-        btn_frame.pack(fill="x", padx=16, pady=(4, 16))
+        # 3) 하단 액션 바 (고정)
+        self._build_action_bar()
 
-        ctk.CTkButton(
-            btn_frame, text="취소", width=80, fg_color="gray40", command=self.destroy
-        ).pack(side="right", padx=(8, 0))
+    def _build_header(self) -> None:
+        header = ctk.CTkFrame(self, fg_color="transparent")
+        header.pack(fill="x", padx=ut.SPACE_LG, pady=(ut.SPACE_LG, ut.SPACE_SM))
+        header.grid_columnconfigure(0, weight=1)
 
-        ctk.CTkButton(
-            btn_frame,
-            text="Save",
-            width=120,
-            font=ctk.CTkFont(weight="bold"),
-            command=self._on_save,
-        ).pack(side="right")
-        ctk.CTkButton(
-            btn_frame,
-            text="Test",
-            width=120,
-            fg_color="gray30",
-            hover_color="gray40",
+        ctk.CTkLabel(
+            header, text="설정",
+            font=ctk.CTkFont(size=ut.FONT_HEADING, weight=ut.WEIGHT_BOLD),
+            text_color=ut.C_TEXT, anchor="w",
+        ).grid(row=0, column=0, sticky="w")
+
+        ctk.CTkLabel(
+            header,
+            text=".env 에 저장되며 대부분 즉시 반영됩니다.",
+            font=ctk.CTkFont(size=ut.FONT_META),
+            text_color=ut.C_TEXT_DIM, anchor="w",
+        ).grid(row=1, column=0, sticky="w", pady=(ut.SPACE_XXS, 0))
+
+        ctk.CTkLabel(
+            header,
+            text=f"하드웨어 자동 감지  ·  {detect_description()}",
+            font=ctk.CTkFont(size=ut.FONT_META),
+            text_color=ut.C_ACCENT, anchor="w",
+        ).grid(row=2, column=0, sticky="w", pady=(ut.SPACE_XS, 0))
+
+    def _render_section_header(self, parent, row: int, title: str) -> int:
+        """섹션 제목 + 얇은 구분선을 row 에 배치하고 다음 row 인덱스 반환."""
+        # 첫 섹션이 아니면 위쪽에 여백 + divider
+        if row > 0:
+            uc.divider(parent).grid(
+                row=row, column=0, columnspan=3,
+                sticky="ew", pady=(ut.SPACE_LG, ut.SPACE_SM),
+            )
+            row += 1
+
+        ctk.CTkLabel(
+            parent, text=title,
+            font=ctk.CTkFont(size=ut.FONT_SECTION, weight=ut.WEIGHT_BOLD),
+            text_color=ut.C_TEXT, anchor="w",
+        ).grid(row=row, column=0, columnspan=3, sticky="w",
+               pady=(0, ut.SPACE_SM))
+        return row + 1
+
+    def _render_hw_preset_row(self, parent, row: int) -> int:
+        """STT 섹션에 하드웨어 프리셋 드롭다운 + helper 삽입."""
+        ctk.CTkLabel(
+            parent, text="하드웨어 프리셋",
+            font=ctk.CTkFont(size=ut.FONT_BODY),
+            text_color=ut.C_TEXT,
+        ).grid(row=row, column=0, sticky="w", padx=(0, ut.SPACE_MD),
+               pady=ut.SPACE_XS)
+
+        self._preset_var = ctk.StringVar(value=hw_key_to_label(AUTO_KEY))
+        ctk.CTkOptionMenu(
+            parent, variable=self._preset_var,
+            values=hw_dropdown_options(),
+            command=self._on_preset_change,
+            fg_color=ut.C_SURFACE_HI, button_color=ut.C_BORDER,
+            text_color=ut.C_TEXT,
+        ).grid(row=row, column=1, columnspan=2, sticky="ew", pady=ut.SPACE_XS)
+
+        ctk.CTkLabel(
+            parent,
+            text="선택 시 아래 WhisperX / MLX / LLM 파라미터가 일괄 갱신됩니다. "
+                 "개별 필드를 수정하면 '직접 입력' 모드.",
+            font=ctk.CTkFont(size=ut.FONT_META),
+            text_color=ut.C_TEXT_DIM, anchor="w",
+            wraplength=540, justify="left",
+        ).grid(row=row + 1, column=0, columnspan=3, sticky="w",
+               pady=(0, ut.SPACE_SM))
+        return row + 2
+
+    def _render_field_row(
+        self, parent, row: int, env_key: str, label: str, is_secret: bool,
+    ) -> int:
+        """단일 필드 — 좌측 라벨, 중앙 입력, 우측 보조 버튼(secret/vault)."""
+        ctk.CTkLabel(
+            parent, text=label,
+            font=ctk.CTkFont(size=ut.FONT_BODY),
+            text_color=ut.C_TEXT, anchor="w",
+        ).grid(row=row, column=0, sticky="w", padx=(0, ut.SPACE_MD),
+               pady=ut.SPACE_XS)
+
+        current_val = os.environ.get(env_key, "")
+
+        # LLM_PROVIDER 는 OptionMenu, 나머지는 Entry
+        if env_key == "LLM_PROVIDER":
+            default = current_val if current_val in _LLM_PROVIDERS else "openai"
+            provider_var = ctk.StringVar(value=default)
+            ctk.CTkOptionMenu(
+                parent, variable=provider_var, values=_LLM_PROVIDERS,
+                fg_color=ut.C_SURFACE_HI, button_color=ut.C_BORDER,
+                text_color=ut.C_TEXT,
+            ).grid(row=row, column=1, columnspan=2, sticky="ew",
+                   pady=ut.SPACE_XS)
+            self._entries[env_key] = provider_var
+            return row + 1
+
+        ph = "미설정" if is_secret else self._PLACEHOLDERS.get(env_key, "")
+        entry = ctk.CTkEntry(
+            parent,
+            show="•" if is_secret and current_val else "",
+            placeholder_text=ph,
+            fg_color=ut.C_BG, border_color=ut.C_BORDER, text_color=ut.C_TEXT,
+        )
+        if current_val:
+            entry.insert(0, current_val)
+        entry.grid(row=row, column=1, sticky="ew", pady=ut.SPACE_XS)
+        self._entries[env_key] = entry
+        self._show_vars[env_key] = False
+
+        if is_secret:
+            ctk.CTkButton(
+                parent, text="보기", width=56, height=ut.HEIGHT_SM,
+                corner_radius=ut.RADIUS_SM,
+                fg_color=ut.C_SURFACE_HI, hover_color=ut.C_BORDER,
+                text_color=ut.C_TEXT,
+                font=ctk.CTkFont(size=ut.FONT_META),
+                command=lambda k=env_key: self._toggle_show(k),
+            ).grid(row=row, column=2, padx=(ut.SPACE_XS, 0), pady=ut.SPACE_XS)
+
+        if env_key == "OBSIDIAN_VAULT_PATH":
+            ctk.CTkButton(
+                parent, text="찾아보기", width=80, height=ut.HEIGHT_SM,
+                corner_radius=ut.RADIUS_SM,
+                fg_color=ut.C_PRIMARY, hover_color=ut.C_PRIMARY_HO,
+                text_color=ut.C_ON_PRIMARY,
+                font=ctk.CTkFont(size=ut.FONT_META),
+                command=self._on_browse_vault,
+            ).grid(row=row, column=2, padx=(ut.SPACE_XS, 0), pady=ut.SPACE_XS)
+            # 유효성 chip (다음 row)
+            self._vault_chip = ctk.CTkLabel(
+                parent, text="",
+                font=ctk.CTkFont(size=ut.FONT_META), anchor="w",
+            )
+            self._vault_chip.grid(
+                row=row + 1, column=1, columnspan=2, sticky="w",
+                pady=(0, ut.SPACE_XS),
+            )
+            entry.bind("<KeyRelease>", lambda _e: self._refresh_vault_chip())
+            self._refresh_vault_chip()
+            return row + 2
+
+        return row + 1
+
+    def _build_action_bar(self) -> None:
+        bar = ctk.CTkFrame(self, fg_color=ut.C_SIDEBAR, corner_radius=0)
+        bar.pack(fill="x", side="bottom")
+
+        inner = ctk.CTkFrame(bar, fg_color="transparent")
+        inner.pack(fill="x", padx=ut.SPACE_LG, pady=ut.SPACE_MD)
+
+        # 좌측: 연결 테스트 (ghost)
+        uc.button(
+            inner, text="연결 테스트", variant=ut.BTN_GHOST,
             command=self._on_test_connection,
+            height=ut.HEIGHT_MD, width=110,
         ).pack(side="left")
-        ctk.CTkButton(
-            btn_frame,
-            text="Update",
-            width=120,
-            fg_color="gray30",
-            hover_color="gray40",
-            command=self._on_update,
-        ).pack(side="left", padx=(8, 0))
 
+        # 우측: 저장 (primary) + 취소 (secondary)
+        uc.button(
+            inner, text="저장", variant=ut.BTN_PRIMARY,
+            command=self._on_save,
+            height=ut.HEIGHT_MD, width=110,
+            font_weight=ut.WEIGHT_BOLD,
+        ).pack(side="right")
+        uc.button(
+            inner, text="취소", variant=ut.BTN_SECONDARY,
+            command=self.destroy,
+            height=ut.HEIGHT_MD, width=80,
+        ).pack(side="right", padx=(0, ut.SPACE_SM))
+
+    # ── Secret 필드 액션 ─────────────────────────────────────
     def _toggle_show(self, env_key: str) -> None:
         self._show_vars[env_key] = not self._show_vars[env_key]
         entry = self._entries[env_key]
@@ -2717,25 +2816,25 @@ class SettingsDialog(ctk.CTkToplevel):
             return
         val = entry.get().strip().strip('"').strip("'")
         if not val:
-            self._vault_chip.configure(text="", text_color=C_TEXT_DIM)
+            self._vault_chip.configure(text="", text_color=ut.C_TEXT_DIM)
             return
         try:
             p = Path(os.path.expanduser(val))
             if not p.is_dir():
                 self._vault_chip.configure(
-                    text="경로 없음", text_color=C_DANGER,
+                    text="경로 없음", text_color=ut.C_DANGER,
                 )
                 return
             if is_obsidian_vault(p):
                 self._vault_chip.configure(
-                    text="✓ vault", text_color="#22C55E",
+                    text="✓ vault", text_color=ut.C_SUCCESS,
                 )
             else:
                 self._vault_chip.configure(
-                    text="폴더 있음 (.obsidian/ 없음)", text_color="#F59E0B",
+                    text="폴더 있음 (.obsidian/ 없음)", text_color=ut.C_WARNING,
                 )
         except Exception:  # noqa: BLE001
-            self._vault_chip.configure(text="", text_color=C_TEXT_DIM)
+            self._vault_chip.configure(text="", text_color=ut.C_TEXT_DIM)
 
     # -------------------------------------------------------------------------
     # 하드웨어 프리셋
@@ -2748,14 +2847,7 @@ class SettingsDialog(ctk.CTkToplevel):
         self._apply_preset(key, only_empty=False)
 
     def _apply_preset(self, key: str, only_empty: bool) -> None:
-        """프리셋 값을 `_PRESET_DRIVEN_FIELDS` 에 채워 넣는다.
-
-        Args:
-            key: PRESETS 의 키 또는 AUTO_KEY (자동 감지)
-            only_empty: True 면 이미 값이 있는 필드는 건드리지 않음 (다이얼로그
-                첫 오픈 시 기존 .env 값 보존). False 면 모두 덮어씀 (사용자가
-                드롭다운을 명시적으로 바꾼 경우).
-        """
+        """프리셋 값을 `_PRESET_DRIVEN_FIELDS` 에 채워 넣는다."""
         if key == AUTO_KEY:
             key = detect_recommended_preset()
         profile = PRESETS.get(key)
@@ -2774,7 +2866,6 @@ class SettingsDialog(ctk.CTkToplevel):
             widget = self._entries.get(env_key)
             if widget is None:
                 continue
-            # CTkEntry 만 덮어씀 (LLM_PROVIDER 는 _PRESET_DRIVEN_FIELDS 에 없음)
             current = widget.get().strip()
             if only_empty and current:
                 continue
@@ -2782,7 +2873,7 @@ class SettingsDialog(ctk.CTkToplevel):
             widget.insert(0, values[env_key])
 
     # -------------------------------------------------------------------------
-    # Save / Test / Update
+    # Save / Test
     # -------------------------------------------------------------------------
     def _on_save(self) -> None:
         payload = {
@@ -2806,8 +2897,7 @@ class SettingsDialog(ctk.CTkToplevel):
         cfg = LLMConfig.from_env(provider=provider)
         # Provider 별 올바른 API 키/모델 필드 사용
         #   - anthropic → ANTHROPIC_API_KEY + ANTHROPIC_MODEL
-        #   - gemini    → GOOGLE_API_KEY + GEMINI_MODEL  (이전 버전에서 누락돼
-        #                  OPENAI_API_KEY 를 잘못 읽던 버그 수정)
+        #   - gemini    → GOOGLE_API_KEY + GEMINI_MODEL
         #   - openai / openai_compatible → OPENAI_API_KEY + OPENAI_BASE_URL +
         #                                   OPENAI_MODEL
         if provider == "anthropic":
@@ -2826,32 +2916,6 @@ class SettingsDialog(ctk.CTkToplevel):
             messagebox.showinfo("연결 테스트", f"성공: {resp}")
         except Exception as exc:  # noqa: BLE001
             messagebox.showerror("연결 테스트 실패", str(exc))
-
-    def _on_update(self) -> None:
-        try:
-            info = check_for_update()
-        except Exception as exc:  # noqa: BLE001
-            messagebox.showerror("업데이트 확인 실패", str(exc))
-            return
-
-        ok = messagebox.askyesno(
-            "업데이트 확인",
-            f"{info['message']}\n\n업데이트를 실행할까요? (git pull + pip upgrade)",
-        )
-        if not ok:
-            return
-
-        logs: list[str] = []
-        try:
-            update_project(logs.append, upgrade_deps=True)
-            messagebox.showinfo(
-                "업데이트 완료", "업데이트가 완료되었습니다.\n앱을 재시작해주세요.",
-            )
-        except GitAuthError:
-            # 비공개 저장소 or 크레덴셜 꼬임 — 가이드 다이얼로그
-            GitAuthErrorDialog(self, on_retry=self._on_update)
-        except Exception as exc:  # noqa: BLE001
-            messagebox.showerror("업데이트 실패", str(exc))
 
 
 # =============================================================================
@@ -3092,7 +3156,7 @@ class GuruNoteApp(ctk.CTk):
             ).grid(row=2 + i, column=0, padx=10, pady=2, sticky="ew")
 
         ctk.CTkLabel(
-            sb, text="v0.8.0.0", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
+            sb, text="v0.8.0.1", font=ctk.CTkFont(size=10), text_color=C_TEXT_DIM,
         ).grid(row=7, column=0, padx=20, pady=(0, 16), sticky="sw")
 
     # ── 메인 영역 ────────────────────────────────────────────

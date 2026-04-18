@@ -7,6 +7,47 @@
 
 ## [Unreleased]
 
+## [0.7.2.4] - 2026-04-18
+
+### Changed
+- **UI 리프레시 Phase 1b — 메인 입력 카드 3행 재배치** (`gui.py`
+  `_build_input_card`). 기존 1~2행 혼재 구조를 명확한 3행 위계로 분리해
+  "어디를 눌러야 하는지" 인지 부담을 줄임.
+  - **행 1 — 소스 입력**: 좌측 `파일 선택` 버튼 + 우측 URL Entry
+    (hero-size `HEIGHT_LG=40`). placeholder 를 예시 URL 포함 형태로 확장.
+  - **행 2 — 처리 모드 + Primary CTA**: 좌측 프리셋 세그먼트 (아래 항목
+    참조) + 우측 유일한 Primary 버튼 `▶  GuruNote 생성` + `⏹` stop.
+    세그먼트는 `CTkSegmentedButton` 기반, selected 색은 `C_PRIMARY`.
+  - **행 3 — 고급 설정 토글**: `▸ 고급 설정` ghost 버튼 한 개. 클릭 시
+    행 4 에 STT 엔진 / LLM provider 드롭다운이 접혀 있다 펼쳐짐
+    (`grid()` / `grid_forget()` 토글). 기본 접힘 — 사용자가 구체 엔진
+    이름을 볼 필요 없음.
+
+- **처리 모드 프리셋(빠름/균형/품질/직접)** (`gui.py` `_preset_to_stt` /
+  `_stt_to_preset` / `_on_preset_change` / `_on_stt_manual_change`). 초보자가
+  엔진 이름(whisperx/mlx/assemblyai) 대신 속도/품질 트레이드오프로 선택.
+  - **빠름** → `assemblyai` (클라우드, GPU 불필요, 빠른 시동)
+  - **균형** → `auto` (기존 기본, 플랫폼별 자동 선택)
+  - **품질** → `mlx` (Apple Silicon) / `whisperx` (그 외 — NVIDIA 가정)
+  - **직접** → 고급 영역 자동 확장, 사용자가 STT/LLM 수동 선택
+  - 초기 preset 은 `GURUNOTE_STT_ENGINE` 환경변수값에서 역추론 —
+    env=assemblyai → "빠름", env=mlx/whisperx → "품질", env=auto → "균형",
+    그 외 → "직접".
+  - 사용자가 고급 영역에서 STT 드롭다운을 **수동으로** 변경하면 preset
+    이 자동으로 "직접" 으로 전환 (UI 일관성 유지).
+  - WhisperX 미설치 / API 키 없음은 기존 `_check_whisperx_available()` /
+    `_check_api_keys()` 가 그대로 처리 — preset 은 표시용 레이어.
+
+### Changed (세부)
+- 한국어 라벨 통일: `File` → `파일 선택`, `▶  GuruNote 생성하기` →
+  `▶  GuruNote 생성` (CTA/reset/empty state 텍스트 모두).
+- `gui.py` 가 `gurunote.ui_theme` / `gurunote.ui_components` 를 import
+  하기 시작 — Phase 1a 에서 준비한 디자인 토큰/factory 를 메인 입력
+  카드부터 실제 사용. 진행/결과 카드는 1c/1d 에서 이관.
+
+### Fixed
+- `CHANGELOG.md` v0.7.2.3 항목의 "자동 자동 dismiss" 오타 수정 (편집용).
+
 ## [0.7.2.3] - 2026-04-18
 
 ### Added
@@ -32,7 +73,7 @@
   - **`ui_toast.py`** — `ToastManager` 클래스. `messagebox` 의 blocking
     modal 대신 우측 하단에 non-blocking 토스트 표시. 여러 개 스택 가능,
     레벨(info/success/warning/error) 별 색상, 클릭 시 즉시 dismiss,
-    `after()` 로 자동 자동 dismiss (기본 2.5초).
+    `after()` 로 자동 dismiss (기본 2.5초).
 
 ## [0.7.2.2] - 2026-04-18
 
@@ -1039,7 +1080,8 @@ bash run_desktop.sh
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.7.2.3...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.7.2.4...HEAD
+[0.7.2.4]: https://github.com/avlp12/GuruNote/compare/v0.7.2.3...v0.7.2.4
 [0.7.2.3]: https://github.com/avlp12/GuruNote/compare/v0.7.2.2...v0.7.2.3
 [0.7.2.2]: https://github.com/avlp12/GuruNote/compare/v0.7.2.1...v0.7.2.2
 [0.7.2.1]: https://github.com/avlp12/GuruNote/compare/v0.7.2.0...v0.7.2.1

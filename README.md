@@ -467,7 +467,7 @@ GuruNote/
 주요 변경 사항은 [CHANGELOG.md](./CHANGELOG.md) 에 [Keep a Changelog](https://keepachangelog.com/)
 형식으로 기록되며 버전은 [Semantic Versioning](https://semver.org/) 을 따릅니다.
 
-현재 버전: **v0.7.2.5** — UI 리프레시 Phase 1c: 진행 카드 상태 라인 한국어화 (단계명 + 경과 + ETA) + 처리 로그 접힘 드로어.
+현재 버전: **v0.8.0.0** — UI 리프레시 Phase 1 완결: 메인 화면(입력/진행/결과) 재설계 + 메타 헤더 + 내보내기 dropdown + empty state + non-blocking toast.
 
 ---
 

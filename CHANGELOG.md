@@ -7,6 +7,69 @@
 
 ## [Unreleased]
 
+## [0.8.0.0] - 2026-04-18
+
+### Changed
+- **UI 리프레시 Phase 1 완결 — 결과 카드 재설계** (`gui.py`
+  `_build_result_card` + 신규 `_build_result_meta_header` /
+  `_build_result_empty_state` / `_show_empty_state` / `_show_result_tabs` /
+  `_update_result_meta`). Phase 1a/1b/1c 에서 준비한 디자인 시스템과
+  재구조화가 메인 화면의 마지막 카드에 적용되며, 이번 minor bump 로
+  전체 Phase 1 (메인 화면 + 디자인 시스템 기반) 이 마무리됨.
+
+  - **메타 헤더 추가** — 결과 카드 상단에 영상 제목(크게) + 업로더 ·
+    게시일 · 길이 · 화자 수 + `STT 엔진` / `LLM provider` chip 을
+    한 줄로 배치. 길이는 `6150초 → 1시간 42분` / `125초 → 2분 5초`
+    로 한국어 포맷. `_format_duration_meta` 헬퍼 신규.
+
+  - **내보내기 dropdown** (`_show_export_menu` + `_on_copy_markdown` +
+    `_on_open_saved_folder`) — 기존 4개 Save 버튼(`Save .md` / `Save PDF`
+    / `→ Obsidian` / `→ Notion`) 을 단일 Primary 버튼 `내보내기 ▾` 로
+    통합. 클릭 시 `tk.Menu` popup 으로 다음 항목 표시:
+    - 복사 (결과 마크다운 전체 → 클립보드)
+    - Markdown 저장  ·  PDF 저장
+    - Obsidian 으로 보내기  ·  Notion 으로 보내기
+    - 폴더 열기 (가장 최근 저장 경로의 부모 폴더; 저장 전 비활성)
+    OS 별 폴더 열기: macOS `open` / Windows `explorer` / Linux `xdg-open`.
+
+  - **Empty state** — 파이프라인 실행 전 결과 카드 본문에 안내 프레임
+    (🎙️ 아이콘 + "아직 결과가 없습니다" + 3단계 흐름 + 지원 파일 힌트).
+    Empty state ↔ tabview 전환은 `grid()` / `grid_forget()` 토글.
+
+  - **탭 한국어화** — `Summary` → `요약`, `Korean` → `한국어 전문`,
+    `English` → `원문`, `Log` → `처리 로그`. `_on_pipeline_done` 의
+    기본 탭 선택도 `"요약"` 으로 갱신.
+
+### Added
+- **Non-blocking 토스트 알림** — `GuruNoteApp.__init__` 에서
+  `ToastManager(self)` 초기화 (1a 에서 모듈만 만들었던 것을 실제 사용).
+  저장/복사/Notion 전송 상태를 `messagebox.showinfo` blocking modal 대신
+  우측 하단 토스트로 표시. 에러는 계속 modal (사용자 acknowledgment 필요).
+  적용 지점:
+  - Markdown 저장 성공: `저장됨  ·  <파일명>` (success)
+  - PDF 저장 성공: `PDF 저장됨  ·  <파일명>` (success)
+  - 복사: `클립보드에 복사됨` (success)
+  - Notion 전송 시작: `Notion 으로 전송 중…` (info, 4s duration)
+  - 복사 실패: `복사 실패: <err>` (error)
+
+### Removed
+- `GuruNoteApp._save_btn` / `_save_pdf_btn` / `_save_obsidian_btn` /
+  `_save_notion_btn` — 내보내기 dropdown 으로 통합됨. 관련 disable/enable
+  로직(`_on_run`, `_on_pipeline_done`, `_poll_notion_result`) 은 모두
+  `self._export_btn` 하나로 단일화.
+
+### Changed (세부)
+- 실행 중 title 라벨: `"파이프라인 실행 중…"` → `"처리 중…"`
+- `_on_pipeline_done` 에러 title: `"[Error] 오류 발생"` →
+  `"[오류] 파이프라인 실패"`
+- `_on_run` 에서 empty state → tabview 로 자동 전환 (로그 탭에서 라이브
+  진행 확인 가능).
+
+### 버전 정책
+Phase 1 전체 완결 (사용자 체감 UI 리디자인 4개 sub-phase 누적) 이므로
+CLAUDE.md 의 MINOR 기준 (`새 기능 추가, UI 변경, 신규 모듈, 엔진 교체`)
+에 따라 `0.7.2.5` → `0.8.0.0` 상승. PATCH/REVISION 은 0 으로 리셋.
+
 ## [0.7.2.5] - 2026-04-18
 
 ### Changed
@@ -1111,7 +1174,8 @@ bash run_desktop.sh
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.7.2.5...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.8.0.0...HEAD
+[0.8.0.0]: https://github.com/avlp12/GuruNote/compare/v0.7.2.5...v0.8.0.0
 [0.7.2.5]: https://github.com/avlp12/GuruNote/compare/v0.7.2.4...v0.7.2.5
 [0.7.2.4]: https://github.com/avlp12/GuruNote/compare/v0.7.2.3...v0.7.2.4
 [0.7.2.3]: https://github.com/avlp12/GuruNote/compare/v0.7.2.2...v0.7.2.3

@@ -13,6 +13,11 @@
 # --- UI ---
 streamlit>=1.32
 customtkinter>=5.2
+# pywebview: feat/webview-ui 브랜치의 새 UI 레이어 (macOS WKWebView /
+# Windows WebView2 / Linux WebKitGTK 네이티브 사용). 4.x 라인 안정화됨.
+# 기존 customtkinter 와 공존: app.py = CTk, app_webview.py = WebView UI.
+# 결정 근거: docs/webview-ui/TECH_CHOICE.md
+pywebview>=4.4,<5.0
 # Pillow: 썸네일 캐시 로딩 + 앱 아이콘 런타임 생성 (customtkinter 가 전이적으로
 # 당기지만, 직접 사용하므로 명시적으로 선언).
 Pillow>=10.0

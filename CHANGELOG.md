@@ -7,6 +7,32 @@
 
 ## [Unreleased]
 
+## [0.8.0.6] - 2026-04-19
+
+### Fixed
+- **macOS python.org Python 에서 YouTube 썸네일 / 업데이트 체크 실패**
+  (`gurunote/thumbnails.py`, `gurunote/updater.py`, 신규
+  `gurunote/_net.py`).
+  - **원인**: macOS 에 `https://python.org` installer 로 설치한 Python
+    3.13 은 기본적으로 시스템 루트 CA 에 접근하지 못해 `urlopen
+    ("https://...")` 이 `SSL: CERTIFICATE_VERIFY_FAILED — unable to get
+    local issuer certificate` 로 실패. 사용자가 수동으로 `Install
+    Certificates.command` 를 실행하기 전까지 `i.ytimg.com` / `raw.
+    githubusercontent.com` / GitHub API 호출이 모두 silent None 으로
+    떨어져 History 썸네일이 🎬 fallback 으로 뜨고 업데이트 체크/tarball
+    fallback 이 동작 안 함.
+  - **수정**: 신규 `gurunote._net.default_ssl_context()` — `certifi`
+    번들(`certifi.where()`) 기반 `ssl.SSLContext` 를 `@lru_cache` 로
+    제공. `certifi` 미설치 환경은 system default 로 폴백.
+    `thumbnails.py` 의 1개 + `updater.py` 의 3개 `urlopen` 호출에 모두
+    `context=default_ssl_context()` 추가.
+  - **의존성**: `certifi>=2024.2.2` 를 `requirements.txt` 에 명시
+    (yt-dlp/requests 등의 전이적 의존성으로 거의 모든 환경에 이미
+    설치돼 있으나 명시로 안정성 확보).
+  - **사용자 workaround (코드 fix 와 별도)**: 터미널에서
+    `/Applications/Python\ 3.13/Install\ Certificates.command` 실행
+    시 즉시 해결 — 이 커밋 적용 전에도 동작.
+
 ## [0.8.0.5] - 2026-04-18
 
 ### Fixed
@@ -1273,7 +1299,8 @@ bash run_desktop.sh
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.8.0.5...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.8.0.6...HEAD
+[0.8.0.6]: https://github.com/avlp12/GuruNote/compare/v0.8.0.5...v0.8.0.6
 [0.8.0.5]: https://github.com/avlp12/GuruNote/compare/v0.8.0.4...v0.8.0.5
 [0.8.0.4]: https://github.com/avlp12/GuruNote/compare/v0.8.0.3...v0.8.0.4
 [0.8.0.3]: https://github.com/avlp12/GuruNote/compare/v0.8.0.2...v0.8.0.3

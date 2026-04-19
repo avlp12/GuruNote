@@ -139,6 +139,7 @@ autosave/
 
 # Environments
 .env
+.env.backup_*
 .envrc
 .venv
 env/

@@ -22,6 +22,8 @@ from typing import Callable, Optional
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from gurunote._net import default_ssl_context
+
 THUMBNAIL_DIR = Path.home() / ".gurunote" / "thumbnails"
 
 # 환경변수로 디버그 로그 on/off. `GURUNOTE_THUMB_DEBUG=1 python gui.py` 로
@@ -87,7 +89,9 @@ def _try_fetch(video_id: str, variant: str, timeout: float) -> Optional[bytes]:
     url = f"https://i.ytimg.com/vi/{video_id}/{variant}"
     try:
         req = Request(url, headers=_HEADERS)
-        with urlopen(req, timeout=timeout) as resp:
+        # macOS python.org Python 에서 시스템 루트 CA 미설정 시 SSL
+        # verify 실패 방지 — certifi 번들 기반 context 명시.
+        with urlopen(req, timeout=timeout, context=default_ssl_context()) as resp:
             if resp.status != 200:
                 _dbg(f"{video_id} {variant} status={resp.status}")
                 return None

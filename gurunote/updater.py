@@ -29,6 +29,8 @@ import urllib.request
 from pathlib import Path
 from typing import Callable, Optional
 
+from gurunote._net import default_ssl_context
+
 LogFn = Callable[[str], None]
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -213,7 +215,9 @@ def get_remote_version() -> Optional[str]:
                 f"{owner_repo[1]}/{branch}/gurunote/__init__.py"
             )
             try:
-                with urllib.request.urlopen(raw_url, timeout=10) as resp:
+                with urllib.request.urlopen(
+                    raw_url, timeout=10, context=default_ssl_context(),
+                ) as resp:
                     content = resp.read().decode("utf-8")
                 ver = _parse_version_from_init(content)
                 if ver:
@@ -296,7 +300,9 @@ def detect_repo_visibility(
         },
     )
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with urllib.request.urlopen(
+            req, timeout=timeout, context=default_ssl_context(),
+        ) as resp:
             if resp.status != 200:
                 return None
             import json as _json
@@ -349,7 +355,9 @@ def update_via_tarball(
             tar_url,
             headers={"User-Agent": "GuruNote-Updater"},
         )
-        with urllib.request.urlopen(req, timeout=60) as resp:
+        with urllib.request.urlopen(
+            req, timeout=60, context=default_ssl_context(),
+        ) as resp:
             data = resp.read()
     except urllib.error.HTTPError as exc:
         raise RuntimeError(f"tarball 다운로드 실패 (HTTP {exc.code}): {tar_url}") from exc

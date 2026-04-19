@@ -31,6 +31,13 @@ google-genai>=1.0
 # --- 환경 설정 ---
 python-dotenv>=1.0
 
+# --- SSL 인증서 번들 ---
+# macOS python.org 설치본 Python 은 시스템 루트 CA 에 기본 접근하지 못해
+# `urlopen("https://...")` 이 CERTIFICATE_VERIFY_FAILED 로 실패한다. certifi
+# 번들을 명시해 `gurunote._net.default_ssl_context()` 에서 재사용.
+# (yt-dlp/requests 등 의 전이적 의존성으로 대부분 이미 설치돼 있지만 명시.)
+certifi>=2024.2.2
+
 # --- PDF 출력 (Phase C) ---
 # weasyprint 는 macOS/Linux 에서 cairo/pango 시스템 라이브러리를 필요로 한다.
 # pip 설치만으로도 import 자체는 성공하지만, 시스템 라이브러리가 없으면 첫

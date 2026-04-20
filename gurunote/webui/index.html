@@ -364,6 +364,150 @@ input { font: inherit; }
 }
 
 /* ============================================================================
+   Progress bar (under step indicator)
+   ============================================================================ */
+.progress-bar {
+  height: 4px;
+  background: var(--gn-surface-hi);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: var(--sp-3);
+}
+.progress-bar-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--gn-primary);
+  transition: width 120ms ease-out;
+}
+
+/* ============================================================================
+   Result — rendered markdown container
+   ============================================================================ */
+.result-rendered {
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--gn-text);
+}
+.result-rendered h1,
+.result-rendered h2,
+.result-rendered h3 {
+  margin: 1.2em 0 0.5em;
+  line-height: 1.3;
+}
+.result-rendered h1 { font-size: 22px; font-weight: 700; }
+.result-rendered h2 { font-size: 18px; font-weight: 700; }
+.result-rendered h3 { font-size: 15px; font-weight: 700; }
+.result-rendered p { margin: 0.6em 0; }
+.result-rendered ul,
+.result-rendered ol { padding-left: 1.4em; margin: 0.6em 0; }
+.result-rendered li { margin: 0.2em 0; }
+.result-rendered code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background: var(--gn-surface-hi);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+.result-rendered pre {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background: var(--gn-surface-hi);
+  padding: var(--sp-3);
+  border-radius: var(--r-sm);
+  overflow-x: auto;
+}
+.result-rendered pre code {
+  background: transparent;
+  padding: 0;
+}
+.result-rendered blockquote {
+  border-left: 3px solid var(--gn-border);
+  padding-left: var(--sp-3);
+  color: var(--gn-text-dim);
+  margin: 0.6em 0;
+}
+.result-rendered table {
+  border-collapse: collapse;
+  margin: 0.6em 0;
+  font-size: 13px;
+}
+.result-rendered th,
+.result-rendered td {
+  border: 1px solid var(--gn-border);
+  padding: 6px 10px;
+}
+.result-rendered th {
+  background: var(--gn-surface-hi);
+  font-weight: 700;
+}
+.result-video-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--gn-text);
+  margin-bottom: var(--sp-3);
+}
+
+/* ============================================================================
+   Toast (top-right, auto-fade)
+   ============================================================================ */
+.toast-container {
+  position: fixed;
+  top: var(--sp-5);
+  right: var(--sp-5);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  pointer-events: none;
+}
+.toast {
+  min-width: 280px;
+  max-width: 420px;
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--r-sm);
+  border: 1px solid var(--gn-border);
+  background: var(--gn-bg);
+  box-shadow: 0 4px 12px rgba(32, 33, 36, 0.12);
+  font-size: 13px;
+  color: var(--gn-text);
+  pointer-events: auto;
+  opacity: 0;
+  transform: translateY(-8px);
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+.toast.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+.toast.toast-error {
+  border-color: var(--gn-error);
+  color: var(--gn-error);
+  background: var(--gn-error-soft);
+}
+.toast.toast-success {
+  border-color: var(--gn-success);
+  color: var(--gn-success);
+  background: var(--gn-success-soft);
+}
+.toast.toast-warning {
+  border-color: var(--gn-warning);
+  color: var(--gn-warning);
+  background: var(--gn-warning-soft);
+}
+.toast .toast-title {
+  font-weight: 700;
+  margin-bottom: 2px;
+}
+
+/* ============================================================================
+   Button disabled state
+   ============================================================================ */
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ============================================================================
    Utility
    ============================================================================ */
 .hidden { display: none !important; }
@@ -452,6 +596,7 @@ input { font: inherit; }
           />
           <button class="btn btn-ghost" id="pick-file-btn" type="button">파일 선택</button>
           <button class="btn btn-primary" id="run-btn" type="button">▶  생성하기</button>
+          <button class="btn btn-ghost hidden" id="stop-btn" type="button">■  중지</button>
         </div>
 
         <div class="options-row">
@@ -505,19 +650,24 @@ input { font: inherit; }
           <div class="label" data-label="4">조립</div>
         </div>
 
+        <!-- Linear progress bar (0–100%) -->
+        <div class="progress-bar">
+          <div class="progress-bar-fill" id="progress-fill"></div>
+        </div>
+
         <!-- Live log pane (event bus subscriber) -->
         <div class="log-pane hidden" id="log-pane"></div>
       </section>
 
-      <!-- Result placeholder -->
-      <section class="card">
+      <!-- Result card — filled by window.bus "result" listener -->
+      <section class="card" id="result-card">
         <div class="card-header">
           <div class="card-title" style="font-size: 16px;">결과</div>
         </div>
-        <div class="result-empty">
-          파이프라인이 완료되면 여기에 마크다운 미리보기가 표시됩니다.
-          <br/>
-          <span style="font-size:11px;">TODO(Phase 1-B): 마크다운 → HTML 렌더링 + 저장 버튼</span>
+        <div id="result-body">
+          <div class="result-empty" id="result-empty">
+            파이프라인이 완료되면 여기에 마크다운 미리보기가 표시됩니다.
+          </div>
         </div>
       </section>
 
@@ -525,6 +675,9 @@ input { font: inherit; }
   </main>
 
 </div><!-- /app-shell -->
+
+<!-- Toast container (populated by toast() helper in script) -->
+<div class="toast-container" id="toast-container"></div>
 
 <!-- ============================================================================
      JS — 이벤트 버스 + Bridge 호출 + UI 보일러플레이트
@@ -638,44 +791,195 @@ urlInput.addEventListener("drop", (e) => {
 });
 
 /* ========================================================================
-   '생성하기' 버튼 — Phase 1 MVP 에선 와이어링 미완 (스텁)
-   TODO(Phase 1-B): callApi("start_pipeline", {kind, value, engine, provider})
+   UI state + helpers
    ======================================================================== */
-document.getElementById("run-btn").addEventListener("click", () => {
-  const url = urlInput.value.trim();
-  if (!url) {
-    alert("YouTube URL 또는 파일을 먼저 선택해주세요.");
+let currentJobId = null;
+
+function setUIRunning(running) {
+  document.getElementById("run-btn").disabled = running;
+  document.getElementById("pick-file-btn").disabled = running;
+  document.getElementById("url-input").disabled = running;
+  document.querySelectorAll(".seg-opt").forEach((b) => { b.disabled = running; });
+  document.getElementById("stop-btn").classList.toggle("hidden", !running);
+  document.getElementById("pipeline-status").textContent = running ? "처리 중…" : "대기";
+}
+
+function resetProgressUI() {
+  for (let i = 0; i < 5; i++) {
+    const node = document.querySelector(`.node[data-step="${i}"]`);
+    const label = document.querySelector(`.label[data-label="${i}"]`);
+    if (node) node.classList.remove("active", "done");
+    if (label) label.classList.remove("active");
+  }
+  document.querySelectorAll(".connector").forEach((c) => c.classList.remove("done"));
+  document.getElementById("progress-fill").style.width = "0%";
+  const pane = document.getElementById("log-pane");
+  pane.textContent = "";
+  pane.classList.add("hidden");
+}
+
+function updateStepIndicator(pct) {
+  // Thresholds mirror gui.py:3847 `th = [0.18, 0.55, 0.78, 0.90, 1.0]`.
+  const thresholds = [0.18, 0.55, 0.78, 0.90, 1.0];
+  for (let i = 0; i < 5; i++) {
+    const node = document.querySelector(`.node[data-step="${i}"]`);
+    const label = document.querySelector(`.label[data-label="${i}"]`);
+    if (!node || !label) continue;
+    node.classList.remove("active", "done");
+    label.classList.remove("active");
+    if (pct >= thresholds[i]) {
+      node.classList.add("done");
+    } else if (i === 0 && pct > 0) {
+      node.classList.add("active");
+      label.classList.add("active");
+    } else if (i > 0 && pct >= thresholds[i - 1]) {
+      node.classList.add("active");
+      label.classList.add("active");
+    }
+  }
+  document.querySelectorAll(".connector").forEach((c, idx) => {
+    c.classList.toggle("done", pct >= thresholds[idx]);
+  });
+  document.getElementById("progress-fill").style.width =
+    `${Math.max(0, Math.min(100, pct * 100))}%`;
+}
+
+function appendLogLine(line) {
+  const pane = document.getElementById("log-pane");
+  pane.classList.remove("hidden");
+  pane.textContent += line + "\n";
+  pane.scrollTop = pane.scrollHeight;
+}
+
+function toast(message, kind) {
+  // kind: "error" | "success" | "warning" | undefined (neutral)
+  const container = document.getElementById("toast-container");
+  const t = document.createElement("div");
+  t.className = "toast" + (kind ? ` toast-${kind}` : "");
+  t.textContent = message;
+  container.appendChild(t);
+  requestAnimationFrame(() => t.classList.add("visible"));
+  setTimeout(() => {
+    t.classList.remove("visible");
+    setTimeout(() => t.remove(), 200);
+  }, 4000);
+}
+
+function renderResult(payload) {
+  const body = document.getElementById("result-body");
+  body.innerHTML = "";
+  if (payload.video_title) {
+    const title = document.createElement("div");
+    title.className = "result-video-title";
+    title.textContent = payload.video_title;
+    body.appendChild(title);
+  }
+  const rendered = document.createElement("div");
+  rendered.className = "result-rendered";
+  // full_html is pre-rendered server-side via python `markdown` package.
+  rendered.innerHTML = payload.full_html || "";
+  body.appendChild(rendered);
+}
+
+function humanizeError(err) {
+  const msg = (err && err.message) || String(err);
+  // Structured codes raised by bridge.py: CODE:detail
+  const m = msg.match(/^([A-Z_]+):(.*)$/);
+  if (!m) return msg;
+  const [, code, detail] = m;
+  switch (code) {
+    case "INVALID_URL":         return "유튜브 URL 형식이 아닙니다.";
+    case "INVALID_LOCAL_FILE":  return `지원되지 않는 파일입니다: ${detail}`;
+    case "API_KEY_MISSING":     return `API 키가 설정되지 않았습니다: ${detail}. 설정 화면에서 입력하세요.`;
+    case "NO_ACTIVE_SESSION":   return "실행 중인 작업이 없습니다.";
+    default:                    return msg;
+  }
+}
+
+/* ========================================================================
+   '생성하기' 버튼 — 파이프라인 시작
+   ======================================================================== */
+document.getElementById("run-btn").addEventListener("click", async () => {
+  const raw = urlInput.value.trim();
+  if (!raw) {
+    toast("유튜브 URL 또는 로컬 파일을 먼저 선택해주세요.", "warning");
     return;
   }
-  alert(
-    `[MVP 스켈레톤] 파이프라인 와이어링은 Phase 1-B 예정.\n\n` +
-    `source: ${url}\nstt: ${segState.stt}\nllm: ${segState.llm}`
-  );
+  const isLocal = raw.startsWith("[File] ");
+  const source = {
+    kind: isLocal ? "local" : "youtube",
+    value: isLocal ? raw.slice("[File] ".length) : raw,
+    engine: segState.stt,
+    provider: segState.llm,
+  };
+
+  resetProgressUI();
+  setUIRunning(true);
+
+  try {
+    const result = await callApi("start_pipeline", source);
+    currentJobId = result.job_id;
+    console.info("[pipeline] started:", currentJobId);
+  } catch (e) {
+    console.error("[start_pipeline] error:", e);
+    toast(humanizeError(e), "error");
+    setUIRunning(false);
+    currentJobId = null;
+  }
 });
 
 /* ========================================================================
-   Event bus 구독 — 백엔드가 보내올 진행률/로그/결과 처리
-   현재는 console 로그만. 실제 UI 갱신은 Phase 1-B 에서 연결.
+   '중지' 버튼 — 실행 중 작업에 stop_event set
+   ======================================================================== */
+document.getElementById("stop-btn").addEventListener("click", async () => {
+  if (!currentJobId) return;
+  try {
+    await callApi("stop_pipeline", currentJobId);
+    toast("중지 요청을 보냈습니다.");
+  } catch (e) {
+    console.error("[stop_pipeline] error:", e);
+    toast(humanizeError(e), "error");
+  }
+});
+
+/* ========================================================================
+   Event bus 구독 — 백엔드 push 진행률 / 로그 / 결과
    ======================================================================== */
 window.bus.addEventListener("progress", (e) => {
-  console.log("[progress]", e.detail);
-  // TODO: pct 에 따라 step indicator active/done 토글
+  const pct = e.detail && e.detail.pct;
+  if (typeof pct === "number") updateStepIndicator(pct);
 });
+
 window.bus.addEventListener("log", (e) => {
-  const pane = document.getElementById("log-pane");
-  pane.classList.remove("hidden");
-  const line = e.detail && e.detail.line ? e.detail.line : "";
-  pane.textContent += line + "\n";
-  pane.scrollTop = pane.scrollHeight;
+  const line = e.detail && e.detail.line;
+  if (line) appendLogLine(line);
 });
+
+window.bus.addEventListener("log_batch", (e) => {
+  const lines = e.detail && e.detail.lines;
+  if (Array.isArray(lines)) {
+    for (const line of lines) appendLogLine(line);
+  }
+});
+
 window.bus.addEventListener("stage_change", (e) => {
   console.log("[stage_change]", e.detail);
 });
+
 window.bus.addEventListener("result", (e) => {
-  console.log("[result]", e.detail);
+  const payload = e.detail || {};
+  setUIRunning(false);
+  currentJobId = null;
+  if (!payload.ok) {
+    toast(`파이프라인 실패: ${payload.error || "알 수 없는 오류"}`, "error");
+    return;
+  }
+  updateStepIndicator(1.0);
+  renderResult(payload);
+  toast("생성 완료", "success");
 });
 
-console.info("[GuruNote WebView] MVP skeleton loaded. Phase 1-B will wire pipeline.");
+console.info("[GuruNote WebView] Phase 1-B loaded. Pipeline wiring active.");
 </script>
 
 </body>

@@ -155,7 +155,7 @@ def _condense(raw_line: str, state: _Tee) -> Optional[str]:
         if state._seen_hf_warning:
             return None
         state._seen_hf_warning = True
-        return "[경고] HF_TOKEN 미설정 — rate limit 가 낮을 수 있습니다 (설정에서 HUGGINGFACE_TOKEN 등록 권장)"
+        return "[경고] HF_TOKEN 미설정 — rate limit 가 낮을 수 있습니다 (설정에서 HF_TOKEN 등록 권장)"
 
     # Fetching N files: 75%|...| 3/4 [00:33<00:11, 11.06s/it]
     if clean.startswith("Fetching"):

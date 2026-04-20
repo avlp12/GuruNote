@@ -37,6 +37,13 @@ def main() -> int:
         )
         return 1
 
+    # Load .env before any bridge method reads os.environ. start_pipeline's
+    # preflight checks (OPENAI_API_KEY / ANTHROPIC_API_KEY / GOOGLE_API_KEY /
+    # OPENAI_BASE_URL) run before PipelineSession triggers the gui import
+    # whose module-level load_dotenv() would otherwise fire. Mirrors app.py:56.
+    from dotenv import load_dotenv  # noqa: PLC0415
+    load_dotenv()
+
     from gurunote.webui.bridge import Api
 
     # Resolve index.html relative to this file so it works both in dev

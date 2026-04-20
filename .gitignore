@@ -137,6 +137,9 @@ celerybeat.pid
 # GuruNote autosave
 autosave/
 
+# Local-only overnight handoff notes (per-session, not tracked)
+/HANDOFF_MORNING.md
+
 # Environments
 .env
 .env.backup_*

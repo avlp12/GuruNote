@@ -37,7 +37,7 @@ from gurunote.llm import (
     LLMConfig, extract_metadata, summarize_translation,
     test_connection, translate_transcript,
 )
-from gurunote.settings import save_settings
+from gurunote.settings import ensure_hf_token_env, save_settings
 from gurunote.history import (
     JobLogger, get_job_log, get_job_markdown,
     load_index, new_job_id, save_job,
@@ -54,6 +54,10 @@ from gurunote.updater import check_updates, update_project
 # 부팅
 # -----------------------------------------------------------------------------
 load_dotenv()
+# Export HuggingFace 토큰을 모든 별칭 (HF_TOKEN / HUGGINGFACE_TOKEN /
+# HUGGING_FACE_HUB_TOKEN / HUGGINGFACEHUB_API_TOKEN) 에 주입. 구 사용자 .env
+# 가 HUGGINGFACE_TOKEN 만 갖고 있어도 외부 라이브러리들이 정상 인식.
+ensure_hf_token_env()
 
 st.set_page_config(
     page_title="GuruNote 🎙️",

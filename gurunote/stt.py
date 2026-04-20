@@ -332,7 +332,10 @@ def _transcribe_whisperx(
         torch.cuda.empty_cache()
 
     # 3. 화자 분리 (HuggingFace 토큰 + 모델 사용 동의 필요)
-    hf_token = os.environ.get("HUGGINGFACE_TOKEN", "").strip()
+    #    토큰 이름 우선순위: HF_TOKEN > HUGGINGFACE_TOKEN > HUGGING_FACE_HUB_TOKEN
+    #    > HUGGINGFACEHUB_API_TOKEN (gurunote.settings.load_hf_token 참고)
+    from gurunote.settings import load_hf_token  # noqa: PLC0415
+    hf_token = load_hf_token()
     if hf_token:
         log("화자 분리 중 (pyannote)...")
         try:
@@ -365,8 +368,8 @@ def _transcribe_whisperx(
                 log(f"화자 분리 실패: {diar_exc}\n  화자 분리 없이 계속 진행합니다.")
     else:
         log(
-            "HUGGINGFACE_TOKEN 미설정 — 화자 분리를 건너뜁니다.\n"
-            "  화자 분리를 원하면 Settings 에서 HUGGINGFACE_TOKEN 을 설정하고,\n"
+            "HF_TOKEN 미설정 — 화자 분리를 건너뜁니다.\n"
+            "  화자 분리를 원하면 Settings 에서 HF_TOKEN 을 설정하고,\n"
             "  https://huggingface.co/pyannote/speaker-diarization-community-1\n"
             "  에서 모델 사용에 동의하세요."
         )

@@ -47,7 +47,7 @@ from gurunote.llm import (
     test_connection, translate_transcript,
 )
 from gurunote.progress_tee import install_tee
-from gurunote.settings import save_settings
+from gurunote.settings import ensure_hf_token_env, save_settings
 from gurunote.history import (
     JobLogger, delete_job, get_job_log, get_job_markdown,
     load_index, new_job_id, rebuild_index, save_job,
@@ -101,6 +101,10 @@ from gurunote import ui_theme as ut
 
 # 환경변수 로드
 load_dotenv()
+# HuggingFace 토큰 canonical = HF_TOKEN. 구 사용자 .env 의 HUGGINGFACE_TOKEN 을
+# HF_TOKEN / HUGGING_FACE_HUB_TOKEN / HUGGINGFACEHUB_API_TOKEN 모두에 export 해
+# 외부 라이브러리(pyannote, huggingface_hub) 가 자동 인식하도록 함.
+ensure_hf_token_env()
 
 
 # =============================================================================
@@ -430,7 +434,7 @@ _SETTINGS_FIELDS = [
     ("WHISPERX_MODEL", "WhisperX 모델 (NVIDIA)", False),
     ("WHISPERX_BATCH_SIZE", "WhisperX 배치 사이즈 (NVIDIA)", False),
     ("MLX_WHISPER_MODEL", "MLX Whisper 모델 (Apple Silicon)", False),
-    ("HUGGINGFACE_TOKEN", "HuggingFace 토큰 (화자 분리용)", True),
+    ("HF_TOKEN", "HuggingFace 토큰 (화자 분리용)", True),
     # Phase D — Obsidian vault 연동
     ("OBSIDIAN_VAULT_PATH", "Obsidian Vault 경로", False),
     ("OBSIDIAN_SUBFOLDER", "Obsidian 하위 폴더 (기본 GuruNote)", False),
@@ -2594,7 +2598,7 @@ class SettingsDialog(ctk.CTkToplevel):
             ("WHISPERX_MODEL", "WhisperX 모델 (NVIDIA)", False),
             ("WHISPERX_BATCH_SIZE", "WhisperX 배치 사이즈 (NVIDIA)", False),
             ("MLX_WHISPER_MODEL", "MLX Whisper 모델 (Apple Silicon)", False),
-            ("HUGGINGFACE_TOKEN", "HuggingFace 토큰 (화자 분리용)", True),
+            ("HF_TOKEN", "HuggingFace 토큰 (화자 분리용)", True),
         ],
         "연동": [
             ("OBSIDIAN_VAULT_PATH", "Obsidian Vault 경로", False),

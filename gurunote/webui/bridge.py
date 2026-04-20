@@ -106,34 +106,104 @@ class Api:
             return {"cancelled": True}
         return {"path": result[0]}
 
-    # ============================================================ pipeline (TODO)
+    # ============================================================ pipeline
 
     def start_pipeline(self, source: dict) -> dict:
-        """Spawn a PipelineWorker on a background thread; return ``{job_id}``.
+        """Validate, then spawn a ``PipelineSession`` on a background thread.
 
         ``source`` shape::
 
             {
               "kind": "youtube" | "local",
-              "value": str,        # URL or absolute path
+              "value": str,                 # URL or absolute file path
               "engine": "auto" | "whisperx" | "mlx" | "assemblyai",
               "provider": "openai" | "anthropic" | "gemini" | "openai_compatible",
             }
 
-        Progress is delivered via the event bus (``progress``, ``log``,
-        ``stage_change``, ``result``) — see ARCHITECTURE.md § 4.
+        Returns ``{"job_id": str}`` on success. Raises on any validation or
+        preflight failure; pywebview forwards the exception to JS as a
+        Promise reject so callers ``await`` with ``try/catch``.
+
+        Raised ``RuntimeError`` ``args[0]`` uses a ``<CODE>:<detail>`` convention so
+        the front-end can switch on structured codes:
+            INVALID_URL:<detail>
+            INVALID_LOCAL_FILE:<path>
+            API_KEY_MISSING:<env_var_name>
+
+        Progress / log / result are delivered via the JS event bus.
         """
-        # TODO(Phase 1-B): wrap PipelineWorker with a session that polls its
-        # queues and emits via window.evaluate_js("window.__emit(...)").
-        raise NotImplementedError("start_pipeline: wired in Phase 1-B")
+        window = self._require_window()
+
+        # ---- shape validation
+        if not isinstance(source, dict):
+            raise ValueError(f"source must be a dict, got {type(source).__name__}")
+        for key in ("kind", "value", "engine", "provider"):
+            if key not in source:
+                raise ValueError(f"source missing required key: {key!r}")
+
+        kind = source["kind"]
+        value = (source.get("value") or "").strip()
+        provider = source["provider"]
+
+        # ---- source validation (import from gurunote.audio lazily to avoid
+        # pulling in yt-dlp / ffmpeg checks at bridge import time)
+        if kind == "youtube":
+            from gurunote.audio import is_probably_youtube_url  # noqa: PLC0415
+            if not is_probably_youtube_url(value):
+                raise RuntimeError("INVALID_URL:유튜브 URL 형식이 아닙니다.")
+        elif kind == "local":
+            from pathlib import Path  # noqa: PLC0415
+            from gurunote.audio import is_supported_local_file  # noqa: PLC0415
+            if not value or not Path(value).is_file() or not is_supported_local_file(value):
+                raise RuntimeError(f"INVALID_LOCAL_FILE:{value}")
+        else:
+            raise ValueError(f"source.kind must be 'youtube' or 'local', got {kind!r}")
+
+        # ---- API key preflight (mirrors gui.py _check_api_keys; does NOT launch
+        # the settings dialog — JS caller shows a toast with the missing key code)
+        import os  # noqa: PLC0415
+        key_map = {
+            "openai": "OPENAI_API_KEY",
+            "anthropic": "ANTHROPIC_API_KEY",
+            "gemini": "GOOGLE_API_KEY",
+            "openai_compatible": "OPENAI_BASE_URL",
+        }
+        required_env = key_map.get(provider)
+        if required_env and not os.environ.get(required_env):
+            raise RuntimeError(f"API_KEY_MISSING:{required_env}")
+
+        # ---- launch
+        from gurunote.webui.session import PipelineSession  # noqa: PLC0415
+        session = PipelineSession(window, {
+            "kind": kind,
+            "value": value,
+            "engine": source["engine"],
+            "provider": provider,
+        })
+        session.start()
+        return {"job_id": session.job_id}
 
     def stop_pipeline(self, job_id: str) -> dict:
-        """Set the worker stop event for ``job_id``."""
-        raise NotImplementedError("stop_pipeline: wired in Phase 1-B")
+        """Signal the worker for ``job_id`` to stop. Returns ``{"stopped": True}``.
+
+        Raises ``RuntimeError("NO_ACTIVE_SESSION:<job_id>")`` if the job is
+        unknown or already completed.
+        """
+        from gurunote.webui.session import get_session  # noqa: PLC0415
+        session = get_session(job_id)
+        if session is None:
+            raise RuntimeError(f"NO_ACTIVE_SESSION:{job_id}")
+        session.request_stop()
+        return {"stopped": True}
 
     def get_pipeline_status(self, job_id: str) -> dict:
-        """Return the current stage/pct for a running job (poll fallback)."""
-        raise NotImplementedError("get_pipeline_status: wired in Phase 1-B")
+        """Poll fallback: returns whether a session is still active for ``job_id``.
+
+        Not normally needed — events push progress. Useful if the front-end
+        reloads and loses event-bus state.
+        """
+        from gurunote.webui.session import get_session  # noqa: PLC0415
+        return {"active": get_session(job_id) is not None}
 
     # ============================================================ settings (TODO)
 

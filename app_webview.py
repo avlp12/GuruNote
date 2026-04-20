@@ -15,8 +15,15 @@ See:
 """
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
+
+# The WebView UI has its own window chrome — we do not need the "redirect stdout
+# to ~/.gurunote/gui.log" behavior that prevents Terminal foregrounding in the
+# CTk app. Keeping stderr on the console makes pywebview + pipeline debugging
+# much easier. setdefault respects an explicit user override.
+os.environ.setdefault("GURUNOTE_NO_REDIRECT", "1")
 
 
 def main() -> int:

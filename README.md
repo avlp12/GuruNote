@@ -467,7 +467,7 @@ GuruNote/
 주요 변경 사항은 [CHANGELOG.md](./CHANGELOG.md) 에 [Keep a Changelog](https://keepachangelog.com/)
 형식으로 기록되며 버전은 [Semantic Versioning](https://semver.org/) 을 따릅니다.
 
-현재 버전: **v0.8.0.6** — macOS python.org 설치본에서 YouTube 썸네일/업데이트 체크가 SSL 인증서 오류로 실패하던 버그 수정 (certifi 번들 기반 SSL context 명시).
+현재 버전: **v0.8.0.7** — HuggingFace 토큰 env 이름을 `HF_TOKEN` 으로 canonical 통일 (기존 `HUGGINGFACE_TOKEN` 도 호환 유지). pyannote 화자 분리가 내부적으로 `HF_TOKEN` 을 찾던 경로에서 실패하던 문제 해결.
 
 ---
 
@@ -480,7 +480,7 @@ GuruNote/
 | **`python: command not found` / `'python' 용어가 인식되지 않습니다`** | Python 3.10+ 이 설치되지 않았거나 PATH 에 없습니다. Windows: `winget install --id Python.Python.3.12 -e` (설치 마법사의 "Add python.exe to PATH" 체크 필수). macOS 는 `python3` 명령을 사용하세요. Linux: `sudo apt install python3 python3-venv`. |
 | **`command not found: python` / `streamlit` (macOS)** | macOS 12+ 는 `python` 명령이 없고 `python3` 만 있으며, `streamlit` 은 venv 내부에만 설치됩니다. `bash run_desktop.sh` / `bash run_web.sh` 를 쓰면 venv activate 없이 실행됩니다. 직접 실행하려면 먼저 `source .venv/bin/activate` 로 venv 를 활성화하세요. |
 | **GPU 없이 쓸 수 있나요?** | `.env` 에서 `GURUNOTE_STT_ENGINE=assemblyai` 로 설정하면 클라우드 API 로 동작합니다 (AssemblyAI 키 필요). |
-| **Apple Silicon Mac (M1~M5) 에서 GPU 로컬 STT 가 되나요?** | 네. v0.6.0 부터 `setup.sh` 가 Apple Silicon 을 자동 감지해 `mlx-whisper` + `pyannote.audio` 를 설치합니다. STT 엔진을 `auto` 로 두면 Metal/MPS GPU 가속으로 로컬 전사 + 화자 분리가 동작합니다. 화자 분리에는 `HUGGINGFACE_TOKEN` + [pyannote 모델 동의](https://huggingface.co/pyannote/speaker-diarization-3.1) 가 필요합니다. |
+| **Apple Silicon Mac (M1~M5) 에서 GPU 로컬 STT 가 되나요?** | 네. v0.6.0 부터 `setup.sh` 가 Apple Silicon 을 자동 감지해 `mlx-whisper` + `pyannote.audio` 를 설치합니다. STT 엔진을 `auto` 로 두면 Metal/MPS GPU 가속으로 로컬 전사 + 화자 분리가 동작합니다. 화자 분리에는 `HF_TOKEN` + [pyannote 모델 동의](https://huggingface.co/pyannote/speaker-diarization-3.1) 가 필요합니다. (v0.8.0.7 이전 버전에서 쓰던 `HUGGINGFACE_TOKEN` 이름도 계속 호환됩니다.) |
 | **1시간 넘는 영상은?** | WhisperX / MLX 모두 청크 분할 처리라 길이 제한이 없습니다. AssemblyAI 도 길이 제한 없음. |
 | **로컬 LLM 을 쓰고 싶어요** | `.env` 에서 `LLM_PROVIDER=openai_compatible` + `OPENAI_BASE_URL=http://127.0.0.1:8000/v1` 설정. Ollama, vLLM, LM Studio 등 OpenAI-compatible 서버라면 모두 가능합니다. |
 | **"ffmpeg not found" 에러** | Mac: `brew install ffmpeg` / Windows: `winget install ffmpeg` / Ubuntu: `sudo apt install ffmpeg` |

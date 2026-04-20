@@ -7,6 +7,28 @@
 
 ## [Unreleased]
 
+## [0.8.0.7] - 2026-04-21
+
+### Changed
+- **HuggingFace 토큰 env 이름 canonical 을 `HF_TOKEN` 으로 통일**
+  (`gurunote/settings.py`, `gurunote/stt.py`, `gurunote/stt_mlx.py`,
+  `gurunote/progress_tee.py`, `gui.py`, `app.py`, `.env.example`).
+  - **원인**: GuruNote 는 그동안 `HUGGINGFACE_TOKEN` 을 썼지만
+    `huggingface_hub` 라이브러리 (pyannote 가 전이적으로 사용) 는
+    오직 `HF_TOKEN` → `HUGGING_FACE_HUB_TOKEN` 만 확인하고
+    `HUGGINGFACE_TOKEN` 은 완전히 무시함. 화자 분리 실행 시 내부
+    다운로드 경로에서 gated 모델 403 오류가 발생.
+  - **변경**: 새 `gurunote.settings.load_hf_token()` /
+    `ensure_hf_token_env()` 가 `HF_TOKEN` > `HUGGINGFACE_TOKEN` >
+    `HUGGING_FACE_HUB_TOKEN` > `HUGGINGFACEHUB_API_TOKEN` 우선순위로
+    읽고, 앱 시작 시점에 찾은 값을 네 별칭 모두에 export 하여 pyannote /
+    huggingface_hub / LangChain 스타일 모두 동일 토큰을 인식.
+  - **UI**: 설정 화면의 필드 키를 `HUGGINGFACE_TOKEN` → `HF_TOKEN` 로
+    교체 (gui.py 두 곳). 새로 저장하면 `.env` 에 `HF_TOKEN=` 로 기록.
+  - **호환성**: **breaking change 아님.** 기존 `.env` 에
+    `HUGGINGFACE_TOKEN=` 만 있어도 그대로 동작함 (fallback 체인 +
+    startup export 조합). 사용자가 `.env` 를 수동 수정할 필요 없음.
+
 ## [0.8.0.6] - 2026-04-19
 
 ### Fixed
@@ -1299,7 +1321,8 @@ bash run_desktop.sh
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.8.0.6...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.8.0.7...HEAD
+[0.8.0.7]: https://github.com/avlp12/GuruNote/compare/v0.8.0.6...v0.8.0.7
 [0.8.0.6]: https://github.com/avlp12/GuruNote/compare/v0.8.0.5...v0.8.0.6
 [0.8.0.5]: https://github.com/avlp12/GuruNote/compare/v0.8.0.4...v0.8.0.5
 [0.8.0.4]: https://github.com/avlp12/GuruNote/compare/v0.8.0.3...v0.8.0.4

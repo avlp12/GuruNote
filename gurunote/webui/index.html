@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<title>GuruNote</title>
+<meta name="viewport" content="width=1280, initial-scale=1" />
+<style>
+/* ============================================================================
+   Design tokens — Google Workspace Light theme
+   Source of truth: docs/handoff/DESIGN_TOKENS.md
+   TODO(Phase 1-B): split into gurunote/webui/css/tokens.css
+   ============================================================================ */
+:root {
+  /* Surface */
+  --gn-bg: #ffffff;
+  --gn-sidebar: #f8f9fc;
+  --gn-surface-hi: #f1f3f9;
+  --gn-border: #dadce0;
+  --gn-border-strong: #9aa0a6;
+
+  /* Text */
+  --gn-text: #202124;
+  --gn-text-dim: #5f6368;
+  --gn-text-muted: #80868b;
+
+  /* Primary (Google Blue) */
+  --gn-primary: #1a73e8;
+  --gn-primary-ho: #1967d2;
+  --gn-primary-soft: #e8f0fe;
+  --gn-on-primary: #ffffff;
+
+  /* Status */
+  --gn-success: #188038;
+  --gn-success-soft: #e6f4ea;
+  --gn-warning: #b06000;
+  --gn-warning-soft: #feefc3;
+  --gn-error: #c5221f;
+  --gn-error-soft: #fce8e6;
+
+  /* Radius */
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-pill: 24px;
+
+  /* Spacing */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+
+  /* Fonts */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo", "Pretendard", system-ui, sans-serif;
+  --font-mono: Menlo, Monaco, "SF Mono", Consolas, monospace;
+
+  /* Sidebar */
+  --sidebar-w: 240px;
+  --topbar-h: 56px;
+}
+
+/* ============================================================================
+   Reset + base
+   ============================================================================ */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--gn-text);
+  background: var(--gn-bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+button { font: inherit; cursor: pointer; }
+input { font: inherit; }
+::placeholder { color: var(--gn-text-muted); }
+
+/* ============================================================================
+   App shell
+   ============================================================================ */
+.app-shell {
+  display: grid;
+  grid-template-columns: var(--sidebar-w) 1fr;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ── Sidebar ────────────────────────────────────────────────────────────── */
+.sidebar {
+  background: var(--gn-sidebar);
+  border-right: 1px solid var(--gn-border);
+  padding: var(--sp-5) var(--sp-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  overflow-y: auto;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  margin-bottom: var(--sp-3);
+}
+.brand-logo {
+  width: 32px; height: 32px;
+  border-radius: var(--r-md);
+  background: var(--gn-primary);
+  color: var(--gn-on-primary);
+  display: grid; place-items: center;
+  font-weight: 700; font-size: 16px;
+}
+.brand-name { font-weight: 700; font-size: 14px; }
+.brand-ver { font-size: 11px; color: var(--gn-text-dim); }
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-3);
+  border-radius: var(--r-md);
+  color: var(--gn-text-dim);
+  font-weight: 500;
+  user-select: none;
+  cursor: pointer;
+  transition: background-color 80ms ease;
+}
+.nav-item:hover { background: var(--gn-surface-hi); }
+.nav-item.active {
+  background: var(--gn-primary-soft);
+  color: var(--gn-primary);
+  font-weight: 600;
+}
+.nav-icon { width: 18px; opacity: .85; }
+.nav-label-group {
+  font-size: 11px;
+  color: var(--gn-text-muted);
+  padding: var(--sp-3) var(--sp-3) var(--sp-1);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+/* ── Main area ──────────────────────────────────────────────────────────── */
+.main {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.topbar {
+  height: var(--topbar-h);
+  border-bottom: 1px solid var(--gn-border);
+  display: flex;
+  align-items: center;
+  padding: 0 var(--sp-5);
+  gap: var(--sp-4);
+  background: var(--gn-bg);
+}
+.crumbs {
+  font-size: 11px;
+  color: var(--gn-text-dim);
+}
+.screen-title {
+  font-size: 16px;
+  font-weight: 700;
+}
+.content {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--sp-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+
+/* ============================================================================
+   Hero / Input card (생성 화면)
+   ============================================================================ */
+.card {
+  background: var(--gn-bg);
+  border: 1px solid var(--gn-border);
+  border-radius: var(--r-lg);
+  padding: var(--sp-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+.card-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+.card-title {
+  font-size: 22px;
+  font-weight: 700;
+}
+.card-sub {
+  font-size: 13px;
+  color: var(--gn-text-dim);
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: 4px 12px;
+  border-radius: var(--r-pill);
+  background: var(--gn-primary-soft);
+  color: var(--gn-primary);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.input-row {
+  display: flex;
+  gap: var(--sp-3);
+  align-items: stretch;
+}
+.url-input {
+  flex: 1;
+  height: 48px;
+  padding: 0 var(--sp-5);
+  border: 1px solid var(--gn-border);
+  border-radius: var(--r-pill);
+  background: var(--gn-bg);
+  color: var(--gn-text);
+  font-size: 14px;
+  outline: none;
+  transition: border-color 80ms ease;
+}
+.url-input:focus { border-color: var(--gn-primary); }
+
+.btn {
+  height: 48px;
+  padding: 0 var(--sp-5);
+  border-radius: var(--r-pill);
+  border: 1px solid transparent;
+  font-size: 14px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  transition: background-color 80ms ease, border-color 80ms ease;
+}
+.btn-primary {
+  background: var(--gn-primary);
+  color: var(--gn-on-primary);
+  min-width: 200px;
+}
+.btn-primary:hover { background: var(--gn-primary-ho); }
+.btn-ghost {
+  background: transparent;
+  color: var(--gn-text);
+  border-color: var(--gn-border);
+}
+.btn-ghost:hover { background: var(--gn-surface-hi); }
+.btn-sm { height: 32px; padding: 0 var(--sp-4); font-size: 13px; }
+
+/* Drop zone overlay (HTML5 native DnD) */
+.url-input.drag-over {
+  border-color: var(--gn-primary);
+  background: var(--gn-primary-soft);
+}
+
+/* ============================================================================
+   Segmented (STT / LLM)
+   ============================================================================ */
+.options-row {
+  display: flex;
+  gap: var(--sp-6);
+  flex-wrap: wrap;
+}
+.opt-group { display: flex; flex-direction: column; gap: var(--sp-2); }
+.opt-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--gn-text-dim);
+}
+.segmented {
+  display: inline-flex;
+  background: var(--gn-sidebar);
+  border: 1px solid var(--gn-border);
+  border-radius: var(--r-pill);
+  padding: 2px;
+}
+.seg-opt {
+  height: 28px;
+  padding: 0 var(--sp-3);
+  border-radius: var(--r-pill);
+  border: none;
+  background: transparent;
+  color: var(--gn-text-dim);
+  font-size: 12px;
+  font-weight: 600;
+  transition: background-color 80ms, color 80ms;
+}
+.seg-opt:hover { color: var(--gn-text); }
+.seg-opt.active {
+  background: var(--gn-primary);
+  color: var(--gn-on-primary);
+}
+
+/* ============================================================================
+   Step indicator (5 nodes)
+   ============================================================================ */
+.steps {
+  display: grid;
+  grid-template-columns: repeat(9, 1fr);
+  align-items: center;
+  gap: 0;
+  padding: var(--sp-3) 0;
+}
+.steps .node {
+  width: 32px; height: 32px;
+  border-radius: 16px;
+  background: var(--gn-surface-hi);
+  color: var(--gn-text-dim);
+  display: grid; place-items: center;
+  font-weight: 700; font-size: 12px;
+  justify-self: center;
+}
+.steps .node.active,
+.steps .node.done {
+  background: var(--gn-primary);
+  color: var(--gn-on-primary);
+}
+.steps .connector {
+  height: 2px;
+  background: var(--gn-border);
+}
+.steps .connector.done { background: var(--gn-primary); }
+.steps .label {
+  text-align: center;
+  font-size: 11px;
+  color: var(--gn-text-dim);
+  padding-top: var(--sp-2);
+}
+.steps .label.active { color: var(--gn-primary); font-weight: 600; }
+
+/* ============================================================================
+   Result placeholder + log
+   ============================================================================ */
+.result-empty {
+  border: 1px dashed var(--gn-border);
+  border-radius: var(--r-md);
+  padding: var(--sp-6);
+  text-align: center;
+  color: var(--gn-text-muted);
+  font-size: 13px;
+}
+.log-pane {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--gn-text-dim);
+  background: var(--gn-surface-hi);
+  border-radius: var(--r-md);
+  padding: var(--sp-3);
+  max-height: 160px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* ============================================================================
+   Utility
+   ============================================================================ */
+.hidden { display: none !important; }
+.muted { color: var(--gn-text-dim); }
+</style>
+</head>
+<body>
+
+<div class="app-shell">
+
+  <!-- ──────────────────────────────────────────────────────────────────────
+       Sidebar
+       TODO(Phase 2+): 히스토리/설정/노트편집/대시보드 메뉴 와이어링
+       ────────────────────────────────────────────────────────────────────── -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-logo">G</div>
+      <div>
+        <div class="brand-name">GuruNote</div>
+        <div class="brand-ver" id="app-version">v—</div>
+      </div>
+    </div>
+
+    <div class="nav-item active" data-route="main">
+      <span class="nav-icon">✨</span>
+      <span>생성</span>
+    </div>
+
+    <!-- TODO(Phase 2): Wire to history screen -->
+    <div class="nav-item" data-route="history" title="Phase 2 예정">
+      <span class="nav-icon">📜</span>
+      <span>히스토리</span>
+    </div>
+
+    <!-- TODO(Phase 4): Wire to settings -->
+    <div class="nav-item" data-route="settings" title="Phase 4 예정">
+      <span class="nav-icon">⚙️</span>
+      <span>설정</span>
+    </div>
+
+    <!-- TODO(Phase 5): Wire to note editor -->
+    <div class="nav-item" data-route="editor" title="Phase 5 예정">
+      <span class="nav-icon">📝</span>
+      <span>노트 편집</span>
+    </div>
+
+    <!-- TODO(Phase 4-B): Dashboard -->
+    <div class="nav-item" data-route="dashboard" title="Phase 4-B 예정">
+      <span class="nav-icon">📊</span>
+      <span>대시보드</span>
+    </div>
+  </aside>
+
+  <!-- ──────────────────────────────────────────────────────────────────────
+       Main — '생성' 화면 (MVP)
+       ────────────────────────────────────────────────────────────────────── -->
+  <main class="main">
+    <div class="topbar">
+      <div>
+        <div class="crumbs">GuruNote · 생성</div>
+        <div class="screen-title">생성</div>
+      </div>
+    </div>
+
+    <div class="content" id="content-main">
+
+      <!-- Hero / Input Card -->
+      <section class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">지식을 증류하세요</div>
+            <div class="card-sub">
+              유튜브 링크 또는 로컬 오디오/비디오 파일에서 화자 분리된 한국어 요약본을 생성합니다.
+            </div>
+          </div>
+          <span class="chip">Apple Silicon · MLX</span>
+        </div>
+
+        <div class="input-row">
+          <input
+            id="url-input"
+            class="url-input"
+            type="text"
+            placeholder="🔗  https://youtube.com/watch?v=…  또는 파일을 드래그하여 놓으세요"
+            autocomplete="off"
+          />
+          <button class="btn btn-ghost" id="pick-file-btn" type="button">파일 선택</button>
+          <button class="btn btn-primary" id="run-btn" type="button">▶  생성하기</button>
+        </div>
+
+        <div class="options-row">
+          <div class="opt-group">
+            <label class="opt-label">STT 엔진</label>
+            <div class="segmented" data-seg="stt">
+              <button class="seg-opt active" data-value="auto">auto</button>
+              <button class="seg-opt" data-value="whisperx">whisperx</button>
+              <button class="seg-opt" data-value="mlx">mlx</button>
+              <button class="seg-opt" data-value="assemblyai">assemblyai</button>
+            </div>
+          </div>
+
+          <div class="opt-group">
+            <label class="opt-label">LLM Provider</label>
+            <div class="segmented" data-seg="llm">
+              <button class="seg-opt active" data-value="openai">openai</button>
+              <button class="seg-opt" data-value="anthropic">anthropic</button>
+              <button class="seg-opt" data-value="gemini">gemini</button>
+              <button class="seg-opt" data-value="openai_compatible">local</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Step Indicator (idle 상태) -->
+      <section class="card" id="progress-card">
+        <div class="card-header">
+          <div class="card-title" style="font-size: 16px;">파이프라인</div>
+          <span class="muted" id="pipeline-status">대기</span>
+        </div>
+        <div class="steps" id="steps">
+          <div class="node" data-step="0">1</div>
+          <div class="connector" data-conn="0"></div>
+          <div class="node" data-step="1">2</div>
+          <div class="connector" data-conn="1"></div>
+          <div class="node" data-step="2">3</div>
+          <div class="connector" data-conn="2"></div>
+          <div class="node" data-step="3">4</div>
+          <div class="connector" data-conn="3"></div>
+          <div class="node" data-step="4">5</div>
+
+          <div class="label" data-label="0">오디오</div>
+          <div></div>
+          <div class="label" data-label="1">STT</div>
+          <div></div>
+          <div class="label" data-label="2">번역</div>
+          <div></div>
+          <div class="label" data-label="3">요약</div>
+          <div></div>
+          <div class="label" data-label="4">조립</div>
+        </div>
+
+        <!-- Live log pane (event bus subscriber) -->
+        <div class="log-pane hidden" id="log-pane"></div>
+      </section>
+
+      <!-- Result placeholder -->
+      <section class="card">
+        <div class="card-header">
+          <div class="card-title" style="font-size: 16px;">결과</div>
+        </div>
+        <div class="result-empty">
+          파이프라인이 완료되면 여기에 마크다운 미리보기가 표시됩니다.
+          <br/>
+          <span style="font-size:11px;">TODO(Phase 1-B): 마크다운 → HTML 렌더링 + 저장 버튼</span>
+        </div>
+      </section>
+
+    </div><!-- /content -->
+  </main>
+
+</div><!-- /app-shell -->
+
+<!-- ============================================================================
+     JS — 이벤트 버스 + Bridge 호출 + UI 보일러플레이트
+     TODO(Phase 1-B): 분리 → js/bus.js, js/api.js, js/screens/main.js
+     ============================================================================ -->
+<script>
+"use strict";
+
+/* ========================================================================
+   Event Bus (window.bus)
+   백엔드(Python)가 evaluate_js("window.__emit('progress', {...})") 로 푸시
+   ======================================================================== */
+window.bus = new EventTarget();
+window.__emit = function (eventName, payload) {
+  try {
+    window.bus.dispatchEvent(new CustomEvent(eventName, { detail: payload }));
+  } catch (e) {
+    console.error("[bus] dispatch failed:", eventName, e);
+  }
+};
+
+/* ========================================================================
+   Bridge wrapper — pywebview.api 가 준비될 때까지 await
+   pywebview 로드 시 window.pywebviewready 이벤트 발생
+   ======================================================================== */
+const apiReady = new Promise((resolve) => {
+  if (window.pywebview && window.pywebview.api) return resolve(window.pywebview.api);
+  window.addEventListener("pywebviewready", () => resolve(window.pywebview.api));
+});
+
+async function callApi(method, ...args) {
+  const api = await apiReady;
+  if (typeof api[method] !== "function") {
+    throw new Error(`Bridge method not found: ${method}`);
+  }
+  return api[method](...args);
+}
+
+/* ========================================================================
+   초기 로드: 앱 정보 (버전 등)
+   ======================================================================== */
+(async function initAppInfo() {
+  try {
+    const info = await callApi("get_app_info");
+    if (info && info.version) {
+      document.getElementById("app-version").textContent = `v${info.version}`;
+    }
+  } catch (e) {
+    console.warn("[init] get_app_info failed (Bridge stub?):", e);
+    document.getElementById("app-version").textContent = "v0.7.2.1";
+  }
+})();
+
+/* ========================================================================
+   Segmented control 동작
+   ======================================================================== */
+const segState = { stt: "auto", llm: "openai" };
+document.querySelectorAll(".segmented").forEach((seg) => {
+  const key = seg.dataset.seg;
+  seg.addEventListener("click", (e) => {
+    const btn = e.target.closest(".seg-opt");
+    if (!btn) return;
+    seg.querySelectorAll(".seg-opt").forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+    segState[key] = btn.dataset.value;
+  });
+});
+
+/* ========================================================================
+   파일 선택 버튼 → Bridge.pick_file()
+   ======================================================================== */
+document.getElementById("pick-file-btn").addEventListener("click", async () => {
+  try {
+    const result = await callApi("pick_file");
+    if (result && result.path) {
+      document.getElementById("url-input").value = `[File] ${result.path}`;
+    }
+  } catch (e) {
+    console.error("[pick_file] error:", e);
+    alert(`파일 선택 오류: ${e.message || e}`);
+  }
+});
+
+/* ========================================================================
+   드래그앤드롭 (HTML5 native — pywebviewFullPath 사용)
+   주의: Vue Sortable / draggable 류 라이브러리 사용 금지 (issue #311)
+   ======================================================================== */
+const urlInput = document.getElementById("url-input");
+["dragenter", "dragover"].forEach((ev) => {
+  urlInput.addEventListener(ev, (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    urlInput.classList.add("drag-over");
+  });
+});
+["dragleave", "drop"].forEach((ev) => {
+  urlInput.addEventListener(ev, (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    urlInput.classList.remove("drag-over");
+  });
+});
+urlInput.addEventListener("drop", (e) => {
+  const files = e.dataTransfer && e.dataTransfer.files;
+  if (files && files.length > 0) {
+    const f = files[0];
+    // pywebview 가 주입하는 절대 경로
+    const fullPath = f.pywebviewFullPath || f.name;
+    urlInput.value = `[File] ${fullPath}`;
+  }
+});
+
+/* ========================================================================
+   '생성하기' 버튼 — Phase 1 MVP 에선 와이어링 미완 (스텁)
+   TODO(Phase 1-B): callApi("start_pipeline", {kind, value, engine, provider})
+   ======================================================================== */
+document.getElementById("run-btn").addEventListener("click", () => {
+  const url = urlInput.value.trim();
+  if (!url) {
+    alert("YouTube URL 또는 파일을 먼저 선택해주세요.");
+    return;
+  }
+  alert(
+    `[MVP 스켈레톤] 파이프라인 와이어링은 Phase 1-B 예정.\n\n` +
+    `source: ${url}\nstt: ${segState.stt}\nllm: ${segState.llm}`
+  );
+});
+
+/* ========================================================================
+   Event bus 구독 — 백엔드가 보내올 진행률/로그/결과 처리
+   현재는 console 로그만. 실제 UI 갱신은 Phase 1-B 에서 연결.
+   ======================================================================== */
+window.bus.addEventListener("progress", (e) => {
+  console.log("[progress]", e.detail);
+  // TODO: pct 에 따라 step indicator active/done 토글
+});
+window.bus.addEventListener("log", (e) => {
+  const pane = document.getElementById("log-pane");
+  pane.classList.remove("hidden");
+  const line = e.detail && e.detail.line ? e.detail.line : "";
+  pane.textContent += line + "\n";
+  pane.scrollTop = pane.scrollHeight;
+});
+window.bus.addEventListener("stage_change", (e) => {
+  console.log("[stage_change]", e.detail);
+});
+window.bus.addEventListener("result", (e) => {
+  console.log("[result]", e.detail);
+});
+
+console.info("[GuruNote WebView] MVP skeleton loaded. Phase 1-B will wire pipeline.");
+</script>
+
+</body>
+</html>

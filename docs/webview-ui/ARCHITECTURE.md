@@ -93,7 +93,7 @@ JS 에서는 `window.pywebview.api.<method_name>(...)` 으로 호출. pywebview 
 
 ### 3.1 메서드 카탈로그
 
-| 카테고리 | 메서드 | 인자 | 리턴 (TBD: § 9.1) | 동작 시간 |
+| 카테고리 | 메서드 | 인자 | 리턴 (에러는 예외 raise — § 3.2) | 동작 시간 |
 |---|---|---|---|---|
 | **파일 선택** | `pick_file()` | — | `{path: str}` 또는 `{cancelled: True}` | 즉시 (다이얼로그 동기) |
 | **파이프라인** | `start_pipeline(source)` | `source: {kind: 'youtube'\|'local', value: str, engine: str, provider: str}` | `{job_id: str}` | 즉시 (워커 spawn 후 리턴) |
@@ -120,15 +120,46 @@ JS 에서는 `window.pywebview.api.<method_name>(...)` 으로 호출. pywebview 
 - **긴 작업**(파이프라인, 인덱스 빌드, Notion 전송)은 워커 spawn → `job_id` 리턴 → 이벤트로 진행/결과 통보
 - 메서드 이름은 snake_case (Python 관습 유지). JS 측에서 `window.pywebview.api.start_pipeline(...)` 그대로 호출.
 
-### 3.2 에러 처리
+### 3.2 에러 처리 — **확정**
 
-**TBD (§ 9.1)** — 다음 옵션 중 하나로 통일:
+**성공 시**: 메서드는 JSON-직렬화 가능한 dict(또는 없을 때 `None`)를 그대로
+리턴. 봉투 없음.
 
-- **(A)** 정상 시 데이터 dict, 실패 시 `{ok: False, error: str, code: str}`
-- **(B)** 모든 응답을 `{ok: bool, data?, error?, code?}` 봉투로 감싸기
-- **(C)** Python 측에서 예외 raise → pywebview 가 JS Promise reject 처리
+**실패 시**: Python 측에서 일반 `Exception` / `ValueError` / `RuntimeError`
+을 `raise`. pywebview 의 JS bridge 가 이를 자동으로 **Promise reject** 로
+전달하므로 JS 쪽에서는 `await / try-catch` 패턴이 그대로 먹힘.
 
-**현재 스켈레톤 (Phase 1 MVP)**: 임시로 (A) 형식 사용. 실 구현 시 변경 가능.
+```python
+# Python — bridge method
+def start_pipeline(self, source: dict) -> dict:
+    if not is_probably_youtube_url(source["value"]):
+        raise RuntimeError("INVALID_URL:유튜브 URL 형식이 아닙니다.")
+    # ... on success
+    return {"job_id": session.job_id}
+```
+
+```js
+// JS — caller
+try {
+  const { job_id } = await window.pywebview.api.start_pipeline(source);
+  // success branch
+} catch (e) {
+  // e is a plain Error; e.message is the original Python exception string.
+  toast(humanizeError(e), "error");
+}
+```
+
+**구조화 에러 코드**: `RuntimeError` 메시지는 `<CODE>:<detail>` 관례를 따름.
+JS 쪽 `humanizeError()` 가 code 로 분기해 사용자 친화 문구로 변환.
+
+현재 사용 중인 코드:
+
+| CODE | 발생 | 사용자에게 보여지는 문구 |
+|---|---|---|
+| `INVALID_URL` | youtube 변별 실패 | "유튜브 URL 형식이 아닙니다." |
+| `INVALID_LOCAL_FILE` | 파일 없음 / 지원 확장자 아님 | "지원되지 않는 파일입니다: {path}" |
+| `API_KEY_MISSING:<ENV>` | LLM provider 환경변수 부재 | "API 키가 설정되지 않았습니다: {ENV}. 설정에서 입력하세요." |
+| `NO_ACTIVE_SESSION` | `stop_pipeline(job_id)` 에 해당 세션 없음 | "실행 중인 작업이 없습니다." |
 
 ---
 
@@ -170,65 +201,100 @@ window.bus.addEventListener("progress", (e) => {
 
 ### 4.3 Python 측 push
 
-`gurunote/webui/events.py` (의사 코드):
+Phase 1-B 에서 별도 `events.py` 를 만들지 않고 `PipelineSession._emit()`
+메서드에 통합. 구현은 § 5.1 참조.
 
 ```python
-def emit(window, event_name: str, payload: dict) -> None:
-    """메인 스레드에서 호출. 워커에서 큐에 넣고 폴러가 이걸 호출."""
-    js_payload = json.dumps(payload, ensure_ascii=False)
-    window.evaluate_js(f"window.__emit({js_payload!r}, {js_payload})")
-    # 실제론 인자 escaping 더 신중히 — bridge 구현 시 정리
+# 요약 (session.py)
+def _emit(self, event: str, payload: dict) -> None:
+    js_event = json.dumps(event)
+    js_payload = json.dumps(payload, ensure_ascii=False, default=str)
+    self.window.evaluate_js(f"window.__emit({js_event}, {js_payload})")
 ```
+
+Phase 2+ 에서 여러 세션 타입이 추가되면 (예: NotionSyncSession) 공통
+`emit()` 함수로 리팩토링 예정.
 
 ### 4.4 폴링 주기
 
-**200ms** (CTk `self.after(200, self._poll_worker)` 와 동일).
-변경 시 사용자 결정 필요 — TBD 가 아닌 **확정값**.
+**100ms** — `gui.py:4012` 의 `self.after(100, self._poll_worker)` 와 동일.
+`PipelineSession._schedule_poll()` 이 `threading.Timer(0.1, self._poll)` 로
+재진입.
+
+### 4.5 로그 이벤트 배칭
+
+기본은 **per-line** `log` 이벤트. 한 tick 에서 `msg_queue` 에 쌓인 라인이
+**50 개 이상**이면 단일 `log_batch` 이벤트로 묶어서 전송.
+
+```python
+# session.py 의 실제 구현
+lines = []
+while not self.worker.msg_queue.empty():
+    lines.append(self.worker.msg_queue.get_nowait())
+if len(lines) >= 50:
+    self._emit("log_batch", {"lines": lines})
+else:
+    for line in lines:
+        self._emit("log", {"line": line})
+```
+
+이유: 평상시(초당 수 건) per-line 이 단순하고 UI 즉시성 좋음. WhisperX 첫
+실행 시 HuggingFace 다운로드 tqdm 이 수십~수백 라인을 버스트로 쏟아낼 때만
+배칭해서 `evaluate_js` 오버헤드 컷.
+
+JS 쪽은 두 이벤트 모두 구독해 동일한 `appendLogLine()` 을 호출.
 
 ---
 
 ## 5. 스레드 / 큐 모델
 
-### 5.1 기존 PipelineWorker 재사용 그대로
+### 5.1 `PipelineSession` — 실제 구현 요약
 
+**파일**: `gurunote/webui/session.py`
+
+**책임**:
+- `gui.PipelineWorker` 한 개 소유 (지연 import — `gui` 모듈 부작용 회피)
+- 100 ms 주기 `threading.Timer` 폴러
+- 3 queue(msg / progress / result) 드레인 후 JS 이벤트 emit
+- `result` 받으면 `_ACTIVE` 레지스트리에서 제거 + 폴링 종료
+
+**레지스트리**:
 ```python
-# gurunote/webui/pipeline_session.py
-class PipelineSession:
-    """PipelineWorker 의 얇은 래퍼 — job_id 추적 + 이벤트 emit 책임만 추가."""
-    def __init__(self, window, source: dict):
-        self.window = window  # pywebview Window
-        self.worker = PipelineWorker(
-            engine=source["engine"],
-            provider=source["provider"],
-            youtube_url=source.get("value") if source["kind"] == "youtube" else "",
-            local_file=source.get("value") if source["kind"] == "local" else "",
-        )
-        self.job_id = self.worker.job_id
-
-    def start(self):
-        self.worker.start()
-        # 폴러 등록 (메인 스레드 측 호출)
-        threading.Timer(0.2, self._tick).start()
-
-    def _tick(self):
-        # progress queue 비우고 emit
-        while not self.worker.progress_queue.empty():
-            pct = self.worker.progress_queue.get_nowait()
-            emit(self.window, "progress", {"job_id": self.job_id, "pct": pct})
-        # msg queue 비우고 emit
-        while not self.worker.msg_queue.empty():
-            line = self.worker.msg_queue.get_nowait()
-            emit(self.window, "log", {"job_id": self.job_id, "line": line})
-        # result queue 한 번만
-        if not self.worker.result_queue.empty():
-            result = self.worker.result_queue.get_nowait()
-            emit(self.window, "result", {"job_id": self.job_id, **result})
-            return  # 폴링 종료
-        threading.Timer(0.2, self._tick).start()
+_ACTIVE: dict[str, PipelineSession] = {}   # job_id → session
 ```
 
-> 위는 설계 의도 표현용 의사 코드. 실 구현 시 polling을 main thread 내
-> `window.events.shown` 이후 등록된 단일 폴러로 합쳐 N개 동시 job 도 관리.
+`Bridge.stop_pipeline(job_id)` 가 이 dict 로 조회.
+
+**이벤트 emit shape (최종):**
+
+| 이벤트 | payload | 메모 |
+|---|---|---|
+| `progress` | `{job_id, pct}` | `pct` ∈ [0.0, 1.0] |
+| `log` | `{line}` | 50 미만일 때 |
+| `log_batch` | `{lines}` | 50 이상일 때 |
+| `result` | `{job_id, ok, video_title, full_md, full_html, summary_md}` (ok=False 면 `error` 포함) | `full_html` = Python markdown.markdown(…, extensions=['extra']) |
+
+**evaluate_js 호출**:
+
+```python
+def _emit(self, event, payload):
+    js_event = json.dumps(event)
+    js_payload = json.dumps(payload, ensure_ascii=False, default=str)
+    self.window.evaluate_js(f"window.__emit({js_event}, {js_payload})")
+```
+
+- `default=str` 로 Python 객체(예: `Path`, `datetime`) 을 안전하게 문자열화.
+- `ensure_ascii=False` 로 한글 로그 라인 직렬화 보존.
+- 예외 catch — 윈도우 닫힘 등.
+
+**결과 정규화 (`_normalize_result`)**:
+
+PipelineWorker 의 raw result 는 `audio` (AudioMeta 객체), `transcript`
+(Transcript dataclass) 등 Python 객체를 포함. JS 로 보내려면 pure dict
+로 변환 필요:
+- `video_title` = `result["audio"].video_title`
+- `full_html` = `markdown.markdown(result["full_md"], extensions=["extra"])`
+- transcript segments 는 Phase 1-B 범위 밖 (다음 페이즈에서 렌더 추가)
 
 ### 5.2 thread safety 주의
 
@@ -292,13 +358,19 @@ class PipelineSession:
 
 ## 9. Open Questions (Phase 1-B 이후 결정)
 
-### 9.1 Bridge 응답 봉투 형식 — **DEFER (실 구현 전 결정)**
+### 9.1 Bridge 응답 봉투 형식 — ✅ **확정** (Phase 1-B)
 
-위 § 3.2 참조. 옵션 A/B/C 중 선택. 사용자 답변 받기 전까지 스켈레톤은
-임시 (A) 형식.
+§ 3.2 참조. 성공 시 데이터 dict 그대로, 실패 시 Python 예외 raise →
+pywebview 가 JS Promise reject 로 자동 전달. 구조화 에러 코드
+`<CODE>:<detail>` 관례.
 
-영향 범위: 모든 Bridge 메서드, 모든 JS 호출자. 1번 결정으로 lock-in.
-변경 비용: 메서드 N개 × 호출지점 M개 모두 갱신 필요.
+결정 근거:
+- pywebview 의 기본 메커니즘을 그대로 활용 → 봉투 커스텀 코드 0
+- JS 쪽 `await / try-catch` 가 자연스러움
+- Python 쪽도 일반 예외 패턴 유지, 방어 코드 최소화
+
+영향 범위: 이미 `start_pipeline` / `stop_pipeline` / `get_pipeline_status`
+에 반영됨. Phase 2+ 신규 메서드도 동일 규칙 적용.
 
 ### 9.2 패키지 엔트리 결정
 

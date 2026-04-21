@@ -255,6 +255,58 @@ class Api:
         """Persist edited markdown back to disk."""
         raise NotImplementedError("update_note: wired in Phase 5")
 
+    # ============================================================ exporters
+
+    def save_result_as(self, markdown: str, default_filename: str) -> dict:
+        """Open native Save dialog and write ``markdown`` to the chosen path.
+
+        Used by the result card's "저장" button and ⌘S shortcut. The caller
+        passes the markdown currently rendered in the UI (``result.full_md``)
+        plus a suggested filename (autosave basename, or ``GuruNote_<title>.md``
+        as fallback).
+
+        Returns:
+            ``{"path": str, "cancelled": False}`` on success,
+            ``{"cancelled": True}`` if the user dismissed the dialog,
+            ``{"ok": False, "error": str, "code": "SAVE_FAILED"}`` on I/O error.
+
+        The default directory is ``~/Documents`` (intentionally distinct from
+        the autosave folder so user-initiated saves land somewhere the user
+        actively chose, not alongside the auto-captured copies).
+        """
+        import webview  # noqa: PLC0415
+        from pathlib import Path  # noqa: PLC0415
+
+        if not isinstance(markdown, str):
+            return self._err("SAVE_FAILED", f"markdown must be str, got {type(markdown).__name__}")
+        if not isinstance(default_filename, str) or not default_filename.strip():
+            default_filename = "GuruNote.md"
+
+        window = self._require_window()
+        default_dir = str(Path.home() / "Documents")
+        try:
+            result = window.create_file_dialog(
+                webview.SAVE_DIALOG,
+                directory=default_dir,
+                save_filename=default_filename,
+                file_types=("Markdown (*.md)", "All files (*.*)"),
+            )
+        except Exception as exc:  # noqa: BLE001 — native dialog errors are opaque; normalize
+            return self._err("SAVE_FAILED", f"dialog: {type(exc).__name__}: {exc}")
+        # pywebview SAVE_DIALOG: returns a string path, a tuple/list with one
+        # path, or a falsy value on cancel. Normalize.
+        if not result:
+            return {"cancelled": True}
+        path = result[0] if isinstance(result, (list, tuple)) else result
+        if not path:
+            return {"cancelled": True}
+
+        try:
+            Path(path).write_text(markdown, encoding="utf-8")
+        except OSError as exc:
+            return self._err("SAVE_FAILED", f"{type(exc).__name__}: {exc}")
+        return {"path": str(path), "cancelled": False}
+
     # ============================================================ exporters (TODO)
 
     def save_markdown(self, job_id: str, target_path: Optional[str] = None) -> dict:

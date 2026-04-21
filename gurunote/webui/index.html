@@ -499,6 +499,26 @@ input { font: inherit; }
   margin-bottom: var(--sp-3);
 }
 
+/* Save button in result card header — hidden until a result is rendered. */
+#save-result-btn[hidden] { display: none; }
+
+/* Autosave path chip below the video title. Shows where the worker already
+   wrote an automatic copy. Truncates with ellipsis; full path in tooltip. */
+.autosave-path {
+  font-size: 12px;
+  color: var(--gn-text-dim);
+  margin-bottom: var(--sp-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+.autosave-path[hidden] { display: none; }
+.autosave-path code {
+  font-family: inherit;
+  color: var(--gn-text);
+}
+
 /* ============================================================================
    Toast (top-right, auto-fade)
    ============================================================================ */
@@ -736,6 +756,13 @@ input { font: inherit; }
       <section class="card" id="result-card">
         <div class="card-header">
           <div class="card-title" style="font-size: 16px;">결과</div>
+          <button
+            class="btn btn-ghost btn-sm"
+            id="save-result-btn"
+            type="button"
+            title="다른 이름으로 저장 (⌘S / Ctrl+S)"
+            hidden
+          >저장</button>
         </div>
         <div id="result-body">
           <div class="result-empty" id="result-empty">
@@ -995,6 +1022,9 @@ document.getElementById("selected-file-remove").addEventListener("click", () => 
    UI state + helpers
    ======================================================================== */
 let currentJobId = null;
+// Latest rendered result — enables ⌘S / "저장" button after pipeline completes.
+// Cleared when a new run starts so stale content cannot be saved mid-run.
+let currentResult = null;  // { full_md, video_title, autosave_path } or null
 
 function setUIRunning(running) {
   document.getElementById("run-btn").disabled = running;
@@ -1069,6 +1099,40 @@ function toast(message, kind) {
   }, 4000);
 }
 
+// Collapse a leading $HOME path segment into "~" for display. The autosave
+// path is absolute; showing "~/GuruNote/autosave/..." is easier to read than
+// "/Users/alice/GuruNote/autosave/...". $HOME is not exposed to JS, so we
+// sniff it from the path itself by matching /Users/<name>/ (macOS) or
+// /home/<name>/ (Linux).
+function homeCollapsedPath(abs) {
+  if (typeof abs !== "string" || !abs) return "";
+  // macOS: /Users/<name>/...   Linux: /home/<name>/...
+  const m = abs.match(/^(\/(?:Users|home)\/[^/]+)(\/.*)?$/);
+  if (!m) return abs;
+  return "~" + (m[2] || "");
+}
+
+function basenameOf(p) {
+  if (typeof p !== "string" || !p) return "";
+  const i = Math.max(p.lastIndexOf("/"), p.lastIndexOf("\\"));
+  return i >= 0 ? p.slice(i + 1) : p;
+}
+
+// Derive the default filename offered in the Save-As dialog.
+// Preference: basename of autosave_path (same timestamp the user already
+// saw in the autosave chip). Fallback: "GuruNote_<video_title>.md".
+function deriveDefaultFilename(payload) {
+  if (payload.autosave_path) {
+    const base = basenameOf(payload.autosave_path);
+    if (base) return base;
+  }
+  const title = (payload.video_title || "").trim() || "untitled";
+  // Mild sanitize — strip path separators; Python side also sanitizes via
+  // exporter.sanitize_filename when autosaving, so this is a UX fallback only.
+  const safe = title.replace(/[\\/]/g, "_");
+  return `GuruNote_${safe}.md`;
+}
+
 function renderResult(payload) {
   const body = document.getElementById("result-body");
   body.innerHTML = "";
@@ -1077,6 +1141,15 @@ function renderResult(payload) {
     title.className = "result-video-title";
     title.textContent = payload.video_title;
     body.appendChild(title);
+  }
+  if (payload.autosave_path) {
+    const chip = document.createElement("div");
+    chip.className = "autosave-path";
+    const collapsed = homeCollapsedPath(payload.autosave_path);
+    chip.setAttribute("title", payload.autosave_path);  // full path tooltip
+    chip.innerHTML = "자동저장: <code></code>";
+    chip.querySelector("code").textContent = collapsed;
+    body.appendChild(chip);
   }
   const rendered = document.createElement("div");
   rendered.className = "result-rendered";
@@ -1129,6 +1202,11 @@ document.getElementById("run-btn").addEventListener("click", async () => {
       provider: segState.llm,
     };
   }
+
+  // A fresh run invalidates the previously saved result — hide the save
+  // button so ⌘S can't write stale markdown while the new run is in flight.
+  currentResult = null;
+  document.getElementById("save-result-btn").hidden = true;
 
   resetProgressUI();
   setUIRunning(true);
@@ -1188,12 +1266,75 @@ window.bus.addEventListener("result", (e) => {
   setUIRunning(false);
   currentJobId = null;
   if (!payload.ok) {
+    currentResult = null;
+    document.getElementById("save-result-btn").hidden = true;
     toast(`파이프라인 실패: ${payload.error || "알 수 없는 오류"}`, "error");
     return;
   }
   updateStepIndicator(1.0);
   renderResult(payload);
+  // Retain only the fields needed by save-as — avoids holding full_html
+  // (large; DOM already owns it).
+  currentResult = {
+    full_md: payload.full_md || "",
+    video_title: payload.video_title || "",
+    autosave_path: payload.autosave_path || null,
+  };
+  document.getElementById("save-result-btn").hidden = !currentResult.full_md;
   toast("생성 완료", "success");
+});
+
+/* ========================================================================
+   Save-as — button + ⌘S / Ctrl+S keyboard shortcut
+   ======================================================================== */
+async function saveResultAs() {
+  if (!currentResult || !currentResult.full_md) {
+    // Shortcut fired before any result existed — silent no-op.
+    return;
+  }
+  const defaultFilename = deriveDefaultFilename(currentResult);
+  let resp;
+  try {
+    resp = await callApi("save_result_as", currentResult.full_md, defaultFilename);
+  } catch (e) {
+    console.error("[save_result_as] error:", e);
+    toast(`저장 실패: ${humanizeError(e)}`, "error");
+    return;
+  }
+  if (!resp || resp.cancelled) {
+    // User dismissed the native dialog — per spec, no toast on cancel.
+    return;
+  }
+  if (resp.ok === false) {
+    toast(`저장 실패: ${resp.error || "알 수 없는 오류"}`, "error");
+    return;
+  }
+  const name = basenameOf(resp.path) || resp.path;
+  toast(`${name} 로 저장됨`, "success");
+}
+
+document.getElementById("save-result-btn").addEventListener("click", saveResultAs);
+
+// ⌘S on macOS, Ctrl+S elsewhere. pywebview has no default "save page" action
+// so overriding is safe, but we still call preventDefault() defensively.
+document.addEventListener("keydown", (e) => {
+  const isSaveCombo =
+    (e.metaKey || e.ctrlKey) &&
+    !e.altKey &&
+    !e.shiftKey &&
+    (e.key === "s" || e.key === "S");
+  if (!isSaveCombo) return;
+  // Only act when a result is available — otherwise let the event pass through
+  // so focused inputs (URL field) don't see their key-combos intercepted.
+  if (!currentResult || !currentResult.full_md) return;
+  // Even with a result rendered, don't hijack ⌘S while the user is typing in
+  // the URL field (or a future contenteditable surface) — keeps text-entry UX
+  // predictable when a prior result lingers on screen.
+  const t = e.target;
+  const tag = t && t.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA" || (t && t.isContentEditable)) return;
+  e.preventDefault();
+  saveResultAs();
 });
 
 console.info("[GuruNote WebView] Phase 1-B loaded. Pipeline wiring active.");

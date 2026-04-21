@@ -12,7 +12,13 @@ Event shapes
 - ``progress``  : ``{"job_id": str, "pct": float}``           — 0.0 – 1.0
 - ``result``    : ``{"job_id": str, "ok": bool, "full_md": str,
                      "full_html": str, "summary_md": str,
-                     "video_title": str}``  (ok=False → also ``"error": str``)
+                     "video_title": str,
+                     "autosave_path": str | None}``  (ok=False → also ``"error": str``)
+
+``autosave_path`` is sniffed from the ``[Autosave] <path>`` log line that
+``gui.PipelineWorker`` emits after ``autosave_result(...)`` writes. It is
+informational only (the front-end displays it alongside the result); the
+actual autosave write happens in the worker regardless of UI state.
 
 The log batching threshold (50) is intentional: per-line ``evaluate_js``
 calls are fine at normal pipeline log rates (a few per second) but get
@@ -31,6 +37,7 @@ _ACTIVE: dict[str, "PipelineSession"] = {}
 
 _LOG_BATCH_THRESHOLD = 50
 _POLL_INTERVAL_SEC = 0.1  # matches gui.py's self.after(100, ...)
+_AUTOSAVE_LOG_PREFIX = "[Autosave] "  # emitted by gui.PipelineWorker._run after autosave_result()
 
 
 def get_session(job_id: str) -> "PipelineSession | None":
@@ -70,6 +77,7 @@ class PipelineSession:
         self.job_id = self.worker.job_id
         self._done = False
         self._timer: threading.Timer | None = None
+        self._autosave_path: str | None = None
 
     # ---- public
 
@@ -98,6 +106,12 @@ class PipelineSession:
                 lines.append(self.worker.msg_queue.get_nowait())
             except queue.Empty:
                 break
+        # Sniff autosave path from log stream — gui.PipelineWorker emits
+        # "[Autosave] <absolute_path>" exactly once per successful run.
+        # We capture the last match (defensive: there should only ever be one).
+        for line in lines:
+            if line.startswith(_AUTOSAVE_LOG_PREFIX):
+                self._autosave_path = line[len(_AUTOSAVE_LOG_PREFIX):].strip() or None
         if len(lines) >= _LOG_BATCH_THRESHOLD:
             self._emit("log_batch", {"lines": lines})
         else:
@@ -144,6 +158,7 @@ class PipelineSession:
             "full_md": full_md,
             "full_html": _md_to_html(full_md),
             "summary_md": result.get("summary_md", ""),
+            "autosave_path": self._autosave_path,
         }
 
     def _emit(self, event: str, payload: dict) -> None:

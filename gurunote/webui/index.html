@@ -1099,17 +1099,23 @@ function toast(message, kind) {
   }, 4000);
 }
 
-// Collapse a leading $HOME path segment into "~" for display. The autosave
-// path is absolute; showing "~/GuruNote/autosave/..." is easier to read than
-// "/Users/alice/GuruNote/autosave/...". $HOME is not exposed to JS, so we
-// sniff it from the path itself by matching /Users/<name>/ (macOS) or
-// /home/<name>/ (Linux).
+// Collapse a leading $HOME / %USERPROFILE% path segment into "~" for display.
+// The autosave path is absolute; showing "~/GuruNote/autosave/..." is easier
+// to read than "/Users/alice/GuruNote/autosave/...". $HOME is not exposed to
+// JS, so we sniff it from the path itself: /Users/<name>/ (macOS),
+// /home/<name>/ (Linux), or <drive>:[\\/]Users[\\/]<name>[\\/] (Windows,
+// case-insensitive, mixed separators allowed). Non-matching paths (UNC
+// \\server\share, /Volumes/..., relative paths) are returned unchanged.
 function homeCollapsedPath(abs) {
   if (typeof abs !== "string" || !abs) return "";
   // macOS: /Users/<name>/...   Linux: /home/<name>/...
-  const m = abs.match(/^(\/(?:Users|home)\/[^/]+)(\/.*)?$/);
-  if (!m) return abs;
-  return "~" + (m[2] || "");
+  const mUnix = abs.match(/^(\/(?:Users|home)\/[^/]+)(\/.*)?$/);
+  if (mUnix) return "~" + (mUnix[2] || "");
+  // Windows: C:\Users\<name>\... (any drive letter, either separator, mixed).
+  // Tail is passed through verbatim so the original separator style survives.
+  const mWin = abs.match(/^([a-zA-Z]:[\\/]Users[\\/][^\\/]+)([\\/].*)?$/i);
+  if (mWin) return "~" + (mWin[2] || "");
+  return abs;
 }
 
 function basenameOf(p) {

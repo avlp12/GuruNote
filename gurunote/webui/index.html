@@ -364,6 +364,58 @@ input { font: inherit; }
 }
 
 /* ============================================================================
+   Selected local-file badge (mutually exclusive with URL input)
+   ============================================================================ */
+.file-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 6px 6px 6px var(--sp-3);
+  border-radius: var(--r-pill);
+  background: var(--gn-primary-soft);
+  border: 1px solid var(--gn-primary);
+  color: var(--gn-primary);
+  font-size: 13px;
+  max-width: 100%;
+  align-self: flex-start;
+  margin-top: var(--sp-3);
+}
+.file-badge .icon {
+  font-size: 15px;
+  line-height: 1;
+}
+.file-badge .name {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.file-badge .size {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  opacity: 0.7;
+}
+.file-badge .remove-btn {
+  border: none;
+  background: transparent;
+  color: var(--gn-primary);
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  line-height: 1;
+  transition: background-color 80ms, color 80ms;
+}
+.file-badge .remove-btn:hover,
+.file-badge .remove-btn:focus-visible {
+  background: var(--gn-error-soft);
+  color: var(--gn-error);
+  outline: none;
+}
+
+/* ============================================================================
    Progress bar (under step indicator)
    ============================================================================ */
 .progress-bar {
@@ -595,8 +647,29 @@ input { font: inherit; }
             autocomplete="off"
           />
           <button class="btn btn-ghost" id="pick-file-btn" type="button">파일 선택</button>
-          <button class="btn btn-primary" id="run-btn" type="button">▶  생성하기</button>
+          <button
+            class="btn btn-primary"
+            id="run-btn"
+            type="button"
+            disabled
+            title="URL 을 입력하거나 파일을 드래그하세요"
+          >▶  생성하기</button>
           <button class="btn btn-ghost hidden" id="stop-btn" type="button">■  중지</button>
+        </div>
+
+        <!-- Selected local file badge (mutually exclusive with url-input).
+             Populated by setSelectedFile(); removed by clearSelectedFile(). -->
+        <div id="selected-file" class="file-badge hidden" aria-live="polite">
+          <span class="icon" id="selected-file-icon" aria-hidden="true">🎵</span>
+          <span class="name" id="selected-file-name"></span>
+          <span class="size" id="selected-file-size"></span>
+          <button
+            type="button"
+            class="remove-btn"
+            id="selected-file-remove"
+            aria-label="파일 선택 취소"
+            title="파일 선택 취소"
+          >✕</button>
         </div>
 
         <div class="options-row">
@@ -747,25 +820,123 @@ document.querySelectorAll(".segmented").forEach((seg) => {
 });
 
 /* ========================================================================
-   파일 선택 버튼 → Bridge.pick_file()
+   로컬 파일 지원 (DnD + file picker) — URL 입력과 상호 배타
    ======================================================================== */
+
+// Mirrors gurunote.audio.SUPPORTED_EXTS (8 audio + 9 video = 17).
+// Keep in sync with gurunote/audio.py:22-24.
+const SUPPORTED_AUDIO_EXTS = [".mp3", ".wav", ".flac", ".m4a", ".aac", ".ogg", ".wma", ".opus"];
+const SUPPORTED_VIDEO_EXTS = [".mp4", ".mkv", ".avi", ".mov", ".webm", ".wmv", ".flv", ".ts", ".m4v"];
+const SUPPORTED_EXTS_SET = new Set([...SUPPORTED_AUDIO_EXTS, ...SUPPORTED_VIDEO_EXTS]);
+
+let selectedLocalPath = null;  // null or absolute path string
+
+const urlInput = document.getElementById("url-input");
+const runBtn = document.getElementById("run-btn");
+const fileBadge = document.getElementById("selected-file");
+const fileIconEl = document.getElementById("selected-file-icon");
+const fileNameEl = document.getElementById("selected-file-name");
+const fileSizeEl = document.getElementById("selected-file-size");
+
+function getExt(path) {
+  const idx = path.lastIndexOf(".");
+  return idx < 0 ? "" : path.slice(idx).toLowerCase();
+}
+
+function isSupportedExt(path) {
+  return SUPPORTED_EXTS_SET.has(getExt(path));
+}
+
+function basename(path) {
+  // Handle both forward and back slashes (Windows paths via pywebview).
+  const i = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+  return i < 0 ? path : path.slice(i + 1);
+}
+
+function midEllipsisPreserveExt(name, maxLen = 40) {
+  if (name.length <= maxLen) return name;
+  const dot = name.lastIndexOf(".");
+  if (dot < 0 || dot < name.length - 8) {
+    // No ext or ext weirdly long — simple end-ellipsis
+    return name.slice(0, maxLen - 3) + "...";
+  }
+  const ext = name.slice(dot);
+  const base = name.slice(0, dot);
+  const avail = maxLen - ext.length - 3;  // 3 = "..."
+  if (avail <= 4) return name.slice(0, maxLen - 3) + "...";
+  const head = Math.ceil(avail / 2);
+  const tail = Math.floor(avail / 2);
+  return base.slice(0, head) + "..." + base.slice(-tail) + ext;
+}
+
+function formatSize(bytes) {
+  if (bytes == null || bytes < 0) return "";
+  if (bytes < 1024) return bytes + " B";
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+  if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+  return (bytes / (1024 * 1024 * 1024)).toFixed(2) + " GB";
+}
+
+function iconForPath(path) {
+  return SUPPORTED_VIDEO_EXTS.includes(getExt(path)) ? "🎬" : "🎵";
+}
+
+function setSelectedFile(path, size) {
+  selectedLocalPath = path;
+  const name = basename(path);
+  fileIconEl.textContent = iconForPath(path);
+  fileNameEl.textContent = midEllipsisPreserveExt(name, 48);
+  fileNameEl.title = name;  // full name on hover
+  fileSizeEl.textContent = formatSize(size);
+  fileBadge.classList.remove("hidden");
+  // 상호 배타: URL 입력창 비움
+  urlInput.value = "";
+  updateRunButtonState();
+}
+
+function clearSelectedFile() {
+  selectedLocalPath = null;
+  fileBadge.classList.add("hidden");
+  fileNameEl.textContent = "";
+  fileNameEl.title = "";
+  fileSizeEl.textContent = "";
+  updateRunButtonState();
+}
+
+function updateRunButtonState() {
+  const hasSource = !!(selectedLocalPath || urlInput.value.trim());
+  runBtn.disabled = !hasSource;
+  if (hasSource) {
+    runBtn.removeAttribute("title");
+  } else {
+    runBtn.title = "URL 을 입력하거나 파일을 드래그하세요";
+  }
+}
+
+/* ---- pick-file button → native dialog ---- */
 document.getElementById("pick-file-btn").addEventListener("click", async () => {
   try {
     const result = await callApi("pick_file");
-    if (result && result.path) {
-      document.getElementById("url-input").value = `[File] ${result.path}`;
+    if (!result || !result.path) return;  // cancelled
+    if (!isSupportedExt(result.path)) {
+      toast(
+        `지원하지 않는 형식입니다: ${getExt(result.path)}\n` +
+        `지원: ${[...SUPPORTED_AUDIO_EXTS, ...SUPPORTED_VIDEO_EXTS].join(" ")}`,
+        "warning",
+      );
+      return;
     }
+    setSelectedFile(result.path, result.size);
   } catch (e) {
     console.error("[pick_file] error:", e);
-    alert(`파일 선택 오류: ${e.message || e}`);
+    toast(`파일 선택 오류: ${e.message || e}`, "error");
   }
 });
 
-/* ========================================================================
-   드래그앤드롭 (HTML5 native — pywebviewFullPath 사용)
-   주의: Vue Sortable / draggable 류 라이브러리 사용 금지 (issue #311)
-   ======================================================================== */
-const urlInput = document.getElementById("url-input");
+/* ---- drag-and-drop (HTML5 native with pywebviewFullPath) ----
+   WARNING: do NOT wrap with Vue Sortable / draggable — those libraries
+   re-wrap DataTransfer and lose the pywebviewFullPath attribute
+   (pywebview issue #311). */
 ["dragenter", "dragover"].forEach((ev) => {
   urlInput.addEventListener(ev, (e) => {
     e.preventDefault();
@@ -782,12 +953,42 @@ const urlInput = document.getElementById("url-input");
 });
 urlInput.addEventListener("drop", (e) => {
   const files = e.dataTransfer && e.dataTransfer.files;
-  if (files && files.length > 0) {
-    const f = files[0];
-    // pywebview 가 주입하는 절대 경로
-    const fullPath = f.pywebviewFullPath || f.name;
-    urlInput.value = `[File] ${fullPath}`;
+  if (!files || files.length === 0) return;
+
+  if (files.length > 1) {
+    toast("파일은 1개만 선택할 수 있습니다.", "warning");
+    return;
   }
+
+  const f = files[0];
+  // pywebview injects absolute path here; vanilla browsers would only expose the name.
+  const fullPath = f.pywebviewFullPath || f.name;
+
+  if (!isSupportedExt(fullPath)) {
+    toast(
+      `지원하지 않는 형식입니다: ${getExt(fullPath)}\n` +
+      `지원: ${[...SUPPORTED_AUDIO_EXTS, ...SUPPORTED_VIDEO_EXTS].join(" ")}`,
+      "warning",
+    );
+    return;
+  }
+
+  // Replace any existing selection silently — user intent is clear on re-drop.
+  setSelectedFile(fullPath, typeof f.size === "number" ? f.size : null);
+});
+
+/* ---- URL 입력 타이핑 → 기존 파일 선택 자동 해제 (mutually exclusive) ---- */
+urlInput.addEventListener("input", () => {
+  if (selectedLocalPath && urlInput.value.trim() !== "") {
+    clearSelectedFile();
+  }
+  updateRunButtonState();
+});
+
+/* ---- X (remove) 버튼 → 파일 선택 취소 ---- */
+document.getElementById("selected-file-remove").addEventListener("click", () => {
+  clearSelectedFile();
+  urlInput.focus();
 });
 
 /* ========================================================================
@@ -799,9 +1000,12 @@ function setUIRunning(running) {
   document.getElementById("run-btn").disabled = running;
   document.getElementById("pick-file-btn").disabled = running;
   document.getElementById("url-input").disabled = running;
+  document.getElementById("selected-file-remove").disabled = running;
   document.querySelectorAll(".seg-opt").forEach((b) => { b.disabled = running; });
   document.getElementById("stop-btn").classList.toggle("hidden", !running);
   document.getElementById("pipeline-status").textContent = running ? "처리 중…" : "대기";
+  // After a run ends, re-apply the empty-input disable + tooltip logic.
+  if (!running) updateRunButtonState();
 }
 
 function resetProgressUI() {
@@ -898,20 +1102,33 @@ function humanizeError(err) {
 
 /* ========================================================================
    '생성하기' 버튼 — 파이프라인 시작
+   URL 입력창과 local file badge 는 상호 배타 (setSelectedFile 이 유지).
    ======================================================================== */
 document.getElementById("run-btn").addEventListener("click", async () => {
-  const raw = urlInput.value.trim();
-  if (!raw) {
-    toast("유튜브 URL 또는 로컬 파일을 먼저 선택해주세요.", "warning");
-    return;
+  // Source resolution: local takes precedence over URL (mutual exclusion
+  // is already enforced in setSelectedFile / input handler, but be explicit).
+  let source;
+  if (selectedLocalPath) {
+    source = {
+      kind: "local",
+      value: selectedLocalPath,
+      engine: segState.stt,
+      provider: segState.llm,
+    };
+  } else {
+    const raw = urlInput.value.trim();
+    if (!raw) {
+      // Should not happen — button is disabled when both empty. Defensive.
+      toast("유튜브 URL 또는 로컬 파일을 먼저 선택해주세요.", "warning");
+      return;
+    }
+    source = {
+      kind: "youtube",
+      value: raw,
+      engine: segState.stt,
+      provider: segState.llm,
+    };
   }
-  const isLocal = raw.startsWith("[File] ");
-  const source = {
-    kind: isLocal ? "local" : "youtube",
-    value: isLocal ? raw.slice("[File] ".length) : raw,
-    engine: segState.stt,
-    provider: segState.llm,
-  };
 
   resetProgressUI();
   setUIRunning(true);

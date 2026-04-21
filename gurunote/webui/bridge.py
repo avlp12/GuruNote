@@ -86,25 +86,38 @@ class Api:
     # ============================================================ file picker
 
     def pick_file(self) -> dict:
-        """Open native file-open dialog. Returns ``{path}`` or ``{cancelled}``.
+        """Open native file-open dialog. Returns ``{path, size}`` or ``{cancelled}``.
 
-        Filter: audio/video only (matches the source types accepted by
-        ``gurunote.audio`` and the existing CTk file picker).
+        The file_types filter mirrors ``gurunote.audio.SUPPORTED_EXTS``
+        (8 audio + 9 video = 17 extensions) so users cannot pick a file
+        via the dialog's audio/video filter that would subsequently fail
+        ``is_supported_local_file`` in ``start_pipeline``.
+
+        ``size`` is the file's byte count (``Path.stat().st_size``), or
+        ``None`` if the stat call fails. The front-end uses this for the
+        selected-file badge and can still function without it.
         """
         import webview  # local import — only needed at runtime
+        from pathlib import Path
 
         window = self._require_window()
         result = window.create_file_dialog(
             webview.OPEN_DIALOG,
             allow_multiple=False,
             file_types=(
-                "Audio/Video (*.mp3;*.mp4;*.wav;*.m4a;*.webm;*.mkv;*.mov)",
+                "Audio/Video (*.mp3;*.wav;*.flac;*.m4a;*.aac;*.ogg;*.wma;*.opus;"
+                "*.mp4;*.mkv;*.avi;*.mov;*.webm;*.wmv;*.flv;*.ts;*.m4v)",
                 "All files (*.*)",
             ),
         )
         if not result:
             return {"cancelled": True}
-        return {"path": result[0]}
+        path = result[0]
+        try:
+            size = Path(path).stat().st_size
+        except OSError:
+            size = None
+        return {"path": path, "size": size}
 
     # ============================================================ pipeline
 

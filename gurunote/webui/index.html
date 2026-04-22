@@ -522,6 +522,56 @@ input { font: inherit; }
 /* ============================================================================
    Toast (top-right, auto-fade)
    ============================================================================ */
+/* ─── History list view (Commit 2) ──────────────────────────────────────── */
+.history-status {
+  padding: var(--sp-3) 0;
+  color: var(--gn-text-dim);
+  font-size: 13px;
+  text-align: center;
+}
+.history-status.error { color: var(--gn-error, #d04545); }
+.history-item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-row-gap: 4px;
+  padding: var(--sp-3);
+  margin: var(--sp-2) 0;
+  border: 1px solid var(--gn-border);
+  border-radius: var(--r-md);
+  cursor: pointer;
+  transition: background-color 80ms ease, border-color 80ms ease;
+}
+.history-item:hover {
+  background: var(--gn-surface-hi);
+  border-color: var(--gn-primary-soft);
+}
+.history-item-title {
+  font-weight: 600;
+  color: var(--gn-text);
+  font-size: 14px;
+  word-break: break-word;
+}
+.history-item-status {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--gn-surface-hi);
+  color: var(--gn-text-dim);
+  align-self: start;
+  white-space: nowrap;
+}
+.history-item-status.completed { background: var(--gn-primary-soft); color: var(--gn-primary); }
+.history-item-status.failed    { color: var(--gn-error, #d04545); }
+.history-item-meta {
+  grid-column: 1 / -1;
+  font-size: 12px;
+  color: var(--gn-text-muted);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+}
+.history-item-meta .dot { color: var(--gn-text-dim); }
+
 .toast-container {
   position: fixed;
   top: var(--sp-5);
@@ -608,8 +658,7 @@ input { font: inherit; }
       <span>생성</span>
     </div>
 
-    <!-- TODO(Phase 2): Wire to history screen -->
-    <div class="nav-item" data-route="history" title="Phase 2 예정">
+    <div class="nav-item" data-route="history">
       <span class="nav-icon">📜</span>
       <span>히스토리</span>
     </div>
@@ -639,8 +688,8 @@ input { font: inherit; }
   <main class="main">
     <div class="topbar">
       <div>
-        <div class="crumbs">GuruNote · 생성</div>
-        <div class="screen-title">생성</div>
+        <div class="crumbs" id="topbar-crumbs">GuruNote · 생성</div>
+        <div class="screen-title" id="topbar-title">생성</div>
       </div>
     </div>
 
@@ -772,6 +821,29 @@ input { font: inherit; }
       </section>
 
     </div><!-- /content -->
+
+    <!-- ────────────────────────────────────────────────────────────────────
+         Main — '히스토리' 화면 (목록 view, Commit 2)
+         아이템 클릭 시 detail 재열람은 Commit 3 에서 배선.
+         ──────────────────────────────────────────────────────────────────── -->
+    <div class="content" id="content-history" hidden>
+      <section class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title" style="font-size: 16px;">히스토리</div>
+            <div class="card-sub">완료/실패한 작업 기록 · 최신순</div>
+          </div>
+          <button
+            class="btn btn-ghost btn-sm"
+            id="history-refresh-btn"
+            type="button"
+            title="목록 새로고침"
+          >새로고침</button>
+        </div>
+        <div id="history-list"></div>
+        <div id="history-status" class="history-status"></div>
+      </section>
+    </div>
   </main>
 
 </div><!-- /app-shell -->
@@ -1175,9 +1247,168 @@ function humanizeError(err) {
     case "INVALID_LOCAL_FILE":  return `지원되지 않는 파일입니다: ${detail}`;
     case "API_KEY_MISSING":     return `API 키가 설정되지 않았습니다: ${detail}. 설정 화면에서 입력하세요.`;
     case "NO_ACTIVE_SESSION":   return "실행 중인 작업이 없습니다.";
+    case "HISTORY_LIST_FAILED": return `히스토리 목록을 불러오지 못했습니다: ${detail}`;
+    case "NOT_FOUND":           return `히스토리 항목을 찾을 수 없습니다: ${detail}`;
+    case "INVALID_ID":          return `잘못된 작업 ID 입니다: ${detail}`;
+    case "READ_FAILED":         return `히스토리 읽기에 실패했습니다: ${detail}`;
     default:                    return msg;
   }
 }
+
+/* ========================================================================
+   History view (Commit 2 — list only; detail re-open lands in Commit 3)
+   ======================================================================== */
+const ROUTE_TOPBAR = {
+  main:    { crumbs: "GuruNote · 생성",     title: "생성" },
+  history: { crumbs: "GuruNote · 히스토리", title: "히스토리" },
+};
+// Routes that exist in markup but are not yet implemented — clicking them
+// shows a "Phase X 예정" toast and the active route does NOT change.
+const ROUTE_PHASE_LABEL = {
+  settings:  "Phase 4",
+  editor:    "Phase 5",
+  dashboard: "Phase 4-B",
+};
+let currentRoute = "main";
+let historyLoadedOnce = false;
+
+function switchRoute(name) {
+  if (ROUTE_PHASE_LABEL[name]) {
+    toast(`${ROUTE_PHASE_LABEL[name]} 예정 기능입니다.`, "warning");
+    return;
+  }
+  if (!ROUTE_TOPBAR[name]) {
+    console.warn("[router] unknown route:", name);
+    return;
+  }
+  if (name === currentRoute) return;  // idempotent on rapid duplicate clicks
+
+  document.querySelectorAll(".nav-item[data-route]").forEach((el) => {
+    el.classList.toggle("active", el.dataset.route === name);
+  });
+
+  document.getElementById("content-main").hidden    = (name !== "main");
+  document.getElementById("content-history").hidden = (name !== "history");
+
+  // Topbar text values are sourced from the ROUTE_TOPBAR literal above
+  // (no user input). textContent is used regardless to keep the rule uniform.
+  document.getElementById("topbar-crumbs").textContent = ROUTE_TOPBAR[name].crumbs;
+  document.getElementById("topbar-title").textContent  = ROUTE_TOPBAR[name].title;
+
+  currentRoute = name;
+
+  // Lazy-load history on first entry; refresh button handles subsequent reloads.
+  if (name === "history" && !historyLoadedOnce) {
+    loadHistory();
+  }
+}
+
+function formatHistoryDate(iso) {
+  // Format target: "2026. 4. 21. 오후 7:54" — `year: "numeric"` prevents the
+  // ko-KR short style from collapsing to a 2-digit year ("26. 4. 21.").
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  return d.toLocaleString("ko-KR", {
+    year: "numeric", month: "numeric", day: "numeric",
+    hour: "numeric", minute: "2-digit",
+  });
+}
+
+function renderHistoryItem(entry) {
+  // All job metadata (title / organized_title / uploader / field / tags)
+  // originates from yt-dlp + LLM output — treat as untrusted. This function
+  // builds DOM exclusively via createElement + textContent. innerHTML must
+  // never appear inside this builder.
+  const root = document.createElement("div");
+  root.className = "history-item";
+  root.dataset.jobId = entry.job_id || "";
+
+  const titleEl = document.createElement("div");
+  titleEl.className = "history-item-title";
+  titleEl.textContent = entry.organized_title || entry.title || "(제목 없음)";
+  root.appendChild(titleEl);
+
+  const status = entry.status || "";
+  const statusEl = document.createElement("div");
+  statusEl.className = "history-item-status "
+    + (status === "completed" ? "completed" : status === "failed" ? "failed" : "");
+  statusEl.textContent = status === "completed" ? "완료"
+                       : status === "failed"    ? "실패"
+                       : status || "—";
+  root.appendChild(statusEl);
+
+  const metaEl = document.createElement("div");
+  metaEl.className = "history-item-meta";
+  const parts = [];
+  if (entry.uploader) parts.push(entry.uploader);
+  if (entry.field)    parts.push(entry.field);
+  const dateStr = formatHistoryDate(entry.created_at);
+  if (dateStr) parts.push(dateStr);
+  if (Array.isArray(entry.tags) && entry.tags.length) {
+    parts.push("#" + entry.tags.slice(0, 5).join(" #"));
+  }
+  parts.forEach((p, i) => {
+    if (i > 0) {
+      const dot = document.createElement("span");
+      dot.className = "dot";
+      dot.textContent = "·";
+      metaEl.appendChild(dot);
+    }
+    const span = document.createElement("span");
+    span.textContent = p;  // untrusted metadata → textContent only.
+    metaEl.appendChild(span);
+  });
+  root.appendChild(metaEl);
+
+  root.addEventListener("click", () => {
+    // Detail re-open is wired in Commit 3. Placeholder until then.
+    console.info("[history] clicked:", root.dataset.jobId);
+  });
+
+  return root;
+}
+
+async function loadHistory() {
+  const list = document.getElementById("history-list");
+  const status = document.getElementById("history-status");
+  // Clearing existing children — the only nodes here are ones renderHistoryItem
+  // built (all via textContent). innerHTML="" is safe for clearing trusted DOM.
+  list.innerHTML = "";
+  status.classList.remove("error");
+  status.textContent = "로딩 중...";
+
+  try {
+    const resp = await callApi("list_history");
+    if (resp && resp.ok === false) {
+      status.classList.add("error");
+      status.textContent = humanizeError({ message: `${resp.code}:${resp.error}` });
+      return;
+    }
+    const items = (resp && resp.items) || [];
+    if (items.length === 0) {
+      status.textContent = "저장된 히스토리가 없습니다.";
+      historyLoadedOnce = true;
+      return;
+    }
+    status.textContent = "";
+    items.forEach((entry) => list.appendChild(renderHistoryItem(entry)));
+    // Mark loaded only on a successful (or empty) response — soft-failed
+    // and hard-thrown errors leave the flag false so the next nav auto-retries.
+    historyLoadedOnce = true;
+  } catch (e) {
+    console.error("[history] load failed:", e);
+    status.classList.add("error");
+    status.textContent = humanizeError(e);
+  }
+}
+
+// Wire sidebar nav + refresh button. Script runs at end of <body> so DOM
+// is parsed; no DOMContentLoaded needed.
+document.querySelectorAll(".nav-item[data-route]").forEach((el) => {
+  el.addEventListener("click", () => switchRoute(el.dataset.route));
+});
+document.getElementById("history-refresh-btn").addEventListener("click", loadHistory);
 
 /* ========================================================================
    '생성하기' 버튼 — 파이프라인 시작

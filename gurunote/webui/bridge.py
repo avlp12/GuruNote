@@ -235,12 +235,62 @@ class Api:
     # ============================================================ history (TODO)
 
     def list_history(self, limit: Optional[int] = None, offset: int = 0) -> dict:
-        """Return a slice of the history index."""
-        raise NotImplementedError("list_history: wired in Phase 2")
+        """Return a slice of the history index.
+
+        Backed by ``gurunote.history.load_index`` — the same store that the
+        legacy CTk/Streamlit UIs read. WebView pipeline runs land here too
+        because ``gui.PipelineWorker`` already calls ``save_job`` on
+        completion (success and failure paths).
+        """
+        from gurunote.history import load_index  # noqa: PLC0415
+
+        try:
+            items = load_index()
+            total = len(items)
+            if offset:
+                items = items[offset:]
+            if limit is not None:
+                items = items[:limit]
+            return {"ok": True, "total": total, "items": items}
+        except Exception as exc:  # noqa: BLE001
+            return self._err("HISTORY_LIST_FAILED", f"{type(exc).__name__}: {exc}")
 
     def get_history_detail(self, job_id: str) -> dict:
-        """Return ``{markdown, meta, log_excerpt?}`` for one job."""
-        raise NotImplementedError("get_history_detail: wired in Phase 2")
+        """Return ``{markdown, full_html, meta, filename}`` for one job.
+
+        ``full_html`` is server-side rendered with the same markdown
+        extensions used by the live pipeline so the front-end's existing
+        ``renderResult()`` can consume it without branching.
+        """
+        import markdown as _markdown  # noqa: PLC0415
+        from gurunote.history import get_job_markdown, load_index  # noqa: PLC0415
+
+        if not isinstance(job_id, str) or not job_id:
+            return self._err("INVALID_ID", "job_id must be a non-empty string")
+        if "/" in job_id or "\\" in job_id or ".." in job_id:
+            return self._err("INVALID_ID", "job_id contains path separators")
+
+        try:
+            md = get_job_markdown(job_id)
+            if md is None:
+                return self._err("NOT_FOUND", f"no result.md for job {job_id}")
+            meta = next(
+                (e for e in load_index() if e.get("job_id") == job_id),
+                {},
+            )
+            full_html = _markdown.markdown(
+                md, extensions=["fenced_code", "tables", "toc"]
+            )
+            return {
+                "ok": True,
+                "job_id": job_id,
+                "markdown": md,
+                "full_html": full_html,
+                "meta": meta,
+                "filename": "result.md",
+            }
+        except Exception as exc:  # noqa: BLE001
+            return self._err("READ_FAILED", f"{type(exc).__name__}: {exc}")
 
     def delete_history(self, job_id: str) -> dict:
         raise NotImplementedError("delete_history: wired in Phase 2")

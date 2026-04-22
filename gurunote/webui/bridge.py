@@ -273,7 +273,7 @@ class Api:
         try:
             md = get_job_markdown(job_id)
             if md is None:
-                return self._err("NOT_FOUND", f"no result.md for job {job_id}")
+                return self._err("HISTORY_NOT_FOUND", f"no result.md for job {job_id}")
             meta = next(
                 (e for e in load_index() if e.get("job_id") == job_id),
                 {},

@@ -1248,7 +1248,7 @@ function humanizeError(err) {
     case "API_KEY_MISSING":     return `API 키가 설정되지 않았습니다: ${detail}. 설정 화면에서 입력하세요.`;
     case "NO_ACTIVE_SESSION":   return "실행 중인 작업이 없습니다.";
     case "HISTORY_LIST_FAILED": return `히스토리 목록을 불러오지 못했습니다: ${detail}`;
-    case "NOT_FOUND":           return `히스토리 항목을 찾을 수 없습니다: ${detail}`;
+    case "HISTORY_NOT_FOUND":   return `히스토리 항목을 찾을 수 없습니다: ${detail}`;
     case "INVALID_ID":          return `잘못된 작업 ID 입니다: ${detail}`;
     case "READ_FAILED":         return `히스토리 읽기에 실패했습니다: ${detail}`;
     default:                    return msg;

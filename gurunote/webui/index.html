@@ -1271,6 +1271,11 @@ const ROUTE_PHASE_LABEL = {
 };
 let currentRoute = "main";
 let historyLoadedOnce = false;
+// In-flight guard: rapid refresh clicks (or a refresh during the lazy
+// switchRoute() load) would otherwise interleave list.innerHTML="" against
+// an earlier in-flight forEach(append). Single boolean is enough — the
+// finally block guarantees reset on both success and thrown errors.
+let historyRefreshing = false;
 
 function switchRoute(name) {
   if (ROUTE_PHASE_LABEL[name]) {
@@ -1370,36 +1375,42 @@ function renderHistoryItem(entry) {
 }
 
 async function loadHistory() {
-  const list = document.getElementById("history-list");
-  const status = document.getElementById("history-status");
-  // Clearing existing children — the only nodes here are ones renderHistoryItem
-  // built (all via textContent). innerHTML="" is safe for clearing trusted DOM.
-  list.innerHTML = "";
-  status.classList.remove("error");
-  status.textContent = "로딩 중...";
-
+  if (historyRefreshing) return;
+  historyRefreshing = true;
   try {
-    const resp = await callApi("list_history");
-    if (resp && resp.ok === false) {
-      status.classList.add("error");
-      status.textContent = humanizeError({ message: `${resp.code}:${resp.error}` });
-      return;
-    }
-    const items = (resp && resp.items) || [];
-    if (items.length === 0) {
-      status.textContent = "저장된 히스토리가 없습니다.";
+    const list = document.getElementById("history-list");
+    const status = document.getElementById("history-status");
+    // Clearing existing children — the only nodes here are ones renderHistoryItem
+    // built (all via textContent). innerHTML="" is safe for clearing trusted DOM.
+    list.innerHTML = "";
+    status.classList.remove("error");
+    status.textContent = "로딩 중...";
+
+    try {
+      const resp = await callApi("list_history");
+      if (resp && resp.ok === false) {
+        status.classList.add("error");
+        status.textContent = humanizeError({ message: `${resp.code}:${resp.error}` });
+        return;
+      }
+      const items = (resp && resp.items) || [];
+      if (items.length === 0) {
+        status.textContent = "저장된 히스토리가 없습니다.";
+        historyLoadedOnce = true;
+        return;
+      }
+      status.textContent = "";
+      items.forEach((entry) => list.appendChild(renderHistoryItem(entry)));
+      // Mark loaded only on a successful (or empty) response — soft-failed
+      // and hard-thrown errors leave the flag false so the next nav auto-retries.
       historyLoadedOnce = true;
-      return;
+    } catch (e) {
+      console.error("[history] load failed:", e);
+      status.classList.add("error");
+      status.textContent = humanizeError(e);
     }
-    status.textContent = "";
-    items.forEach((entry) => list.appendChild(renderHistoryItem(entry)));
-    // Mark loaded only on a successful (or empty) response — soft-failed
-    // and hard-thrown errors leave the flag false so the next nav auto-retries.
-    historyLoadedOnce = true;
-  } catch (e) {
-    console.error("[history] load failed:", e);
-    status.classList.add("error");
-    status.textContent = humanizeError(e);
+  } finally {
+    historyRefreshing = false;
   }
 }
 

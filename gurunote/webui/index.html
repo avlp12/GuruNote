@@ -522,6 +522,69 @@ input { font: inherit; }
 /* ============================================================================
    Toast (top-right, auto-fade)
    ============================================================================ */
+/* ─── Settings form (Phase 1-C #3) ──────────────────────────────────────── */
+.settings-section {
+  padding: var(--sp-3) 0;
+  border-bottom: 1px solid var(--gn-border);
+}
+.settings-section:last-of-type { border-bottom: none; }
+.settings-section-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--gn-text-muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin: 0 0 var(--sp-3) 0;
+}
+.settings-field {
+  margin-bottom: var(--sp-3);
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  align-items: center;
+  gap: var(--sp-3);
+}
+.settings-field[hidden] { display: none; }
+.settings-field label {
+  font-size: 13px;
+  color: var(--gn-text);
+}
+.settings-field input,
+.settings-field select {
+  height: 36px;
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--gn-border);
+  border-radius: var(--r-md);
+  background: var(--gn-surface);
+  color: var(--gn-text);
+  font: inherit;
+  width: 100%;
+}
+.settings-field input::placeholder { color: var(--gn-text-dim); }
+.settings-field input:focus,
+.settings-field select:focus {
+  border-color: var(--gn-primary);
+  outline: 2px solid var(--gn-primary-soft);
+  outline-offset: 0;
+}
+.settings-field-row {
+  display: flex;
+  gap: var(--sp-2);
+  align-items: center;
+}
+.settings-field-row input { flex: 1; }
+.settings-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+  padding-top: var(--sp-4);
+  margin-top: var(--sp-3);
+  border-top: 1px solid var(--gn-border);
+}
+.settings-actions .btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* ─── Result mode badge (Commit 3 — "히스토리 재열람") ───────────────────── */
 .result-mode-badge {
   font-size: 11px;
@@ -848,17 +911,18 @@ input { font: inherit; }
          실제 폼 + bridge 연동은 후속 커밋에서.
          ──────────────────────────────────────────────────────────────────── -->
     <div class="content" id="content-settings" hidden>
-      <section class="card">
+      <section class="card" aria-labelledby="settings-card-title">
         <div class="card-header">
           <div>
-            <div class="card-title" style="font-size: 16px;">설정</div>
+            <h2 id="settings-card-title" class="card-title" style="font-size: 16px;">설정</h2>
             <div class="card-sub">.env 값을 UI에서 편집 · 저장 시 자동 백업</div>
           </div>
         </div>
-        <div id="settings-body" role="region" aria-label="설정 폼">
-          <div class="history-status">설정 폼은 다음 커밋에서 추가됩니다.</div>
-        </div>
-        <div id="settings-status" class="history-status"></div>
+        <form id="settings-form" novalidate>
+          <!-- 5 섹션은 buildSettingsForm() 이 동적으로 채움 -->
+          <div class="history-status" id="settings-loading-msg">로딩 중...</div>
+        </form>
+        <div id="settings-status" class="history-status" aria-live="polite"></div>
       </section>
     </div>
 
@@ -1287,6 +1351,10 @@ function humanizeError(err) {
     case "HISTORY_NOT_FOUND":   return `히스토리 항목을 찾을 수 없습니다: ${detail}`;
     case "INVALID_ID":          return `잘못된 작업 ID 입니다: ${detail}`;
     case "READ_FAILED":         return `히스토리 읽기에 실패했습니다: ${detail}`;
+    case "SETTINGS_LOAD_FAILED":return `설정을 불러오지 못했습니다: ${detail}`;
+    case "SETTINGS_SAVE_FAILED":return `설정 저장에 실패했습니다: ${detail}`;
+    case "INVALID_PATCH":       return `설정 형식 오류: ${detail}`;
+    case "UNKNOWN_KEYS":        return `허용되지 않은 설정 키: ${detail}`;
     default:                    return msg;
   }
 }
@@ -1346,6 +1414,10 @@ function switchRoute(name) {
   // Lazy-load history on first entry; refresh button handles subsequent reloads.
   if (name === "history" && !historyLoadedOnce) {
     loadHistory();
+  }
+  // Lazy-load settings on first entry; reload happens automatically after save.
+  if (name === "settings" && !settingsLoaded) {
+    loadSettings();
   }
 }
 
@@ -1527,6 +1599,343 @@ async function openHistoryDetail(jobId) {
     document.getElementById("save-result-btn").hidden = !currentResult.full_md;
   } finally {
     historyDetailLoading = false;
+  }
+}
+
+/* ========================================================================
+   Settings — Phase 1-C #3
+   ------------------------------------------------------------------------
+   Layout source mirrors gui.py:2579 _FIELD_GROUPS. Mutating the constants
+   here without updating gui.py creates drift between the WebView dialog
+   and the legacy CTk one — please keep in sync.
+
+   Mask-2 policy (matches bridge.py): plaintext secrets never leave Python.
+   Secret inputs render with a "●●●●● [저장됨]" placeholder when the bridge
+   reports the key is set; the actual value lives only in the .env file.
+
+   HF_TOKEN ↔ HUGGINGFACE_TOKEN dual-write: the form surfaces a single
+   "HuggingFace 토큰" field bound to HUGGINGFACE_TOKEN. On save (and on
+   delete), the patch carries both keys so the canonical (HF_TOKEN) and
+   legacy alias never drift.
+   ======================================================================== */
+
+const SETTINGS_FIELD_GROUPS = [
+  ["일반", [
+    { key: "LLM_PROVIDER", label: "LLM Provider", secret: false, kind: "select",
+      options: ["openai", "openai_compatible", "anthropic", "gemini"] },
+  ]],
+  ["AI Provider", [
+    { key: "OPENAI_API_KEY",     label: "OpenAI API Key",                       secret: true  },
+    { key: "OPENAI_BASE_URL",    label: "OpenAI Base URL (Local/Compatible)",   secret: false },
+    { key: "OPENAI_MODEL",       label: "OpenAI 모델",                          secret: false },
+    { key: "ANTHROPIC_API_KEY",  label: "Anthropic API Key",                    secret: true  },
+    { key: "ANTHROPIC_MODEL",    label: "Anthropic 모델",                       secret: false },
+    { key: "GOOGLE_API_KEY",     label: "Google Gemini API Key",                secret: true  },
+    { key: "GEMINI_MODEL",       label: "Gemini 모델",                          secret: false },
+  ]],
+  ["STT · 하드웨어", [
+    { key: "ASSEMBLYAI_API_KEY", label: "AssemblyAI API Key (폴백용)",          secret: true  },
+    { key: "WHISPERX_MODEL",     label: "WhisperX 모델 (NVIDIA)",               secret: false },
+    { key: "WHISPERX_BATCH_SIZE",label: "WhisperX 배치 사이즈 (NVIDIA)",        secret: false },
+    { key: "MLX_WHISPER_MODEL",  label: "MLX Whisper 모델 (Apple Silicon)",     secret: false },
+    { key: "HUGGINGFACE_TOKEN",  label: "HuggingFace 토큰 (화자 분리용)",       secret: true  },
+  ]],
+  ["연동", [
+    { key: "OBSIDIAN_VAULT_PATH",label: "Obsidian Vault 경로",                  secret: false },
+    { key: "OBSIDIAN_SUBFOLDER", label: "Obsidian 하위 폴더 (기본 GuruNote)",   secret: false },
+    { key: "NOTION_TOKEN",       label: "Notion Integration Token",             secret: true  },
+    { key: "NOTION_PARENT_ID",   label: "Notion Parent ID (database/page UUID)",secret: false },
+    { key: "NOTION_PARENT_TYPE", label: "Notion Parent Type (database/page)",   secret: false },
+  ]],
+  ["고급", [
+    { key: "LLM_TEMPERATURE",            label: "LLM Temperature",        secret: false },
+    { key: "LLM_TRANSLATION_MAX_TOKENS", label: "번역 Max Tokens",        secret: false },
+    { key: "LLM_SUMMARY_MAX_TOKENS",     label: "요약 Max Tokens",        secret: false },
+  ]],
+];
+
+const SETTINGS_PLACEHOLDERS = {
+  OPENAI_MODEL: "gpt-5.4",
+  OPENAI_BASE_URL: "http://127.0.0.1:8000/v1",
+  ANTHROPIC_MODEL: "claude-sonnet-4-6",
+  GEMINI_MODEL: "gemini-2.5-flash",
+  LLM_TEMPERATURE: "0.2",
+  LLM_TRANSLATION_MAX_TOKENS: "8192",
+  LLM_SUMMARY_MAX_TOKENS: "4096",
+  WHISPERX_MODEL: "distil-large-v3",
+  WHISPERX_BATCH_SIZE: "16",
+  MLX_WHISPER_MODEL: "mlx-community/whisper-large-v3-mlx",
+  OBSIDIAN_VAULT_PATH: "/Users/me/Documents/MyVault",
+  OBSIDIAN_SUBFOLDER: "GuruNote",
+  NOTION_PARENT_ID: "1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
+  NOTION_PARENT_TYPE: "database",
+};
+
+const PROVIDER_FIELD_MAP = {
+  openai:            ["OPENAI_API_KEY", "OPENAI_BASE_URL", "OPENAI_MODEL"],
+  openai_compatible: ["OPENAI_API_KEY", "OPENAI_BASE_URL", "OPENAI_MODEL"],
+  anthropic:         ["ANTHROPIC_API_KEY", "ANTHROPIC_MODEL"],
+  gemini:            ["GOOGLE_API_KEY", "GEMINI_MODEL"],
+};
+const ALL_PROVIDER_FIELDS = [
+  "OPENAI_API_KEY", "OPENAI_BASE_URL", "OPENAI_MODEL",
+  "ANTHROPIC_API_KEY", "ANTHROPIC_MODEL",
+  "GOOGLE_API_KEY", "GEMINI_MODEL",
+];
+
+let settingsLoaded = false;
+let settingsLoading = false;
+let settingsSaving = false;
+let settingsInitialValues = {};       // {key: str} snapshot at load — non-secrets only
+let settingsInitialSecretsSet = {};   // {key: bool} snapshot at load — secrets
+
+function buildSettingsForm(values, secretsSet) {
+  // All labels and section names below are hard-coded literals — no untrusted
+  // input ever reaches innerHTML. Field values come from get_settings (env
+  // strings) and are written with .value only (input.value never parses HTML).
+  const form = document.getElementById("settings-form");
+  form.innerHTML = "";  // safe — clearing whatever loading-msg / prior form lived here
+
+  for (const [sectionName, fields] of SETTINGS_FIELD_GROUPS) {
+    const sectionId = `settings-sec-${sectionName.replace(/[^a-zA-Z0-9]/g, "-")}`;
+    const section = document.createElement("section");
+    section.className = "settings-section";
+    section.setAttribute("aria-labelledby", sectionId);
+
+    const title = document.createElement("h3");
+    title.id = sectionId;
+    title.className = "settings-section-title";
+    title.textContent = sectionName;
+    section.appendChild(title);
+
+    for (const f of fields) {
+      const row = document.createElement("div");
+      row.className = "settings-field";
+      row.dataset.key = f.key;
+      row.dataset.secret = String(!!f.secret);
+
+      const label = document.createElement("label");
+      label.htmlFor = `set-${f.key}`;
+      label.textContent = f.label;
+      row.appendChild(label);
+
+      let input;
+      if (f.kind === "select") {
+        input = document.createElement("select");
+        for (const opt of f.options) {
+          const option = document.createElement("option");
+          option.value = opt;
+          option.textContent = opt;
+          input.appendChild(option);
+        }
+        input.value = values[f.key] || f.options[0];
+      } else {
+        input = document.createElement("input");
+        input.type = f.secret ? "password" : "text";
+        input.autocomplete = "off";
+        if (f.secret) {
+          // Mask-2: secret value never crosses the bridge. Empty input means
+          // "leave existing value alone" unless explicitly cleared via 삭제.
+          input.value = "";
+          input.placeholder = secretsSet[f.key]
+            ? "●●●●● [저장됨]"
+            : (SETTINGS_PLACEHOLDERS[f.key] || "");
+        } else {
+          input.value = values[f.key] || "";
+          input.placeholder = SETTINGS_PLACEHOLDERS[f.key] || "";
+        }
+      }
+      input.id = `set-${f.key}`;
+      input.name = f.key;
+      input.addEventListener("input", recomputeDirty);
+      input.addEventListener("change", recomputeDirty);
+
+      if (f.secret) {
+        const fieldRow = document.createElement("div");
+        fieldRow.className = "settings-field-row";
+        fieldRow.appendChild(input);
+
+        // Delete button: only visible when key is currently saved AND the
+        // input is empty (i.e. user has not started typing a replacement).
+        // This prevents an accidental click from blowing away unsaved input.
+        const delBtn = document.createElement("button");
+        delBtn.type = "button";
+        delBtn.className = "btn btn-ghost btn-sm settings-delete-btn";
+        delBtn.dataset.target = f.key;
+        delBtn.textContent = "삭제";
+        delBtn.hidden = !(secretsSet[f.key] && input.value === "");
+        delBtn.addEventListener("click", () => deleteSecret(f.key));
+        fieldRow.appendChild(delBtn);
+
+        // Re-evaluate delete button visibility on input.
+        input.addEventListener("input", () => {
+          delBtn.hidden = !(secretsSet[f.key] && input.value === "");
+        });
+
+        row.appendChild(fieldRow);
+      } else {
+        row.appendChild(input);
+      }
+
+      section.appendChild(row);
+    }
+    form.appendChild(section);
+  }
+
+  // Bottom action bar.
+  const actions = document.createElement("div");
+  actions.className = "settings-actions";
+  const saveBtn = document.createElement("button");
+  saveBtn.type = "submit";
+  saveBtn.className = "btn btn-primary";
+  saveBtn.id = "settings-save-btn";
+  saveBtn.textContent = "저장";
+  saveBtn.disabled = true;
+  actions.appendChild(saveBtn);
+  form.appendChild(actions);
+
+  // Snapshot for dirty diff.
+  settingsInitialValues = { ...values };
+  settingsInitialSecretsSet = { ...secretsSet };
+
+  // Initial provider visibility.
+  applyProviderVisibility(values.LLM_PROVIDER || "openai");
+  // Re-apply on provider change.
+  const provSelect = document.getElementById("set-LLM_PROVIDER");
+  if (provSelect) {
+    provSelect.addEventListener("change", () => applyProviderVisibility(provSelect.value));
+  }
+}
+
+function applyProviderVisibility(provider) {
+  const visible = new Set(PROVIDER_FIELD_MAP[provider] || []);
+  for (const key of ALL_PROVIDER_FIELDS) {
+    const row = document.querySelector(`.settings-field[data-key="${key}"]`);
+    if (row) row.hidden = !visible.has(key);
+  }
+}
+
+function recomputeDirty() {
+  const saveBtn = document.getElementById("settings-save-btn");
+  if (!saveBtn) return;
+  const patch = buildSettingsPatch();
+  saveBtn.disabled = Object.keys(patch).length === 0;
+}
+
+function buildSettingsPatch() {
+  // Only fields whose current input differs from snapshot enter the patch.
+  // Empty secret inputs are NOT included (means "keep existing"); explicit
+  // delete goes through the 삭제 button via deleteSecret().
+  // HUGGINGFACE_TOKEN sets dual-write HF_TOKEN companion.
+  const patch = {};
+  for (const [, fields] of SETTINGS_FIELD_GROUPS) {
+    for (const f of fields) {
+      const el = document.getElementById(`set-${f.key}`);
+      if (!el) continue;
+      const cur = el.value;
+      if (f.secret) {
+        if (cur !== "") {
+          patch[f.key] = cur;
+          if (f.key === "HUGGINGFACE_TOKEN") patch.HF_TOKEN = cur;  // dual-write
+        }
+      } else {
+        const initial = settingsInitialValues[f.key] || "";
+        if (cur !== initial) patch[f.key] = cur;
+      }
+    }
+  }
+  return patch;
+}
+
+async function loadSettings() {
+  if (settingsLoading) return;
+  settingsLoading = true;
+  const status = document.getElementById("settings-status");
+  status.classList.remove("error");
+  status.textContent = "";
+  try {
+    const resp = await callApi("get_settings");
+    if (!resp || resp.ok === false) {
+      const code = (resp && resp.code) || "SETTINGS_LOAD_FAILED";
+      const detail = (resp && resp.error) || "unknown";
+      status.classList.add("error");
+      status.textContent = humanizeError({ message: `${code}:${detail}` });
+      return;
+    }
+    buildSettingsForm(resp.values || {}, resp.secrets_set || {});
+    settingsLoaded = true;
+    document.getElementById("settings-form").addEventListener("submit", saveSettings);
+  } catch (e) {
+    console.error("[settings] load failed:", e);
+    status.classList.add("error");
+    status.textContent = humanizeError(e);
+  } finally {
+    settingsLoading = false;
+  }
+}
+
+async function saveSettings(e) {
+  e.preventDefault();
+  if (settingsSaving) return;
+  const patch = buildSettingsPatch();
+  if (Object.keys(patch).length === 0) return;
+  settingsSaving = true;
+  const status = document.getElementById("settings-status");
+  status.classList.remove("error");
+  status.textContent = "저장 중...";
+  try {
+    const resp = await callApi("save_settings", patch);
+    if (!resp || resp.ok === false) {
+      const code = (resp && resp.code) || "SETTINGS_SAVE_FAILED";
+      const detail = (resp && resp.error) || "unknown";
+      status.classList.add("error");
+      status.textContent = humanizeError({ message: `${code}:${detail}` });
+      toast(humanizeError({ message: `${code}:${detail}` }), "error");
+      return;
+    }
+    status.textContent = `저장됨 (${resp.changed} 항목 갱신)`;
+    toast(`설정 저장됨 (${resp.changed} 항목)`, "success");
+    // Reload to refresh secrets_set + reset dirty snapshot.
+    settingsLoaded = false;
+    await loadSettings();
+  } catch (err) {
+    console.error("[settings] save failed:", err);
+    status.classList.add("error");
+    status.textContent = humanizeError(err);
+    toast(humanizeError(err), "error");
+  } finally {
+    settingsSaving = false;
+  }
+}
+
+async function deleteSecret(envKey) {
+  const patch = { [envKey]: "" };
+  if (envKey === "HUGGINGFACE_TOKEN") patch.HF_TOKEN = "";  // dual-delete
+  if (settingsSaving) return;
+  settingsSaving = true;
+  const status = document.getElementById("settings-status");
+  status.classList.remove("error");
+  status.textContent = "삭제 중...";
+  try {
+    const resp = await callApi("save_settings", patch);
+    if (!resp || resp.ok === false) {
+      const code = (resp && resp.code) || "SETTINGS_SAVE_FAILED";
+      const detail = (resp && resp.error) || "unknown";
+      status.classList.add("error");
+      status.textContent = humanizeError({ message: `${code}:${detail}` });
+      toast(humanizeError({ message: `${code}:${detail}` }), "error");
+      return;
+    }
+    toast(`${envKey} 삭제됨`, "success");
+    settingsLoaded = false;
+    await loadSettings();
+  } catch (err) {
+    console.error("[settings] delete failed:", err);
+    status.classList.add("error");
+    status.textContent = humanizeError(err);
+    toast(humanizeError(err), "error");
+  } finally {
+    settingsSaving = false;
   }
 }
 

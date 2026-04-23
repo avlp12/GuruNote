@@ -28,6 +28,48 @@ from typing import Any, Optional
 # can be imported (e.g., for type checking, docs generation) without the GUI
 # dependency. The bound ``window`` reference is what we actually use at runtime.
 
+# ----------------------------------------------------------------------------
+# Settings allow-list — Mask-2 policy (Phase 1-C #3)
+# ----------------------------------------------------------------------------
+# Only keys in _KNOWN_SETTINGS are exposed by get_settings / accepted by
+# save_settings. This protects the JS bridge from being used to mutate
+# arbitrary process environment variables.
+#
+# _SECRET_KEYS classifies which fields are sensitive — their values are
+# returned as a presence-bool only, never as plaintext, and the UI shows
+# "●●●●● [저장됨]" placeholders instead of the raw value.
+#
+# When adding a new env-driven config, list it here AND in the form section
+# layout (gurunote/webui/index.html, Settings card — Phase 1-C #3 commits).
+_KNOWN_SETTINGS: tuple[str, ...] = (
+    # LLM provider routing + tunables
+    "LLM_PROVIDER",
+    "OPENAI_API_KEY", "OPENAI_BASE_URL", "OPENAI_MODEL",
+    "ANTHROPIC_API_KEY", "ANTHROPIC_MODEL",
+    "GOOGLE_API_KEY", "GEMINI_MODEL",
+    "LLM_TEMPERATURE",
+    "LLM_TRANSLATION_MAX_TOKENS", "LLM_SUMMARY_MAX_TOKENS",
+    # STT engines + diarization
+    "GURUNOTE_STT_ENGINE",
+    "WHISPERX_MODEL", "WHISPERX_BATCH_SIZE",
+    "MLX_WHISPER_MODEL",
+    "HF_TOKEN", "HUGGINGFACE_TOKEN",  # canonical + legacy alias
+    "ASSEMBLYAI_API_KEY",
+    # Integrations (Obsidian, Notion)
+    "OBSIDIAN_VAULT_PATH", "OBSIDIAN_SUBFOLDER",
+    "NOTION_TOKEN", "NOTION_PARENT_ID", "NOTION_PARENT_TYPE",
+)
+
+_SECRET_KEYS: frozenset[str] = frozenset({
+    "OPENAI_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "GOOGLE_API_KEY",
+    "ASSEMBLYAI_API_KEY",
+    "HF_TOKEN",
+    "HUGGINGFACE_TOKEN",
+    "NOTION_TOKEN",
+})
+
 
 class Api:
     """JavaScript-facing bridge.
@@ -218,15 +260,87 @@ class Api:
         from gurunote.webui.session import get_session  # noqa: PLC0415
         return {"active": get_session(job_id) is not None}
 
-    # ============================================================ settings (TODO)
+    # ============================================================ settings
 
     def get_settings(self) -> dict:
-        """Return current settings. API-key fields are exposed as ``*_set: bool`` only."""
-        raise NotImplementedError("get_settings: wired in Phase 4")
+        """Return current settings.
+
+        Response shape::
+
+            {
+              "ok": True,
+              "values": { non_secret_KEY: current str value (possibly "") },
+              "secrets_set": { secret_KEY: bool },
+            }
+
+        Plaintext secret values are NEVER returned — only a boolean
+        presence flag. The UI renders "●●●●● [저장됨]" placeholders for
+        keys whose ``secrets_set[key]`` is ``True`` and prompts for new
+        input on the rest.
+        """
+        import os  # noqa: PLC0415
+
+        try:
+            values: dict[str, str] = {}
+            secrets_set: dict[str, bool] = {}
+            for key in _KNOWN_SETTINGS:
+                current = os.environ.get(key, "")
+                if key in _SECRET_KEYS:
+                    secrets_set[key] = bool(current)
+                else:
+                    values[key] = current
+            return {"ok": True, "values": values, "secrets_set": secrets_set}
+        except Exception as exc:  # noqa: BLE001
+            return self._err(
+                "SETTINGS_LOAD_FAILED", f"{type(exc).__name__}: {exc}"
+            )
 
     def save_settings(self, patch: dict) -> dict:
-        """Persist a partial settings patch via gurunote.settings.save_settings."""
-        raise NotImplementedError("save_settings: wired in Phase 4")
+        """Persist a partial settings patch via gurunote.settings.save_settings.
+
+        Behaviors:
+
+        - Only keys in ``_KNOWN_SETTINGS`` are accepted; unknown keys
+          short-circuit with ``UNKNOWN_KEYS`` so the JS surface cannot
+          mutate arbitrary env vars.
+        - Empty-string values trigger the explicit-delete path in
+          ``gurunote.settings.save_settings`` (``os.environ.pop`` plus a
+          ``KEY=""`` line in ``.env``). JSON ``null`` is coerced to the
+          same empty string so a UI sending ``{KEY: null}`` deletes too.
+          Unspecified keys are untouched.
+        - All values are coerced to ``str`` so JS numbers (e.g.
+          ``LLM_TEMPERATURE``) round-trip correctly.
+
+        Response::
+
+            { "ok": True, "changed": int, "backup": str | null }
+        """
+        from gurunote.settings import save_settings as _save_settings  # noqa: PLC0415
+
+        if not isinstance(patch, dict):
+            return self._err(
+                "INVALID_PATCH",
+                f"patch must be dict, got {type(patch).__name__}",
+            )
+        unknown = sorted(k for k in patch if k not in _KNOWN_SETTINGS)
+        if unknown:
+            return self._err(
+                "UNKNOWN_KEYS", f"unknown setting keys: {', '.join(unknown)}"
+            )
+        coerced: dict[str, str] = {
+            k: ("" if v is None else str(v)) for k, v in patch.items()
+        }
+        try:
+            changed, backup_path = _save_settings(coerced, create_backup=True)
+            return {
+                "ok": True,
+                "changed": changed,
+                "backup": str(backup_path) if backup_path else None,
+            }
+        except Exception as exc:  # noqa: BLE001
+            return self._err(
+                "SETTINGS_SAVE_FAILED", f"{type(exc).__name__}: {exc}"
+            )
 
     def test_connection(self, provider: str) -> dict:
         """Probe the given LLM provider with a minimal call."""

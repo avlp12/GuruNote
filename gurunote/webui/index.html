@@ -676,8 +676,7 @@ input { font: inherit; }
       <span>히스토리</span>
     </div>
 
-    <!-- TODO(Phase 4): Wire to settings -->
-    <div class="nav-item" data-route="settings" title="Phase 4 예정">
+    <div class="nav-item" data-route="settings">
       <span class="nav-icon">⚙️</span>
       <span>설정</span>
     </div>
@@ -844,6 +843,25 @@ input { font: inherit; }
          Main — '히스토리' 화면 (목록 view, Commit 2)
          아이템 클릭 시 detail 재열람은 Commit 3 에서 배선.
          ──────────────────────────────────────────────────────────────────── -->
+    <!-- ────────────────────────────────────────────────────────────────────
+         Main — '설정' 화면 (skeleton, Phase 1-C #3 / Commit #1)
+         실제 폼 + bridge 연동은 후속 커밋에서.
+         ──────────────────────────────────────────────────────────────────── -->
+    <div class="content" id="content-settings" hidden>
+      <section class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title" style="font-size: 16px;">설정</div>
+            <div class="card-sub">.env 값을 UI에서 편집 · 저장 시 자동 백업</div>
+          </div>
+        </div>
+        <div id="settings-body" role="region" aria-label="설정 폼">
+          <div class="history-status">설정 폼은 다음 커밋에서 추가됩니다.</div>
+        </div>
+        <div id="settings-status" class="history-status"></div>
+      </section>
+    </div>
+
     <div class="content" id="content-history" hidden>
       <section class="card">
         <div class="card-header">
@@ -1277,13 +1295,13 @@ function humanizeError(err) {
    History view (Commit 2 — list only; detail re-open lands in Commit 3)
    ======================================================================== */
 const ROUTE_TOPBAR = {
-  main:    { crumbs: "GuruNote · 생성",     title: "생성" },
-  history: { crumbs: "GuruNote · 히스토리", title: "히스토리" },
+  main:     { crumbs: "GuruNote · 생성",     title: "생성" },
+  history:  { crumbs: "GuruNote · 히스토리", title: "히스토리" },
+  settings: { crumbs: "GuruNote · 설정",     title: "설정" },
 };
 // Routes that exist in markup but are not yet implemented — clicking them
 // shows a "Phase X 예정" toast and the active route does NOT change.
 const ROUTE_PHASE_LABEL = {
-  settings:  "Phase 4",
   editor:    "Phase 5",
   dashboard: "Phase 4-B",
 };
@@ -1314,8 +1332,9 @@ function switchRoute(name) {
     el.classList.toggle("active", el.dataset.route === name);
   });
 
-  document.getElementById("content-main").hidden    = (name !== "main");
-  document.getElementById("content-history").hidden = (name !== "history");
+  document.getElementById("content-main").hidden     = (name !== "main");
+  document.getElementById("content-history").hidden  = (name !== "history");
+  document.getElementById("content-settings").hidden = (name !== "settings");
 
   // Topbar text values are sourced from the ROUTE_TOPBAR literal above
   // (no user input). textContent is used regardless to keep the rule uniform.

@@ -125,11 +125,14 @@ class LLMConfig:
                 translation_max_tokens=translation_max_tokens,
                 summary_max_tokens=summary_max_tokens,
             )
+        # 'openai' provider intentionally ignores OPENAI_BASE_URL — that env
+        # is only honored by 'openai_compatible'. Otherwise selecting "openai"
+        # in the UI while OPENAI_BASE_URL points at oMLX/vLLM would silently
+        # route through the local server, defeating the pill's meaning.
         return cls(
             provider="openai",
             model=os.environ.get("OPENAI_MODEL", "gpt-5.4"),
             api_key=os.environ.get("OPENAI_API_KEY", ""),
-            base_url=os.environ.get("OPENAI_BASE_URL", ""),
             temperature=temp,
             translation_max_tokens=translation_max_tokens,
             summary_max_tokens=summary_max_tokens,

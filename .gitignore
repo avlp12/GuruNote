@@ -216,3 +216,11 @@ __marimo__/
 # macOS system files
 .DS_Store
 **/.DS_Store
+
+# Phase 2A design references (commit these)
+# docs/design/v2-reference.html
+# docs/design/README.md
+# docs/design/KICKOFF_PHASE_2A.md
+
+# Session logs (local only)
+docs/design/session_log_*.md

@@ -2,6 +2,10 @@
 
 > 유튜브 링크 한 줄로 해외 IT/AI 팟캐스트를 **화자 분리된 한국어 마크다운 요약본**으로.
 
+> 🚧 **Phase 2A (2026-04 진행 중)** — Tailwind 리디자인 중입니다.
+> 새 UI 는 `redesign/tailwind-v2` 브랜치에서 개발되며, `main` 브랜치는
+> v0.8.0.6 기능 그대로 유지됩니다. Phase 2A 완료 후 머지 예정.
+
 ```bash
 $ ./run_gui.command                # macOS — 백그라운드 실행 (터미널 분리, 로그는 ~/.gurunote/gui.log)
 $ python gui.py                    # 데스크톱 앱 (모든 OS, 터미널 출력 보임)
@@ -417,6 +421,11 @@ GuruNote/
 ├── .env.example
 ├── README.md
 ├── CHANGELOG.md
+├── docs/                       # 설계 참조 및 문서 (Phase 2A 시점부터)
+│   └── design/
+│       ├── v2-reference.html   # Claude Design 기반 10 화면 참조 (Tailwind)
+│       ├── README.md           # design 폴더 구조 인덱스
+│       └── KICKOFF_PHASE_2A.md # Phase 2A Decision 1~4 + commit plan
 ├── gurunote/
 │   ├── __init__.py
 │   ├── types.py                # Segment / Transcript 공통 데이터클래스
@@ -459,6 +468,7 @@ GuruNote/
 | STT + 화자 분리 | [WhisperX](https://github.com/m-bain/whisperX) (NVIDIA CUDA) · [mlx-whisper](https://github.com/ml-explore/mlx-examples/tree/main/whisper) + [pyannote.audio](https://github.com/pyannote/pyannote-audio) (Apple Silicon, Metal/MPS) · [AssemblyAI](https://www.assemblyai.com/) (Cloud fallback) |
 | 번역 / 요약 | [OpenAI](https://platform.openai.com/) `gpt-5.4` · [Anthropic](https://docs.anthropic.com/) `claude-sonnet-4-6` · [Google Gemini](https://aistudio.google.com/) `gemini-2.5-flash` · OpenAI-compatible (로컬 LLM) |
 | 환경 설정 | [python-dotenv](https://pypi.org/project/python-dotenv/) · 앱 내 ⚙️ 설정 다이얼로그 |
+| UI v2 (Phase 2A, 진행 중) | [Tailwind CSS](https://tailwindcss.com/) (CDN) + pywebview (기존 유지) · 참조: `docs/design/v2-reference.html` |
 
 ---
 
@@ -468,6 +478,15 @@ GuruNote/
 형식으로 기록되며 버전은 [Semantic Versioning](https://semver.org/) 을 따릅니다.
 
 현재 버전: **v0.8.0.6** — macOS python.org 설치본에서 YouTube 썸네일/업데이트 체크가 SSL 인증서 오류로 실패하던 버그 수정 (certifi 번들 기반 SSL context 명시).
+
+### Phase 2A 진입 (2026-04-24)
+
+`redesign/tailwind-v2` 브랜치에서 Tailwind CSS 기반 UI 전면 리디자인 진행 중.
+10 화면 구조 (생성/히스토리/편집/대시보드/설정×6 탭) 를 Claude Design 참조로
+재구현. 기존 backend (`bridge.py`, `settings.py`, `history.py`, `llm.py`,
+`pipeline.py`) 재사용. 예상 소요 ~2주.
+
+참조: `docs/design/KICKOFF_PHASE_2A.md`
 
 ---
 
@@ -573,4 +592,19 @@ Remove-Item -Recurse -Force "$env:USERPROFILE\.cache\huggingface\hub\models--Sys
 
 ## 📄 License
 
-MIT License. 자세한 내용은 [LICENSE](./LICENSE) 참고.
+**Elastic License 2.0** (2026-04-24~ for commits on `redesign/tailwind-v2` and subsequent branches).
+
+- ✅ View and study the source code
+- ✅ Internal use within your organization
+- ✅ Modify for personal/internal use
+- ❌ Provide as a managed service (SaaS, hosting)
+- ❌ Circumvent license key functionality (if any)
+
+자세한 내용은 [LICENSE](./LICENSE) 참고.
+
+> **Note on license history:** Commits before 2026-04-24 (on `main` branch)
+> remain under MIT License (see git history). The license transitions to
+> Elastic 2.0 starting with the `redesign/tailwind-v2` branch and all
+> future work.
+
+Copyright © 2026 Alis Volat Propriis ([@alis_volat_propriis](https://x.com/alis_volat_propriis)).

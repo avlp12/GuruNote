@@ -103,6 +103,42 @@ class Api:
             )
         return self._window
 
+    # ============================================================ window controls
+
+    def window_close(self) -> None:
+        # Frameless pywebview on macOS sometimes leaves the Cocoa runloop alive
+        # after destroy(); schedule a hard exit so the Python process terminates.
+        import os
+        import threading
+        try:
+            self._require_window().destroy()
+        finally:
+            threading.Timer(0.2, lambda: os._exit(0)).start()
+
+    def window_minimize(self) -> None:
+        window = self._require_window()
+        try:
+            window.minimize()
+            return
+        except Exception:
+            pass
+        # macOS Cocoa fallback — frameless windows may not respond to
+        # pywebview's minimize() in 4.x. Talk to AppKit via PyObjC.
+        try:
+            from AppKit import NSApp  # type: ignore
+            ns_window = NSApp.mainWindow() if NSApp is not None else None
+            if ns_window is not None:
+                ns_window.miniaturize_(None)
+        except Exception:
+            pass
+
+    def window_toggle_fullscreen(self) -> None:
+        self._require_window().toggle_fullscreen()
+
+    def window_move(self, dx: int, dy: int) -> None:
+        w = self._require_window()
+        w.move(w.x + int(dx), w.y + int(dy))
+
     # ============================================================ app info
 
     def get_app_info(self) -> dict:
@@ -147,7 +183,9 @@ class Api:
             webview.OPEN_DIALOG,
             allow_multiple=False,
             file_types=(
-                "Audio/Video (*.mp3;*.wav;*.flac;*.m4a;*.aac;*.ogg;*.wma;*.opus;"
+                # pywebview 4.x label regex `[\w ]+` rejects '/' — keep label
+                # ASCII word chars + spaces only.
+                "Audio Video Files (*.mp3;*.wav;*.flac;*.m4a;*.aac;*.ogg;*.wma;*.opus;"
                 "*.mp4;*.mkv;*.avi;*.mov;*.webm;*.wmv;*.flv;*.ts;*.m4v)",
                 "All files (*.*)",
             ),

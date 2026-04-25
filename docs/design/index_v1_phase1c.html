@@ -1,0 +1,2123 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<title>GuruNote</title>
+<meta name="viewport" content="width=1280, initial-scale=1" />
+<style>
+/* ============================================================================
+   Design tokens — Google Workspace Light theme
+   Source of truth: docs/handoff/DESIGN_TOKENS.md
+   TODO(Phase 1-B): split into gurunote/webui/css/tokens.css
+   ============================================================================ */
+:root {
+  /* Surface */
+  --gn-bg: #ffffff;
+  --gn-sidebar: #f8f9fc;
+  --gn-surface-hi: #f1f3f9;
+  --gn-border: #dadce0;
+  --gn-border-strong: #9aa0a6;
+
+  /* Text */
+  --gn-text: #202124;
+  --gn-text-dim: #5f6368;
+  --gn-text-muted: #80868b;
+
+  /* Primary (Google Blue) */
+  --gn-primary: #1a73e8;
+  --gn-primary-ho: #1967d2;
+  --gn-primary-soft: #e8f0fe;
+  --gn-on-primary: #ffffff;
+
+  /* Status */
+  --gn-success: #188038;
+  --gn-success-soft: #e6f4ea;
+  --gn-warning: #b06000;
+  --gn-warning-soft: #feefc3;
+  --gn-error: #c5221f;
+  --gn-error-soft: #fce8e6;
+
+  /* Radius */
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-pill: 24px;
+
+  /* Spacing */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+
+  /* Fonts */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo", "Pretendard", system-ui, sans-serif;
+  --font-mono: Menlo, Monaco, "SF Mono", Consolas, monospace;
+
+  /* Sidebar */
+  --sidebar-w: 240px;
+  --topbar-h: 56px;
+}
+
+/* ============================================================================
+   Reset + base
+   ============================================================================ */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--gn-text);
+  background: var(--gn-bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+button { font: inherit; cursor: pointer; }
+input { font: inherit; }
+::placeholder { color: var(--gn-text-muted); }
+
+/* ============================================================================
+   App shell
+   ============================================================================ */
+.app-shell {
+  display: grid;
+  grid-template-columns: var(--sidebar-w) 1fr;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ── Sidebar ────────────────────────────────────────────────────────────── */
+.sidebar {
+  background: var(--gn-sidebar);
+  border-right: 1px solid var(--gn-border);
+  padding: var(--sp-5) var(--sp-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  overflow-y: auto;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  margin-bottom: var(--sp-3);
+}
+.brand-logo {
+  width: 32px; height: 32px;
+  border-radius: var(--r-md);
+  background: var(--gn-primary);
+  color: var(--gn-on-primary);
+  display: grid; place-items: center;
+  font-weight: 700; font-size: 16px;
+}
+.brand-name { font-weight: 700; font-size: 14px; }
+.brand-ver { font-size: 11px; color: var(--gn-text-dim); }
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-3);
+  border-radius: var(--r-md);
+  color: var(--gn-text-dim);
+  font-weight: 500;
+  user-select: none;
+  cursor: pointer;
+  transition: background-color 80ms ease;
+}
+.nav-item:hover { background: var(--gn-surface-hi); }
+.nav-item.active {
+  background: var(--gn-primary-soft);
+  color: var(--gn-primary);
+  font-weight: 600;
+}
+.nav-icon { width: 18px; opacity: .85; }
+.nav-label-group {
+  font-size: 11px;
+  color: var(--gn-text-muted);
+  padding: var(--sp-3) var(--sp-3) var(--sp-1);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+/* ── Main area ──────────────────────────────────────────────────────────── */
+.main {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.topbar {
+  height: var(--topbar-h);
+  border-bottom: 1px solid var(--gn-border);
+  display: flex;
+  align-items: center;
+  padding: 0 var(--sp-5);
+  gap: var(--sp-4);
+  background: var(--gn-bg);
+}
+.crumbs {
+  font-size: 11px;
+  color: var(--gn-text-dim);
+}
+.screen-title {
+  font-size: 16px;
+  font-weight: 700;
+}
+.content {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--sp-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+
+/* ============================================================================
+   Hero / Input card (생성 화면)
+   ============================================================================ */
+.card {
+  background: var(--gn-bg);
+  border: 1px solid var(--gn-border);
+  border-radius: var(--r-lg);
+  padding: var(--sp-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+.card-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+.card-title {
+  font-size: 22px;
+  font-weight: 700;
+}
+.card-sub {
+  font-size: 13px;
+  color: var(--gn-text-dim);
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: 4px 12px;
+  border-radius: var(--r-pill);
+  background: var(--gn-primary-soft);
+  color: var(--gn-primary);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.input-row {
+  display: flex;
+  gap: var(--sp-3);
+  align-items: stretch;
+}
+.url-input {
+  flex: 1;
+  height: 48px;
+  padding: 0 var(--sp-5);
+  border: 1px solid var(--gn-border);
+  border-radius: var(--r-pill);
+  background: var(--gn-bg);
+  color: var(--gn-text);
+  font-size: 14px;
+  outline: none;
+  transition: border-color 80ms ease;
+}
+.url-input:focus { border-color: var(--gn-primary); }
+
+.btn {
+  height: 48px;
+  padding: 0 var(--sp-5);
+  border-radius: var(--r-pill);
+  border: 1px solid transparent;
+  font-size: 14px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  transition: background-color 80ms ease, border-color 80ms ease;
+}
+.btn-primary {
+  background: var(--gn-primary);
+  color: var(--gn-on-primary);
+  min-width: 200px;
+}
+.btn-primary:hover { background: var(--gn-primary-ho); }
+.btn-ghost {
+  background: transparent;
+  color: var(--gn-text);
+  border-color: var(--gn-border);
+}
+.btn-ghost:hover { background: var(--gn-surface-hi); }
+.btn-sm { height: 32px; padding: 0 var(--sp-4); font-size: 13px; }
+
+/* Drop zone overlay (HTML5 native DnD) */
+.url-input.drag-over {
+  border-color: var(--gn-primary);
+  background: var(--gn-primary-soft);
+}
+
+/* ============================================================================
+   Segmented (STT / LLM)
+   ============================================================================ */
+.options-row {
+  display: flex;
+  gap: var(--sp-6);
+  flex-wrap: wrap;
+}
+.opt-group { display: flex; flex-direction: column; gap: var(--sp-2); }
+.opt-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--gn-text-dim);
+}
+.segmented {
+  display: inline-flex;
+  background: var(--gn-sidebar);
+  border: 1px solid var(--gn-border);
+  border-radius: var(--r-pill);
+  padding: 2px;
+}
+.seg-opt {
+  height: 28px;
+  padding: 0 var(--sp-3);
+  border-radius: var(--r-pill);
+  border: none;
+  background: transparent;
+  color: var(--gn-text-dim);
+  font-size: 12px;
+  font-weight: 600;
+  transition: background-color 80ms, color 80ms;
+}
+.seg-opt:hover { color: var(--gn-text); }
+.seg-opt.active {
+  background: var(--gn-primary);
+  color: var(--gn-on-primary);
+}
+
+/* ============================================================================
+   Step indicator (5 nodes)
+   ============================================================================ */
+.steps {
+  display: grid;
+  grid-template-columns: repeat(9, 1fr);
+  align-items: center;
+  gap: 0;
+  padding: var(--sp-3) 0;
+}
+.steps .node {
+  width: 32px; height: 32px;
+  border-radius: 16px;
+  background: var(--gn-surface-hi);
+  color: var(--gn-text-dim);
+  display: grid; place-items: center;
+  font-weight: 700; font-size: 12px;
+  justify-self: center;
+}
+.steps .node.active,
+.steps .node.done {
+  background: var(--gn-primary);
+  color: var(--gn-on-primary);
+}
+.steps .connector {
+  height: 2px;
+  background: var(--gn-border);
+}
+.steps .connector.done { background: var(--gn-primary); }
+.steps .label {
+  text-align: center;
+  font-size: 11px;
+  color: var(--gn-text-dim);
+  padding-top: var(--sp-2);
+}
+.steps .label.active { color: var(--gn-primary); font-weight: 600; }
+
+/* ============================================================================
+   Result placeholder + log
+   ============================================================================ */
+.result-empty {
+  border: 1px dashed var(--gn-border);
+  border-radius: var(--r-md);
+  padding: var(--sp-6);
+  text-align: center;
+  color: var(--gn-text-muted);
+  font-size: 13px;
+}
+.log-pane {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--gn-text-dim);
+  background: var(--gn-surface-hi);
+  border-radius: var(--r-md);
+  padding: var(--sp-3);
+  max-height: 160px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* ============================================================================
+   Selected local-file badge (mutually exclusive with URL input)
+   ============================================================================ */
+.file-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 6px 6px 6px var(--sp-3);
+  border-radius: var(--r-pill);
+  background: var(--gn-primary-soft);
+  border: 1px solid var(--gn-primary);
+  color: var(--gn-primary);
+  font-size: 13px;
+  max-width: 100%;
+  align-self: flex-start;
+  margin-top: var(--sp-3);
+}
+.file-badge .icon {
+  font-size: 15px;
+  line-height: 1;
+}
+.file-badge .name {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.file-badge .size {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  opacity: 0.7;
+}
+.file-badge .remove-btn {
+  border: none;
+  background: transparent;
+  color: var(--gn-primary);
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  line-height: 1;
+  transition: background-color 80ms, color 80ms;
+}
+.file-badge .remove-btn:hover,
+.file-badge .remove-btn:focus-visible {
+  background: var(--gn-error-soft);
+  color: var(--gn-error);
+  outline: none;
+}
+
+/* ============================================================================
+   Progress bar (under step indicator)
+   ============================================================================ */
+.progress-bar {
+  height: 4px;
+  background: var(--gn-surface-hi);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: var(--sp-3);
+}
+.progress-bar-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--gn-primary);
+  transition: width 120ms ease-out;
+}
+
+/* ============================================================================
+   Result — rendered markdown container
+   ============================================================================ */
+.result-rendered {
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--gn-text);
+}
+.result-rendered h1,
+.result-rendered h2,
+.result-rendered h3 {
+  margin: 1.2em 0 0.5em;
+  line-height: 1.3;
+}
+.result-rendered h1 { font-size: 22px; font-weight: 700; }
+.result-rendered h2 { font-size: 18px; font-weight: 700; }
+.result-rendered h3 { font-size: 15px; font-weight: 700; }
+.result-rendered p { margin: 0.6em 0; }
+.result-rendered ul,
+.result-rendered ol { padding-left: 1.4em; margin: 0.6em 0; }
+.result-rendered li { margin: 0.2em 0; }
+.result-rendered code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background: var(--gn-surface-hi);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+.result-rendered pre {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background: var(--gn-surface-hi);
+  padding: var(--sp-3);
+  border-radius: var(--r-sm);
+  overflow-x: auto;
+}
+.result-rendered pre code {
+  background: transparent;
+  padding: 0;
+}
+.result-rendered blockquote {
+  border-left: 3px solid var(--gn-border);
+  padding-left: var(--sp-3);
+  color: var(--gn-text-dim);
+  margin: 0.6em 0;
+}
+.result-rendered table {
+  border-collapse: collapse;
+  margin: 0.6em 0;
+  font-size: 13px;
+}
+.result-rendered th,
+.result-rendered td {
+  border: 1px solid var(--gn-border);
+  padding: 6px 10px;
+}
+.result-rendered th {
+  background: var(--gn-surface-hi);
+  font-weight: 700;
+}
+.result-video-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--gn-text);
+  margin-bottom: var(--sp-3);
+}
+
+/* Save button in result card header — hidden until a result is rendered. */
+#save-result-btn[hidden] { display: none; }
+
+/* Autosave path chip below the video title. Shows where the worker already
+   wrote an automatic copy. Truncates with ellipsis; full path in tooltip. */
+.autosave-path {
+  font-size: 12px;
+  color: var(--gn-text-dim);
+  margin-bottom: var(--sp-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+.autosave-path[hidden] { display: none; }
+.autosave-path code {
+  font-family: inherit;
+  color: var(--gn-text);
+}
+
+/* ============================================================================
+   Toast (top-right, auto-fade)
+   ============================================================================ */
+/* ─── Settings form (Phase 1-C #3) ──────────────────────────────────────── */
+.settings-section {
+  padding: var(--sp-3) 0;
+  border-bottom: 1px solid var(--gn-border);
+}
+.settings-section:last-of-type { border-bottom: none; }
+.settings-section-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--gn-text-muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin: 0 0 var(--sp-3) 0;
+}
+.settings-field {
+  margin-bottom: var(--sp-3);
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  align-items: center;
+  gap: var(--sp-3);
+}
+.settings-field[hidden] { display: none; }
+.settings-field label {
+  font-size: 13px;
+  color: var(--gn-text);
+}
+.settings-field input,
+.settings-field select {
+  height: 36px;
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--gn-border);
+  border-radius: var(--r-md);
+  background: var(--gn-surface);
+  color: var(--gn-text);
+  font: inherit;
+  width: 100%;
+}
+.settings-field input::placeholder { color: var(--gn-text-dim); }
+.settings-field input:focus,
+.settings-field select:focus {
+  border-color: var(--gn-primary);
+  outline: 2px solid var(--gn-primary-soft);
+  outline-offset: 0;
+}
+.settings-field-row {
+  display: flex;
+  gap: var(--sp-2);
+  align-items: center;
+}
+.settings-field-row input { flex: 1; }
+.settings-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+  padding-top: var(--sp-4);
+  margin-top: var(--sp-3);
+  border-top: 1px solid var(--gn-border);
+}
+.settings-actions .btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ─── Result mode badge (Commit 3 — "히스토리 재열람") ───────────────────── */
+.result-mode-badge {
+  font-size: 11px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--gn-primary-soft);
+  color: var(--gn-primary);
+  align-self: center;
+  white-space: nowrap;
+  margin-left: var(--sp-2);
+}
+.result-mode-badge[hidden] { display: none; }
+.content[hidden] { display: none; }
+
+/* ─── History list view (Commit 2) ──────────────────────────────────────── */
+.history-status {
+  padding: var(--sp-3) 0;
+  color: var(--gn-text-dim);
+  font-size: 13px;
+  text-align: center;
+}
+.history-status.error { color: var(--gn-error, #d04545); }
+.history-item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-row-gap: 4px;
+  padding: var(--sp-3);
+  margin: var(--sp-2) 0;
+  border: 1px solid var(--gn-border);
+  border-radius: var(--r-md);
+  cursor: pointer;
+  transition: background-color 80ms ease, border-color 80ms ease;
+}
+.history-item:hover {
+  background: var(--gn-surface-hi);
+  border-color: var(--gn-primary-soft);
+}
+.history-item-title {
+  font-weight: 600;
+  color: var(--gn-text);
+  font-size: 14px;
+  word-break: break-word;
+}
+.history-item-status {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--gn-surface-hi);
+  color: var(--gn-text-dim);
+  align-self: start;
+  white-space: nowrap;
+}
+.history-item-status.completed { background: var(--gn-primary-soft); color: var(--gn-primary); }
+.history-item-status.failed    { color: var(--gn-error, #d04545); }
+.history-item-meta {
+  grid-column: 1 / -1;
+  font-size: 12px;
+  color: var(--gn-text-muted);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+}
+.history-item-meta .dot { color: var(--gn-text-dim); }
+
+.toast-container {
+  position: fixed;
+  top: var(--sp-5);
+  right: var(--sp-5);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  pointer-events: none;
+}
+.toast {
+  min-width: 280px;
+  max-width: 420px;
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--r-sm);
+  border: 1px solid var(--gn-border);
+  background: var(--gn-bg);
+  box-shadow: 0 4px 12px rgba(32, 33, 36, 0.12);
+  font-size: 13px;
+  color: var(--gn-text);
+  pointer-events: auto;
+  opacity: 0;
+  transform: translateY(-8px);
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+.toast.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+.toast.toast-error {
+  border-color: var(--gn-error);
+  color: var(--gn-error);
+  background: var(--gn-error-soft);
+}
+.toast.toast-success {
+  border-color: var(--gn-success);
+  color: var(--gn-success);
+  background: var(--gn-success-soft);
+}
+.toast.toast-warning {
+  border-color: var(--gn-warning);
+  color: var(--gn-warning);
+  background: var(--gn-warning-soft);
+}
+.toast .toast-title {
+  font-weight: 700;
+  margin-bottom: 2px;
+}
+
+/* ============================================================================
+   Button disabled state
+   ============================================================================ */
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ============================================================================
+   Utility
+   ============================================================================ */
+.hidden { display: none !important; }
+.muted { color: var(--gn-text-dim); }
+</style>
+</head>
+<body>
+
+<div class="app-shell">
+
+  <!-- ──────────────────────────────────────────────────────────────────────
+       Sidebar
+       TODO(Phase 2+): 히스토리/설정/노트편집/대시보드 메뉴 와이어링
+       ────────────────────────────────────────────────────────────────────── -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-logo">G</div>
+      <div>
+        <div class="brand-name">GuruNote</div>
+        <div class="brand-ver" id="app-version">v—</div>
+      </div>
+    </div>
+
+    <div class="nav-item active" data-route="main">
+      <span class="nav-icon">✨</span>
+      <span>생성</span>
+    </div>
+
+    <div class="nav-item" data-route="history">
+      <span class="nav-icon">📜</span>
+      <span>히스토리</span>
+    </div>
+
+    <div class="nav-item" data-route="settings">
+      <span class="nav-icon">⚙️</span>
+      <span>설정</span>
+    </div>
+
+    <!-- TODO(Phase 5): Wire to note editor -->
+    <div class="nav-item" data-route="editor" title="Phase 5 예정">
+      <span class="nav-icon">📝</span>
+      <span>노트 편집</span>
+    </div>
+
+    <!-- TODO(Phase 4-B): Dashboard -->
+    <div class="nav-item" data-route="dashboard" title="Phase 4-B 예정">
+      <span class="nav-icon">📊</span>
+      <span>대시보드</span>
+    </div>
+  </aside>
+
+  <!-- ──────────────────────────────────────────────────────────────────────
+       Main — '생성' 화면 (MVP)
+       ────────────────────────────────────────────────────────────────────── -->
+  <main class="main">
+    <div class="topbar">
+      <div>
+        <div class="crumbs" id="topbar-crumbs">GuruNote · 생성</div>
+        <div class="screen-title" id="topbar-title">생성</div>
+      </div>
+    </div>
+
+    <div class="content" id="content-main">
+
+      <!-- Hero / Input Card -->
+      <section class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">지식을 증류하세요</div>
+            <div class="card-sub">
+              유튜브 링크 또는 로컬 오디오/비디오 파일에서 화자 분리된 한국어 요약본을 생성합니다.
+            </div>
+          </div>
+          <span class="chip">Apple Silicon · MLX</span>
+        </div>
+
+        <div class="input-row">
+          <input
+            id="url-input"
+            class="url-input"
+            type="text"
+            placeholder="🔗  https://youtube.com/watch?v=…  또는 파일을 드래그하여 놓으세요"
+            autocomplete="off"
+          />
+          <button class="btn btn-ghost" id="pick-file-btn" type="button">파일 선택</button>
+          <button
+            class="btn btn-primary"
+            id="run-btn"
+            type="button"
+            disabled
+            title="URL 을 입력하거나 파일을 드래그하세요"
+          >▶  생성하기</button>
+          <button class="btn btn-ghost hidden" id="stop-btn" type="button">■  중지</button>
+        </div>
+
+        <!-- Selected local file badge (mutually exclusive with url-input).
+             Populated by setSelectedFile(); removed by clearSelectedFile(). -->
+        <div id="selected-file" class="file-badge hidden" aria-live="polite">
+          <span class="icon" id="selected-file-icon" aria-hidden="true">🎵</span>
+          <span class="name" id="selected-file-name"></span>
+          <span class="size" id="selected-file-size"></span>
+          <button
+            type="button"
+            class="remove-btn"
+            id="selected-file-remove"
+            aria-label="파일 선택 취소"
+            title="파일 선택 취소"
+          >✕</button>
+        </div>
+
+        <div class="options-row">
+          <div class="opt-group">
+            <label class="opt-label">STT 엔진</label>
+            <div class="segmented" data-seg="stt">
+              <button class="seg-opt active" data-value="auto">auto</button>
+              <button class="seg-opt" data-value="whisperx">whisperx</button>
+              <button class="seg-opt" data-value="mlx">mlx</button>
+              <button class="seg-opt" data-value="assemblyai">assemblyai</button>
+            </div>
+          </div>
+
+          <div class="opt-group">
+            <label class="opt-label">LLM Provider</label>
+            <div class="segmented" data-seg="llm">
+              <button class="seg-opt active" data-value="openai">openai</button>
+              <button class="seg-opt" data-value="anthropic">anthropic</button>
+              <button class="seg-opt" data-value="gemini">gemini</button>
+              <button class="seg-opt" data-value="openai_compatible">local</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Step Indicator (idle 상태) -->
+      <section class="card" id="progress-card">
+        <div class="card-header">
+          <div class="card-title" style="font-size: 16px;">파이프라인</div>
+          <span class="muted" id="pipeline-status">대기</span>
+        </div>
+        <div class="steps" id="steps">
+          <div class="node" data-step="0">1</div>
+          <div class="connector" data-conn="0"></div>
+          <div class="node" data-step="1">2</div>
+          <div class="connector" data-conn="1"></div>
+          <div class="node" data-step="2">3</div>
+          <div class="connector" data-conn="2"></div>
+          <div class="node" data-step="3">4</div>
+          <div class="connector" data-conn="3"></div>
+          <div class="node" data-step="4">5</div>
+
+          <div class="label" data-label="0">오디오</div>
+          <div></div>
+          <div class="label" data-label="1">STT</div>
+          <div></div>
+          <div class="label" data-label="2">번역</div>
+          <div></div>
+          <div class="label" data-label="3">요약</div>
+          <div></div>
+          <div class="label" data-label="4">조립</div>
+        </div>
+
+        <!-- Linear progress bar (0–100%) -->
+        <div class="progress-bar">
+          <div class="progress-bar-fill" id="progress-fill"></div>
+        </div>
+
+        <!-- Live log pane (event bus subscriber) -->
+        <div class="log-pane hidden" id="log-pane"></div>
+      </section>
+
+      <!-- Result card — filled by window.bus "result" listener -->
+      <section class="card" id="result-card">
+        <div class="card-header">
+          <div class="card-title" style="font-size: 16px;">결과</div>
+          <span
+            id="result-mode-badge"
+            class="result-mode-badge"
+            hidden
+          ></span>
+          <button
+            class="btn btn-ghost btn-sm"
+            id="save-result-btn"
+            type="button"
+            title="다른 이름으로 저장 (⌘S / Ctrl+S)"
+            hidden
+          >저장</button>
+        </div>
+        <div id="result-body">
+          <div class="result-empty" id="result-empty">
+            파이프라인이 완료되면 여기에 마크다운 미리보기가 표시됩니다.
+          </div>
+        </div>
+      </section>
+
+    </div><!-- /content -->
+
+    <!-- ────────────────────────────────────────────────────────────────────
+         Main — '히스토리' 화면 (목록 view, Commit 2)
+         아이템 클릭 시 detail 재열람은 Commit 3 에서 배선.
+         ──────────────────────────────────────────────────────────────────── -->
+    <!-- ────────────────────────────────────────────────────────────────────
+         Main — '설정' 화면 (skeleton, Phase 1-C #3 / Commit #1)
+         실제 폼 + bridge 연동은 후속 커밋에서.
+         ──────────────────────────────────────────────────────────────────── -->
+    <div class="content" id="content-settings" hidden>
+      <section class="card" aria-labelledby="settings-card-title">
+        <div class="card-header">
+          <div>
+            <h2 id="settings-card-title" class="card-title" style="font-size: 16px;">설정</h2>
+            <div class="card-sub">.env 값을 UI에서 편집 · 저장 시 자동 백업</div>
+          </div>
+        </div>
+        <form id="settings-form" novalidate>
+          <!-- 5 섹션은 buildSettingsForm() 이 동적으로 채움 -->
+          <div class="history-status" id="settings-loading-msg">로딩 중...</div>
+        </form>
+        <div id="settings-status" class="history-status" aria-live="polite"></div>
+      </section>
+    </div>
+
+    <div class="content" id="content-history" hidden>
+      <section class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title" style="font-size: 16px;">히스토리</div>
+            <div class="card-sub">완료/실패한 작업 기록 · 최신순</div>
+          </div>
+          <button
+            class="btn btn-ghost btn-sm"
+            id="history-refresh-btn"
+            type="button"
+            title="목록 새로고침"
+          >새로고침</button>
+        </div>
+        <div id="history-list"></div>
+        <div id="history-status" class="history-status"></div>
+      </section>
+    </div>
+  </main>
+
+</div><!-- /app-shell -->
+
+<!-- Toast container (populated by toast() helper in script) -->
+<div class="toast-container" id="toast-container"></div>
+
+<!-- ============================================================================
+     JS — 이벤트 버스 + Bridge 호출 + UI 보일러플레이트
+     TODO(Phase 1-B): 분리 → js/bus.js, js/api.js, js/screens/main.js
+     ============================================================================ -->
+<script>
+"use strict";
+
+/* ========================================================================
+   Event Bus (window.bus)
+   백엔드(Python)가 evaluate_js("window.__emit('progress', {...})") 로 푸시
+   ======================================================================== */
+window.bus = new EventTarget();
+window.__emit = function (eventName, payload) {
+  try {
+    window.bus.dispatchEvent(new CustomEvent(eventName, { detail: payload }));
+  } catch (e) {
+    console.error("[bus] dispatch failed:", eventName, e);
+  }
+};
+
+/* ========================================================================
+   Bridge wrapper — pywebview.api 가 준비될 때까지 await
+   pywebview 로드 시 window.pywebviewready 이벤트 발생
+   ======================================================================== */
+const apiReady = new Promise((resolve) => {
+  if (window.pywebview && window.pywebview.api) return resolve(window.pywebview.api);
+  window.addEventListener("pywebviewready", () => resolve(window.pywebview.api));
+});
+
+async function callApi(method, ...args) {
+  const api = await apiReady;
+  if (typeof api[method] !== "function") {
+    throw new Error(`Bridge method not found: ${method}`);
+  }
+  return api[method](...args);
+}
+
+/* ========================================================================
+   초기 로드: 앱 정보 (버전 등)
+   ======================================================================== */
+(async function initAppInfo() {
+  try {
+    const info = await callApi("get_app_info");
+    if (info && info.version) {
+      document.getElementById("app-version").textContent = `v${info.version}`;
+    }
+  } catch (e) {
+    console.warn("[init] get_app_info failed (Bridge stub?):", e);
+    document.getElementById("app-version").textContent = "v0.7.2.1";
+  }
+})();
+
+/* ========================================================================
+   Segmented control 동작
+   ======================================================================== */
+const segState = { stt: "auto", llm: "openai" };
+document.querySelectorAll(".segmented").forEach((seg) => {
+  const key = seg.dataset.seg;
+  seg.addEventListener("click", (e) => {
+    const btn = e.target.closest(".seg-opt");
+    if (!btn) return;
+    seg.querySelectorAll(".seg-opt").forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+    segState[key] = btn.dataset.value;
+  });
+});
+
+/* ========================================================================
+   로컬 파일 지원 (DnD + file picker) — URL 입력과 상호 배타
+   ======================================================================== */
+
+// Mirrors gurunote.audio.SUPPORTED_EXTS (8 audio + 9 video = 17).
+// Keep in sync with gurunote/audio.py:22-24.
+const SUPPORTED_AUDIO_EXTS = [".mp3", ".wav", ".flac", ".m4a", ".aac", ".ogg", ".wma", ".opus"];
+const SUPPORTED_VIDEO_EXTS = [".mp4", ".mkv", ".avi", ".mov", ".webm", ".wmv", ".flv", ".ts", ".m4v"];
+const SUPPORTED_EXTS_SET = new Set([...SUPPORTED_AUDIO_EXTS, ...SUPPORTED_VIDEO_EXTS]);
+
+let selectedLocalPath = null;  // null or absolute path string
+
+const urlInput = document.getElementById("url-input");
+const runBtn = document.getElementById("run-btn");
+const fileBadge = document.getElementById("selected-file");
+const fileIconEl = document.getElementById("selected-file-icon");
+const fileNameEl = document.getElementById("selected-file-name");
+const fileSizeEl = document.getElementById("selected-file-size");
+
+function getExt(path) {
+  const idx = path.lastIndexOf(".");
+  return idx < 0 ? "" : path.slice(idx).toLowerCase();
+}
+
+function isSupportedExt(path) {
+  return SUPPORTED_EXTS_SET.has(getExt(path));
+}
+
+function basename(path) {
+  // Handle both forward and back slashes (Windows paths via pywebview).
+  const i = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+  return i < 0 ? path : path.slice(i + 1);
+}
+
+function midEllipsisPreserveExt(name, maxLen = 40) {
+  if (name.length <= maxLen) return name;
+  const dot = name.lastIndexOf(".");
+  if (dot < 0 || dot < name.length - 8) {
+    // No ext or ext weirdly long — simple end-ellipsis
+    return name.slice(0, maxLen - 3) + "...";
+  }
+  const ext = name.slice(dot);
+  const base = name.slice(0, dot);
+  const avail = maxLen - ext.length - 3;  // 3 = "..."
+  if (avail <= 4) return name.slice(0, maxLen - 3) + "...";
+  const head = Math.ceil(avail / 2);
+  const tail = Math.floor(avail / 2);
+  return base.slice(0, head) + "..." + base.slice(-tail) + ext;
+}
+
+function formatSize(bytes) {
+  if (bytes == null || bytes < 0) return "";
+  if (bytes < 1024) return bytes + " B";
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+  if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+  return (bytes / (1024 * 1024 * 1024)).toFixed(2) + " GB";
+}
+
+function iconForPath(path) {
+  return SUPPORTED_VIDEO_EXTS.includes(getExt(path)) ? "🎬" : "🎵";
+}
+
+function setSelectedFile(path, size) {
+  selectedLocalPath = path;
+  const name = basename(path);
+  fileIconEl.textContent = iconForPath(path);
+  fileNameEl.textContent = midEllipsisPreserveExt(name, 48);
+  fileNameEl.title = name;  // full name on hover
+  fileSizeEl.textContent = formatSize(size);
+  fileBadge.classList.remove("hidden");
+  // 상호 배타: URL 입력창 비움
+  urlInput.value = "";
+  updateRunButtonState();
+}
+
+function clearSelectedFile() {
+  selectedLocalPath = null;
+  fileBadge.classList.add("hidden");
+  fileNameEl.textContent = "";
+  fileNameEl.title = "";
+  fileSizeEl.textContent = "";
+  updateRunButtonState();
+}
+
+function updateRunButtonState() {
+  const hasSource = !!(selectedLocalPath || urlInput.value.trim());
+  runBtn.disabled = !hasSource;
+  if (hasSource) {
+    runBtn.removeAttribute("title");
+  } else {
+    runBtn.title = "URL 을 입력하거나 파일을 드래그하세요";
+  }
+}
+
+/* ---- pick-file button → native dialog ---- */
+document.getElementById("pick-file-btn").addEventListener("click", async () => {
+  try {
+    const result = await callApi("pick_file");
+    if (!result || !result.path) return;  // cancelled
+    if (!isSupportedExt(result.path)) {
+      toast(
+        `지원하지 않는 형식입니다: ${getExt(result.path)}\n` +
+        `지원: ${[...SUPPORTED_AUDIO_EXTS, ...SUPPORTED_VIDEO_EXTS].join(" ")}`,
+        "warning",
+      );
+      return;
+    }
+    setSelectedFile(result.path, result.size);
+  } catch (e) {
+    console.error("[pick_file] error:", e);
+    toast(`파일 선택 오류: ${e.message || e}`, "error");
+  }
+});
+
+/* ---- drag-and-drop (HTML5 native with pywebviewFullPath) ----
+   WARNING: do NOT wrap with Vue Sortable / draggable — those libraries
+   re-wrap DataTransfer and lose the pywebviewFullPath attribute
+   (pywebview issue #311). */
+["dragenter", "dragover"].forEach((ev) => {
+  urlInput.addEventListener(ev, (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    urlInput.classList.add("drag-over");
+  });
+});
+["dragleave", "drop"].forEach((ev) => {
+  urlInput.addEventListener(ev, (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    urlInput.classList.remove("drag-over");
+  });
+});
+urlInput.addEventListener("drop", (e) => {
+  const files = e.dataTransfer && e.dataTransfer.files;
+  if (!files || files.length === 0) return;
+
+  if (files.length > 1) {
+    toast("파일은 1개만 선택할 수 있습니다.", "warning");
+    return;
+  }
+
+  const f = files[0];
+  // pywebview injects absolute path here; vanilla browsers would only expose the name.
+  const fullPath = f.pywebviewFullPath || f.name;
+
+  if (!isSupportedExt(fullPath)) {
+    toast(
+      `지원하지 않는 형식입니다: ${getExt(fullPath)}\n` +
+      `지원: ${[...SUPPORTED_AUDIO_EXTS, ...SUPPORTED_VIDEO_EXTS].join(" ")}`,
+      "warning",
+    );
+    return;
+  }
+
+  // Replace any existing selection silently — user intent is clear on re-drop.
+  setSelectedFile(fullPath, typeof f.size === "number" ? f.size : null);
+});
+
+/* ---- URL 입력 타이핑 → 기존 파일 선택 자동 해제 (mutually exclusive) ---- */
+urlInput.addEventListener("input", () => {
+  if (selectedLocalPath && urlInput.value.trim() !== "") {
+    clearSelectedFile();
+  }
+  updateRunButtonState();
+});
+
+/* ---- X (remove) 버튼 → 파일 선택 취소 ---- */
+document.getElementById("selected-file-remove").addEventListener("click", () => {
+  clearSelectedFile();
+  urlInput.focus();
+});
+
+/* ========================================================================
+   UI state + helpers
+   ======================================================================== */
+let currentJobId = null;
+// Latest rendered result — enables ⌘S / "저장" button after pipeline completes.
+// Cleared when a new run starts so stale content cannot be saved mid-run.
+let currentResult = null;  // { full_md, video_title, autosave_path } or null
+
+function setUIRunning(running) {
+  document.getElementById("run-btn").disabled = running;
+  document.getElementById("pick-file-btn").disabled = running;
+  document.getElementById("url-input").disabled = running;
+  document.getElementById("selected-file-remove").disabled = running;
+  document.querySelectorAll(".seg-opt").forEach((b) => { b.disabled = running; });
+  document.getElementById("stop-btn").classList.toggle("hidden", !running);
+  document.getElementById("pipeline-status").textContent = running ? "처리 중…" : "대기";
+  // After a run ends, re-apply the empty-input disable + tooltip logic.
+  if (!running) updateRunButtonState();
+}
+
+function resetProgressUI() {
+  for (let i = 0; i < 5; i++) {
+    const node = document.querySelector(`.node[data-step="${i}"]`);
+    const label = document.querySelector(`.label[data-label="${i}"]`);
+    if (node) node.classList.remove("active", "done");
+    if (label) label.classList.remove("active");
+  }
+  document.querySelectorAll(".connector").forEach((c) => c.classList.remove("done"));
+  document.getElementById("progress-fill").style.width = "0%";
+  const pane = document.getElementById("log-pane");
+  pane.textContent = "";
+  pane.classList.add("hidden");
+}
+
+function updateStepIndicator(pct) {
+  // Thresholds mirror gui.py:3847 `th = [0.18, 0.55, 0.78, 0.90, 1.0]`.
+  const thresholds = [0.18, 0.55, 0.78, 0.90, 1.0];
+  for (let i = 0; i < 5; i++) {
+    const node = document.querySelector(`.node[data-step="${i}"]`);
+    const label = document.querySelector(`.label[data-label="${i}"]`);
+    if (!node || !label) continue;
+    node.classList.remove("active", "done");
+    label.classList.remove("active");
+    if (pct >= thresholds[i]) {
+      node.classList.add("done");
+    } else if (i === 0 && pct > 0) {
+      node.classList.add("active");
+      label.classList.add("active");
+    } else if (i > 0 && pct >= thresholds[i - 1]) {
+      node.classList.add("active");
+      label.classList.add("active");
+    }
+  }
+  document.querySelectorAll(".connector").forEach((c, idx) => {
+    c.classList.toggle("done", pct >= thresholds[idx]);
+  });
+  document.getElementById("progress-fill").style.width =
+    `${Math.max(0, Math.min(100, pct * 100))}%`;
+}
+
+function appendLogLine(line) {
+  const pane = document.getElementById("log-pane");
+  pane.classList.remove("hidden");
+  pane.textContent += line + "\n";
+  pane.scrollTop = pane.scrollHeight;
+}
+
+function toast(message, kind) {
+  // kind: "error" | "success" | "warning" | undefined (neutral)
+  const container = document.getElementById("toast-container");
+  const t = document.createElement("div");
+  t.className = "toast" + (kind ? ` toast-${kind}` : "");
+  t.textContent = message;
+  container.appendChild(t);
+  requestAnimationFrame(() => t.classList.add("visible"));
+  setTimeout(() => {
+    t.classList.remove("visible");
+    setTimeout(() => t.remove(), 200);
+  }, 4000);
+}
+
+// Collapse a leading $HOME / %USERPROFILE% path segment into "~" for display.
+// The autosave path is absolute; showing "~/GuruNote/autosave/..." is easier
+// to read than "/Users/alice/GuruNote/autosave/...". $HOME is not exposed to
+// JS, so we sniff it from the path itself: /Users/<name>/ (macOS),
+// /home/<name>/ (Linux), or <drive>:[\\/]Users[\\/]<name>[\\/] (Windows,
+// case-insensitive, mixed separators allowed). Non-matching paths (UNC
+// \\server\share, /Volumes/..., relative paths) are returned unchanged.
+function homeCollapsedPath(abs) {
+  if (typeof abs !== "string" || !abs) return "";
+  // macOS: /Users/<name>/...   Linux: /home/<name>/...
+  const mUnix = abs.match(/^(\/(?:Users|home)\/[^/]+)(\/.*)?$/);
+  if (mUnix) return "~" + (mUnix[2] || "");
+  // Windows: C:\Users\<name>\... (any drive letter, either separator, mixed).
+  // Tail is passed through verbatim so the original separator style survives.
+  const mWin = abs.match(/^([a-zA-Z]:[\\/]Users[\\/][^\\/]+)([\\/].*)?$/i);
+  if (mWin) return "~" + (mWin[2] || "");
+  return abs;
+}
+
+function basenameOf(p) {
+  if (typeof p !== "string" || !p) return "";
+  const i = Math.max(p.lastIndexOf("/"), p.lastIndexOf("\\"));
+  return i >= 0 ? p.slice(i + 1) : p;
+}
+
+// Derive the default filename offered in the Save-As dialog.
+// Preference: basename of autosave_path (same timestamp the user already
+// saw in the autosave chip). Fallback: "GuruNote_<video_title>.md".
+function deriveDefaultFilename(payload) {
+  if (payload.autosave_path) {
+    const base = basenameOf(payload.autosave_path);
+    if (base) return base;
+  }
+  const title = (payload.video_title || "").trim() || "untitled";
+  // Mild sanitize — strip path separators; Python side also sanitizes via
+  // exporter.sanitize_filename when autosaving, so this is a UX fallback only.
+  const safe = title.replace(/[\\/]/g, "_");
+  return `GuruNote_${safe}.md`;
+}
+
+function renderResult(payload) {
+  const body = document.getElementById("result-body");
+  body.innerHTML = "";
+  if (payload.video_title) {
+    const title = document.createElement("div");
+    title.className = "result-video-title";
+    title.textContent = payload.video_title;
+    body.appendChild(title);
+  }
+  if (payload.autosave_path) {
+    const chip = document.createElement("div");
+    chip.className = "autosave-path";
+    const collapsed = homeCollapsedPath(payload.autosave_path);
+    chip.setAttribute("title", payload.autosave_path);  // full path tooltip
+    chip.innerHTML = "자동저장: <code></code>";
+    chip.querySelector("code").textContent = collapsed;
+    body.appendChild(chip);
+  }
+  const rendered = document.createElement("div");
+  rendered.className = "result-rendered";
+  // full_html is pre-rendered server-side via python `markdown` package.
+  rendered.innerHTML = payload.full_html || "";
+  body.appendChild(rendered);
+}
+
+function humanizeError(err) {
+  const msg = (err && err.message) || String(err);
+  // Structured codes raised by bridge.py: CODE:detail
+  const m = msg.match(/^([A-Z_]+):(.*)$/);
+  if (!m) return msg;
+  const [, code, detail] = m;
+  switch (code) {
+    case "INVALID_URL":         return "유튜브 URL 형식이 아닙니다.";
+    case "INVALID_LOCAL_FILE":  return `지원되지 않는 파일입니다: ${detail}`;
+    case "API_KEY_MISSING":     return `API 키가 설정되지 않았습니다: ${detail}. 설정 화면에서 입력하세요.`;
+    case "NO_ACTIVE_SESSION":   return "실행 중인 작업이 없습니다.";
+    case "HISTORY_LIST_FAILED": return `히스토리 목록을 불러오지 못했습니다: ${detail}`;
+    case "HISTORY_NOT_FOUND":   return `히스토리 항목을 찾을 수 없습니다: ${detail}`;
+    case "INVALID_ID":          return `잘못된 작업 ID 입니다: ${detail}`;
+    case "READ_FAILED":         return `히스토리 읽기에 실패했습니다: ${detail}`;
+    case "SETTINGS_LOAD_FAILED":return `설정을 불러오지 못했습니다: ${detail}`;
+    case "SETTINGS_SAVE_FAILED":return `설정 저장에 실패했습니다: ${detail}`;
+    case "INVALID_PATCH":       return `설정 형식 오류: ${detail}`;
+    case "UNKNOWN_KEYS":        return `허용되지 않은 설정 키: ${detail}`;
+    default:                    return msg;
+  }
+}
+
+/* ========================================================================
+   History view (Commit 2 — list only; detail re-open lands in Commit 3)
+   ======================================================================== */
+const ROUTE_TOPBAR = {
+  main:     { crumbs: "GuruNote · 생성",     title: "생성" },
+  history:  { crumbs: "GuruNote · 히스토리", title: "히스토리" },
+  settings: { crumbs: "GuruNote · 설정",     title: "설정" },
+};
+// Routes that exist in markup but are not yet implemented — clicking them
+// shows a "Phase X 예정" toast and the active route does NOT change.
+const ROUTE_PHASE_LABEL = {
+  editor:    "Phase 5",
+  dashboard: "Phase 4-B",
+};
+let currentRoute = "main";
+let historyLoadedOnce = false;
+// In-flight guard: rapid refresh clicks (or a refresh during the lazy
+// switchRoute() load) would otherwise interleave list.innerHTML="" against
+// an earlier in-flight forEach(append). Single boolean is enough — the
+// finally block guarantees reset on both success and thrown errors.
+let historyRefreshing = false;
+// In-flight guard for openHistoryDetail — same pattern as historyRefreshing.
+// Also blocks simultaneous list-refresh + detail-open from interleaving the
+// result card's DOM (both mutate #result-body and #result-mode-badge).
+let historyDetailLoading = false;
+
+function switchRoute(name) {
+  if (ROUTE_PHASE_LABEL[name]) {
+    toast(`${ROUTE_PHASE_LABEL[name]} 예정 기능입니다.`, "warning");
+    return;
+  }
+  if (!ROUTE_TOPBAR[name]) {
+    console.warn("[router] unknown route:", name);
+    return;
+  }
+  if (name === currentRoute) return;  // idempotent on rapid duplicate clicks
+
+  document.querySelectorAll(".nav-item[data-route]").forEach((el) => {
+    el.classList.toggle("active", el.dataset.route === name);
+  });
+
+  document.getElementById("content-main").hidden     = (name !== "main");
+  document.getElementById("content-history").hidden  = (name !== "history");
+  document.getElementById("content-settings").hidden = (name !== "settings");
+
+  // Topbar text values are sourced from the ROUTE_TOPBAR literal above
+  // (no user input). textContent is used regardless to keep the rule uniform.
+  document.getElementById("topbar-crumbs").textContent = ROUTE_TOPBAR[name].crumbs;
+  document.getElementById("topbar-title").textContent  = ROUTE_TOPBAR[name].title;
+
+  currentRoute = name;
+
+  // Lazy-load history on first entry; refresh button handles subsequent reloads.
+  if (name === "history" && !historyLoadedOnce) {
+    loadHistory();
+  }
+  // Lazy-load settings on first entry; reload happens automatically after save.
+  if (name === "settings" && !settingsLoaded) {
+    loadSettings();
+  }
+}
+
+function formatHistoryDate(iso) {
+  // Format target: "2026. 4. 21. 오후 7:54" — `year: "numeric"` prevents the
+  // ko-KR short style from collapsing to a 2-digit year ("26. 4. 21.").
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  return d.toLocaleString("ko-KR", {
+    year: "numeric", month: "numeric", day: "numeric",
+    hour: "numeric", minute: "2-digit",
+  });
+}
+
+function renderHistoryItem(entry) {
+  // All job metadata (title / organized_title / uploader / field / tags)
+  // originates from yt-dlp + LLM output — treat as untrusted. This function
+  // builds DOM exclusively via createElement + textContent. innerHTML must
+  // never appear inside this builder.
+  const root = document.createElement("div");
+  root.className = "history-item";
+  root.dataset.jobId = entry.job_id || "";
+
+  const titleEl = document.createElement("div");
+  titleEl.className = "history-item-title";
+  titleEl.textContent = entry.organized_title || entry.title || "(제목 없음)";
+  root.appendChild(titleEl);
+
+  const status = entry.status || "";
+  const statusEl = document.createElement("div");
+  statusEl.className = "history-item-status "
+    + (status === "completed" ? "completed" : status === "failed" ? "failed" : "");
+  statusEl.textContent = status === "completed" ? "완료"
+                       : status === "failed"    ? "실패"
+                       : status || "—";
+  root.appendChild(statusEl);
+
+  const metaEl = document.createElement("div");
+  metaEl.className = "history-item-meta";
+  const parts = [];
+  if (entry.uploader) parts.push(entry.uploader);
+  if (entry.field)    parts.push(entry.field);
+  const dateStr = formatHistoryDate(entry.created_at);
+  if (dateStr) parts.push(dateStr);
+  if (Array.isArray(entry.tags) && entry.tags.length) {
+    parts.push("#" + entry.tags.slice(0, 5).join(" #"));
+  }
+  parts.forEach((p, i) => {
+    if (i > 0) {
+      const dot = document.createElement("span");
+      dot.className = "dot";
+      dot.textContent = "·";
+      metaEl.appendChild(dot);
+    }
+    const span = document.createElement("span");
+    span.textContent = p;  // untrusted metadata → textContent only.
+    metaEl.appendChild(span);
+  });
+  root.appendChild(metaEl);
+
+  root.addEventListener("click", () => {
+    openHistoryDetail(root.dataset.jobId);
+  });
+
+  return root;
+}
+
+async function loadHistory() {
+  if (historyRefreshing) return;
+  historyRefreshing = true;
+  try {
+    const list = document.getElementById("history-list");
+    const status = document.getElementById("history-status");
+    // Clearing existing children — the only nodes here are ones renderHistoryItem
+    // built (all via textContent). innerHTML="" is safe for clearing trusted DOM.
+    list.innerHTML = "";
+    status.classList.remove("error");
+    status.textContent = "로딩 중...";
+
+    try {
+      const resp = await callApi("list_history");
+      if (resp && resp.ok === false) {
+        status.classList.add("error");
+        status.textContent = humanizeError({ message: `${resp.code}:${resp.error}` });
+        return;
+      }
+      const items = (resp && resp.items) || [];
+      if (items.length === 0) {
+        status.textContent = "저장된 히스토리가 없습니다.";
+        historyLoadedOnce = true;
+        return;
+      }
+      status.textContent = "";
+      items.forEach((entry) => list.appendChild(renderHistoryItem(entry)));
+      // Mark loaded only on a successful (or empty) response — soft-failed
+      // and hard-thrown errors leave the flag false so the next nav auto-retries.
+      historyLoadedOnce = true;
+    } catch (e) {
+      console.error("[history] load failed:", e);
+      status.classList.add("error");
+      status.textContent = humanizeError(e);
+    }
+  } finally {
+    historyRefreshing = false;
+  }
+}
+
+/* ------------------------------------------------------------------------
+   History detail — click an item to re-open it in the main result area.
+   Reuses renderResult() so the card, markdown styling, and ⌘S save flow
+   are identical to a fresh pipeline run. A "히스토리 재열람" badge
+   disambiguates that the content is recalled, not newly produced.
+   ------------------------------------------------------------------------ */
+async function openHistoryDetail(jobId) {
+  if (historyDetailLoading) return;
+  // Block during an active pipeline run — currentJobId is non-null between
+  // start_pipeline resolving and the terminal result event (success or fail),
+  // covering the entire window where a real run "owns" the result card.
+  if (currentJobId) {
+    toast("파이프라인 실행 중에는 히스토리를 열 수 없습니다.", "warning");
+    return;
+  }
+  if (!jobId) {
+    console.warn("[history] openHistoryDetail called without jobId");
+    return;
+  }
+
+  historyDetailLoading = true;
+  try {
+    let resp;
+    try {
+      resp = await callApi("get_history_detail", jobId);
+    } catch (e) {
+      console.error("[history] detail load failed:", e);
+      toast(humanizeError(e), "error");
+      return;
+    }
+    if (!resp || resp.ok === false) {
+      const code = (resp && resp.code) || "READ_FAILED";
+      const detail = (resp && resp.error) || "unknown";
+      toast(humanizeError({ message: `${code}:${detail}` }), "error");
+      return;
+    }
+
+    const meta = resp.meta || {};
+    // Spec: organized_title → title → "히스토리 재열람". No empty string.
+    const videoTitle =
+      meta.organized_title || meta.title || "히스토리 재열람";
+
+    // Navigate FIRST so content-main is visible when renderResult fills it —
+    // prevents a flash of the history list immediately before the swap.
+    switchRoute("main");
+
+    // autosave_path: null — the detail source is ~/.gurunote/jobs/<id>/result.md,
+    // not ~/GuruNote/autosave/. renderResult hides the chip when the field is
+    // falsy, which is the correct UX for history re-opens.
+    renderResult({
+      video_title: videoTitle,
+      autosave_path: null,
+      full_html: resp.full_html || "",
+    });
+
+    // Badge: filename from meta is not surfaced in the index; the detail
+    // response carries `filename` (always "result.md"). Prefer the
+    // organized_title for the badge so it conveys "what" not just "where".
+    const badge = document.getElementById("result-mode-badge");
+    badge.textContent = `히스토리 재열람 · ${videoTitle}`;  // untrusted → textContent.
+    badge.hidden = false;
+
+    // Mirror the live result event's currentResult shape so ⌘S / "저장"
+    // button save this markdown as a new file. autosave_path = null means
+    // deriveDefaultFilename falls back to the GuruNote_<title>.md pattern.
+    currentResult = {
+      full_md: resp.markdown || "",
+      video_title: videoTitle,
+      autosave_path: null,
+    };
+    document.getElementById("save-result-btn").hidden = !currentResult.full_md;
+  } finally {
+    historyDetailLoading = false;
+  }
+}
+
+/* ========================================================================
+   Settings — Phase 1-C #3
+   ------------------------------------------------------------------------
+   Layout source mirrors gui.py:2579 _FIELD_GROUPS. Mutating the constants
+   here without updating gui.py creates drift between the WebView dialog
+   and the legacy CTk one — please keep in sync.
+
+   Mask-2 policy (matches bridge.py): plaintext secrets never leave Python.
+   Secret inputs render with a "●●●●● [저장됨]" placeholder when the bridge
+   reports the key is set; the actual value lives only in the .env file.
+
+   HF_TOKEN ↔ HUGGINGFACE_TOKEN dual-write: the form surfaces a single
+   "HuggingFace 토큰" field bound to HUGGINGFACE_TOKEN. On save (and on
+   delete), the patch carries both keys so the canonical (HF_TOKEN) and
+   legacy alias never drift.
+   ======================================================================== */
+
+const SETTINGS_FIELD_GROUPS = [
+  ["일반", [
+    { key: "LLM_PROVIDER", label: "LLM Provider", secret: false, kind: "select",
+      options: ["openai", "openai_compatible", "anthropic", "gemini"] },
+  ]],
+  ["AI Provider", [
+    { key: "OPENAI_API_KEY",     label: "OpenAI API Key",                       secret: true  },
+    { key: "OPENAI_BASE_URL",    label: "OpenAI Base URL (Local/Compatible)",   secret: false },
+    { key: "OPENAI_MODEL",       label: "OpenAI 모델",                          secret: false },
+    { key: "ANTHROPIC_API_KEY",  label: "Anthropic API Key",                    secret: true  },
+    { key: "ANTHROPIC_MODEL",    label: "Anthropic 모델",                       secret: false },
+    { key: "GOOGLE_API_KEY",     label: "Google Gemini API Key",                secret: true  },
+    { key: "GEMINI_MODEL",       label: "Gemini 모델",                          secret: false },
+  ]],
+  ["STT · 하드웨어", [
+    { key: "ASSEMBLYAI_API_KEY", label: "AssemblyAI API Key (폴백용)",          secret: true  },
+    { key: "WHISPERX_MODEL",     label: "WhisperX 모델 (NVIDIA)",               secret: false },
+    { key: "WHISPERX_BATCH_SIZE",label: "WhisperX 배치 사이즈 (NVIDIA)",        secret: false },
+    { key: "MLX_WHISPER_MODEL",  label: "MLX Whisper 모델 (Apple Silicon)",     secret: false },
+    { key: "HUGGINGFACE_TOKEN",  label: "HuggingFace 토큰 (화자 분리용)",       secret: true  },
+  ]],
+  ["연동", [
+    { key: "OBSIDIAN_VAULT_PATH",label: "Obsidian Vault 경로",                  secret: false },
+    { key: "OBSIDIAN_SUBFOLDER", label: "Obsidian 하위 폴더 (기본 GuruNote)",   secret: false },
+    { key: "NOTION_TOKEN",       label: "Notion Integration Token",             secret: true  },
+    { key: "NOTION_PARENT_ID",   label: "Notion Parent ID (database/page UUID)",secret: false },
+    { key: "NOTION_PARENT_TYPE", label: "Notion Parent Type (database/page)",   secret: false },
+  ]],
+  ["고급", [
+    { key: "LLM_TEMPERATURE",            label: "LLM Temperature",        secret: false },
+    { key: "LLM_TRANSLATION_MAX_TOKENS", label: "번역 Max Tokens",        secret: false },
+    { key: "LLM_SUMMARY_MAX_TOKENS",     label: "요약 Max Tokens",        secret: false },
+  ]],
+];
+
+const SETTINGS_PLACEHOLDERS = {
+  OPENAI_MODEL: "gpt-5.4",
+  OPENAI_BASE_URL: "http://127.0.0.1:8000/v1",
+  ANTHROPIC_MODEL: "claude-sonnet-4-6",
+  GEMINI_MODEL: "gemini-2.5-flash",
+  LLM_TEMPERATURE: "0.2",
+  LLM_TRANSLATION_MAX_TOKENS: "8192",
+  LLM_SUMMARY_MAX_TOKENS: "4096",
+  WHISPERX_MODEL: "distil-large-v3",
+  WHISPERX_BATCH_SIZE: "16",
+  MLX_WHISPER_MODEL: "mlx-community/whisper-large-v3-mlx",
+  OBSIDIAN_VAULT_PATH: "/Users/me/Documents/MyVault",
+  OBSIDIAN_SUBFOLDER: "GuruNote",
+  NOTION_PARENT_ID: "1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
+  NOTION_PARENT_TYPE: "database",
+};
+
+const PROVIDER_FIELD_MAP = {
+  openai:            ["OPENAI_API_KEY", "OPENAI_BASE_URL", "OPENAI_MODEL"],
+  openai_compatible: ["OPENAI_API_KEY", "OPENAI_BASE_URL", "OPENAI_MODEL"],
+  anthropic:         ["ANTHROPIC_API_KEY", "ANTHROPIC_MODEL"],
+  gemini:            ["GOOGLE_API_KEY", "GEMINI_MODEL"],
+};
+const ALL_PROVIDER_FIELDS = [
+  "OPENAI_API_KEY", "OPENAI_BASE_URL", "OPENAI_MODEL",
+  "ANTHROPIC_API_KEY", "ANTHROPIC_MODEL",
+  "GOOGLE_API_KEY", "GEMINI_MODEL",
+];
+
+let settingsLoaded = false;
+let settingsLoading = false;
+let settingsSaving = false;
+let settingsInitialValues = {};       // {key: str} snapshot at load — non-secrets only
+let settingsInitialSecretsSet = {};   // {key: bool} snapshot at load — secrets
+
+function buildSettingsForm(values, secretsSet) {
+  // All labels and section names below are hard-coded literals — no untrusted
+  // input ever reaches innerHTML. Field values come from get_settings (env
+  // strings) and are written with .value only (input.value never parses HTML).
+  const form = document.getElementById("settings-form");
+  form.innerHTML = "";  // safe — clearing whatever loading-msg / prior form lived here
+
+  for (const [sectionName, fields] of SETTINGS_FIELD_GROUPS) {
+    const sectionId = `settings-sec-${sectionName.replace(/[^a-zA-Z0-9]/g, "-")}`;
+    const section = document.createElement("section");
+    section.className = "settings-section";
+    section.setAttribute("aria-labelledby", sectionId);
+
+    const title = document.createElement("h3");
+    title.id = sectionId;
+    title.className = "settings-section-title";
+    title.textContent = sectionName;
+    section.appendChild(title);
+
+    for (const f of fields) {
+      const row = document.createElement("div");
+      row.className = "settings-field";
+      row.dataset.key = f.key;
+      row.dataset.secret = String(!!f.secret);
+
+      const label = document.createElement("label");
+      label.htmlFor = `set-${f.key}`;
+      label.textContent = f.label;
+      row.appendChild(label);
+
+      let input;
+      if (f.kind === "select") {
+        input = document.createElement("select");
+        for (const opt of f.options) {
+          const option = document.createElement("option");
+          option.value = opt;
+          option.textContent = opt;
+          input.appendChild(option);
+        }
+        input.value = values[f.key] || f.options[0];
+      } else {
+        input = document.createElement("input");
+        input.type = f.secret ? "password" : "text";
+        input.autocomplete = "off";
+        if (f.secret) {
+          // Mask-2: secret value never crosses the bridge. Empty input means
+          // "leave existing value alone" unless explicitly cleared via 삭제.
+          input.value = "";
+          input.placeholder = secretsSet[f.key]
+            ? "●●●●● [저장됨]"
+            : (SETTINGS_PLACEHOLDERS[f.key] || "");
+        } else {
+          input.value = values[f.key] || "";
+          input.placeholder = SETTINGS_PLACEHOLDERS[f.key] || "";
+        }
+      }
+      input.id = `set-${f.key}`;
+      input.name = f.key;
+      input.addEventListener("input", recomputeDirty);
+      input.addEventListener("change", recomputeDirty);
+
+      if (f.secret) {
+        const fieldRow = document.createElement("div");
+        fieldRow.className = "settings-field-row";
+        fieldRow.appendChild(input);
+
+        // Delete button: only visible when key is currently saved AND the
+        // input is empty (i.e. user has not started typing a replacement).
+        // This prevents an accidental click from blowing away unsaved input.
+        const delBtn = document.createElement("button");
+        delBtn.type = "button";
+        delBtn.className = "btn btn-ghost btn-sm settings-delete-btn";
+        delBtn.dataset.target = f.key;
+        delBtn.textContent = "삭제";
+        delBtn.hidden = !(secretsSet[f.key] && input.value === "");
+        delBtn.addEventListener("click", () => deleteSecret(f.key));
+        fieldRow.appendChild(delBtn);
+
+        // Re-evaluate delete button visibility on input.
+        input.addEventListener("input", () => {
+          delBtn.hidden = !(secretsSet[f.key] && input.value === "");
+        });
+
+        row.appendChild(fieldRow);
+      } else {
+        row.appendChild(input);
+      }
+
+      section.appendChild(row);
+    }
+    form.appendChild(section);
+  }
+
+  // Bottom action bar.
+  const actions = document.createElement("div");
+  actions.className = "settings-actions";
+  const saveBtn = document.createElement("button");
+  saveBtn.type = "submit";
+  saveBtn.className = "btn btn-primary";
+  saveBtn.id = "settings-save-btn";
+  saveBtn.textContent = "저장";
+  saveBtn.disabled = true;
+  actions.appendChild(saveBtn);
+  form.appendChild(actions);
+
+  // Snapshot for dirty diff.
+  settingsInitialValues = { ...values };
+  settingsInitialSecretsSet = { ...secretsSet };
+
+  // Initial provider visibility.
+  applyProviderVisibility(values.LLM_PROVIDER || "openai");
+  // Re-apply on provider change.
+  const provSelect = document.getElementById("set-LLM_PROVIDER");
+  if (provSelect) {
+    provSelect.addEventListener("change", () => applyProviderVisibility(provSelect.value));
+  }
+}
+
+function applyProviderVisibility(provider) {
+  const visible = new Set(PROVIDER_FIELD_MAP[provider] || []);
+  for (const key of ALL_PROVIDER_FIELDS) {
+    const row = document.querySelector(`.settings-field[data-key="${key}"]`);
+    if (row) row.hidden = !visible.has(key);
+  }
+}
+
+function recomputeDirty() {
+  const saveBtn = document.getElementById("settings-save-btn");
+  if (!saveBtn) return;
+  const patch = buildSettingsPatch();
+  saveBtn.disabled = Object.keys(patch).length === 0;
+}
+
+function buildSettingsPatch() {
+  // Only fields whose current input differs from snapshot enter the patch.
+  // Empty secret inputs are NOT included (means "keep existing"); explicit
+  // delete goes through the 삭제 button via deleteSecret().
+  // HUGGINGFACE_TOKEN sets dual-write HF_TOKEN companion.
+  const patch = {};
+  for (const [, fields] of SETTINGS_FIELD_GROUPS) {
+    for (const f of fields) {
+      const el = document.getElementById(`set-${f.key}`);
+      if (!el) continue;
+      const cur = el.value;
+      if (f.secret) {
+        if (cur !== "") {
+          patch[f.key] = cur;
+          if (f.key === "HUGGINGFACE_TOKEN") patch.HF_TOKEN = cur;  // dual-write
+        }
+      } else {
+        const initial = settingsInitialValues[f.key] || "";
+        if (cur !== initial) patch[f.key] = cur;
+      }
+    }
+  }
+  return patch;
+}
+
+async function loadSettings() {
+  if (settingsLoading) return;
+  settingsLoading = true;
+  const status = document.getElementById("settings-status");
+  status.classList.remove("error");
+  status.textContent = "";
+  try {
+    const resp = await callApi("get_settings");
+    if (!resp || resp.ok === false) {
+      const code = (resp && resp.code) || "SETTINGS_LOAD_FAILED";
+      const detail = (resp && resp.error) || "unknown";
+      status.classList.add("error");
+      status.textContent = humanizeError({ message: `${code}:${detail}` });
+      return;
+    }
+    buildSettingsForm(resp.values || {}, resp.secrets_set || {});
+    settingsLoaded = true;
+    document.getElementById("settings-form").addEventListener("submit", saveSettings);
+  } catch (e) {
+    console.error("[settings] load failed:", e);
+    status.classList.add("error");
+    status.textContent = humanizeError(e);
+  } finally {
+    settingsLoading = false;
+  }
+}
+
+async function saveSettings(e) {
+  e.preventDefault();
+  if (settingsSaving) return;
+  const patch = buildSettingsPatch();
+  if (Object.keys(patch).length === 0) return;
+  settingsSaving = true;
+  const status = document.getElementById("settings-status");
+  status.classList.remove("error");
+  status.textContent = "저장 중...";
+  try {
+    const resp = await callApi("save_settings", patch);
+    if (!resp || resp.ok === false) {
+      const code = (resp && resp.code) || "SETTINGS_SAVE_FAILED";
+      const detail = (resp && resp.error) || "unknown";
+      status.classList.add("error");
+      status.textContent = humanizeError({ message: `${code}:${detail}` });
+      toast(humanizeError({ message: `${code}:${detail}` }), "error");
+      return;
+    }
+    status.textContent = `저장됨 (${resp.changed} 항목 갱신)`;
+    toast(`설정 저장됨 (${resp.changed} 항목)`, "success");
+    // Reload to refresh secrets_set + reset dirty snapshot.
+    settingsLoaded = false;
+    await loadSettings();
+  } catch (err) {
+    console.error("[settings] save failed:", err);
+    status.classList.add("error");
+    status.textContent = humanizeError(err);
+    toast(humanizeError(err), "error");
+  } finally {
+    settingsSaving = false;
+  }
+}
+
+async function deleteSecret(envKey) {
+  const patch = { [envKey]: "" };
+  if (envKey === "HUGGINGFACE_TOKEN") patch.HF_TOKEN = "";  // dual-delete
+  if (settingsSaving) return;
+  settingsSaving = true;
+  const status = document.getElementById("settings-status");
+  status.classList.remove("error");
+  status.textContent = "삭제 중...";
+  try {
+    const resp = await callApi("save_settings", patch);
+    if (!resp || resp.ok === false) {
+      const code = (resp && resp.code) || "SETTINGS_SAVE_FAILED";
+      const detail = (resp && resp.error) || "unknown";
+      status.classList.add("error");
+      status.textContent = humanizeError({ message: `${code}:${detail}` });
+      toast(humanizeError({ message: `${code}:${detail}` }), "error");
+      return;
+    }
+    toast(`${envKey} 삭제됨`, "success");
+    settingsLoaded = false;
+    await loadSettings();
+  } catch (err) {
+    console.error("[settings] delete failed:", err);
+    status.classList.add("error");
+    status.textContent = humanizeError(err);
+    toast(humanizeError(err), "error");
+  } finally {
+    settingsSaving = false;
+  }
+}
+
+// Wire sidebar nav + refresh button. Script runs at end of <body> so DOM
+// is parsed; no DOMContentLoaded needed.
+document.querySelectorAll(".nav-item[data-route]").forEach((el) => {
+  el.addEventListener("click", () => switchRoute(el.dataset.route));
+});
+document.getElementById("history-refresh-btn").addEventListener("click", loadHistory);
+
+/* ========================================================================
+   '생성하기' 버튼 — 파이프라인 시작
+   URL 입력창과 local file badge 는 상호 배타 (setSelectedFile 이 유지).
+   ======================================================================== */
+document.getElementById("run-btn").addEventListener("click", async () => {
+  // Source resolution: local takes precedence over URL (mutual exclusion
+  // is already enforced in setSelectedFile / input handler, but be explicit).
+  let source;
+  if (selectedLocalPath) {
+    source = {
+      kind: "local",
+      value: selectedLocalPath,
+      engine: segState.stt,
+      provider: segState.llm,
+    };
+  } else {
+    const raw = urlInput.value.trim();
+    if (!raw) {
+      // Should not happen — button is disabled when both empty. Defensive.
+      toast("유튜브 URL 또는 로컬 파일을 먼저 선택해주세요.", "warning");
+      return;
+    }
+    source = {
+      kind: "youtube",
+      value: raw,
+      engine: segState.stt,
+      provider: segState.llm,
+    };
+  }
+
+  // A fresh run invalidates the previously saved result — hide the save
+  // button so ⌘S can't write stale markdown while the new run is in flight.
+  // Also drop any "히스토리 재열람" badge the user may have left visible.
+  currentResult = null;
+  document.getElementById("save-result-btn").hidden = true;
+  document.getElementById("result-mode-badge").hidden = true;
+
+  resetProgressUI();
+  setUIRunning(true);
+
+  try {
+    const result = await callApi("start_pipeline", source);
+    currentJobId = result.job_id;
+    console.info("[pipeline] started:", currentJobId);
+  } catch (e) {
+    console.error("[start_pipeline] error:", e);
+    toast(humanizeError(e), "error");
+    setUIRunning(false);
+    currentJobId = null;
+  }
+});
+
+/* ========================================================================
+   '중지' 버튼 — 실행 중 작업에 stop_event set
+   ======================================================================== */
+document.getElementById("stop-btn").addEventListener("click", async () => {
+  if (!currentJobId) return;
+  try {
+    await callApi("stop_pipeline", currentJobId);
+    toast("중지 요청을 보냈습니다.");
+  } catch (e) {
+    console.error("[stop_pipeline] error:", e);
+    toast(humanizeError(e), "error");
+  }
+});
+
+/* ========================================================================
+   Event bus 구독 — 백엔드 push 진행률 / 로그 / 결과
+   ======================================================================== */
+window.bus.addEventListener("progress", (e) => {
+  const pct = e.detail && e.detail.pct;
+  if (typeof pct === "number") updateStepIndicator(pct);
+});
+
+window.bus.addEventListener("log", (e) => {
+  const line = e.detail && e.detail.line;
+  if (line) appendLogLine(line);
+});
+
+window.bus.addEventListener("log_batch", (e) => {
+  const lines = e.detail && e.detail.lines;
+  if (Array.isArray(lines)) {
+    for (const line of lines) appendLogLine(line);
+  }
+});
+
+window.bus.addEventListener("stage_change", (e) => {
+  console.log("[stage_change]", e.detail);
+});
+
+window.bus.addEventListener("result", (e) => {
+  const payload = e.detail || {};
+  setUIRunning(false);
+  currentJobId = null;
+  if (!payload.ok) {
+    currentResult = null;
+    document.getElementById("save-result-btn").hidden = true;
+    document.getElementById("result-mode-badge").hidden = true;
+    toast(`파이프라인 실패: ${payload.error || "알 수 없는 오류"}`, "error");
+    return;
+  }
+  updateStepIndicator(1.0);
+  renderResult(payload);
+  // Live pipeline result supersedes any prior "히스토리 재열람" state.
+  document.getElementById("result-mode-badge").hidden = true;
+  // Retain only the fields needed by save-as — avoids holding full_html
+  // (large; DOM already owns it).
+  currentResult = {
+    full_md: payload.full_md || "",
+    video_title: payload.video_title || "",
+    autosave_path: payload.autosave_path || null,
+  };
+  document.getElementById("save-result-btn").hidden = !currentResult.full_md;
+  toast("생성 완료", "success");
+});
+
+/* ========================================================================
+   Save-as — button + ⌘S / Ctrl+S keyboard shortcut
+   ======================================================================== */
+async function saveResultAs() {
+  if (!currentResult || !currentResult.full_md) {
+    // Shortcut fired before any result existed — silent no-op.
+    return;
+  }
+  const defaultFilename = deriveDefaultFilename(currentResult);
+  let resp;
+  try {
+    resp = await callApi("save_result_as", currentResult.full_md, defaultFilename);
+  } catch (e) {
+    console.error("[save_result_as] error:", e);
+    toast(`저장 실패: ${humanizeError(e)}`, "error");
+    return;
+  }
+  if (!resp || resp.cancelled) {
+    // User dismissed the native dialog — per spec, no toast on cancel.
+    return;
+  }
+  if (resp.ok === false) {
+    toast(`저장 실패: ${resp.error || "알 수 없는 오류"}`, "error");
+    return;
+  }
+  const name = basenameOf(resp.path) || resp.path;
+  toast(`${name} 로 저장됨`, "success");
+}
+
+document.getElementById("save-result-btn").addEventListener("click", saveResultAs);
+
+// ⌘S on macOS, Ctrl+S elsewhere. pywebview has no default "save page" action
+// so overriding is safe, but we still call preventDefault() defensively.
+document.addEventListener("keydown", (e) => {
+  const isSaveCombo =
+    (e.metaKey || e.ctrlKey) &&
+    !e.altKey &&
+    !e.shiftKey &&
+    (e.key === "s" || e.key === "S");
+  if (!isSaveCombo) return;
+  // Only act when a result is available — otherwise let the event pass through
+  // so focused inputs (URL field) don't see their key-combos intercepted.
+  if (!currentResult || !currentResult.full_md) return;
+  // Even with a result rendered, don't hijack ⌘S while the user is typing in
+  // the URL field (or a future contenteditable surface) — keeps text-entry UX
+  // predictable when a prior result lingers on screen.
+  const t = e.target;
+  const tag = t && t.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA" || (t && t.isContentEditable)) return;
+  e.preventDefault();
+  saveResultAs();
+});
+
+console.info("[GuruNote WebView] Phase 1-B loaded. Pipeline wiring active.");
+</script>
+
+</body>
+</html>

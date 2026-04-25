@@ -63,7 +63,8 @@ def main() -> int:
         width=1280,
         height=820,
         min_size=(960, 600),
-        # frameless=False, easy_drag=False — keep native window chrome on macOS
+        frameless=True,
+        easy_drag=False,
     )
     api.bind_window(window)
 

@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<!-- SPDX-License-Identifier: Elastic-2.0 -->
+<!-- Copyright (c) 2026 GuruNote contributors. -->
+<!--
+  Phase 2A Commit 3a Step 3a-1 — pywebview + React + bridge smoketest.
+  기존 index.html (Phase 1-C UI) 와 별도. Material 3 디자인 전환 직전,
+  vendor 자산 / Babel JSX 변환 / pywebview API 노출 호환성 확인용.
+-->
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title>GuruNote — React Smoketest</title>
+  <script src="vendor/react.production.min.js"></script>
+  <script src="vendor/react-dom.production.min.js"></script>
+  <script src="vendor/babel.min.js"></script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; padding: 40px; line-height: 1.5; }
+    .ok { color: #1e7e34; }
+    .fail { color: #b00020; }
+    code { background: #f3f4f6; padding: 1px 6px; border-radius: 4px; font-size: 13px; }
+    ul { columns: 2; max-width: 600px; }
+    li { font-family: ui-monospace, Menlo, monospace; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    function SmokeTest() {
+      const [reactVer, setReactVer] = useState('?');
+      const [bridgeReady, setBridgeReady] = useState(false);
+      const [bridgeMethods, setBridgeMethods] = useState([]);
+
+      useEffect(() => {
+        setReactVer(React.version);
+        const checkBridge = () => {
+          if (window.pywebview?.api) {
+            setBridgeReady(true);
+            const methods = Object.keys(window.pywebview.api)
+              .filter((m) => !m.startsWith('_'))
+              .sort();
+            setBridgeMethods(methods);
+          }
+        };
+        checkBridge();
+        window.addEventListener('pywebviewready', checkBridge);
+        return () => window.removeEventListener('pywebviewready', checkBridge);
+      }, []);
+
+      return (
+        <div>
+          <h1>GuruNote React Smoketest</h1>
+          <p className="ok">✓ React 버전: <code>{reactVer}</code></p>
+          <p className="ok">✓ Babel JSX 변환 정상</p>
+          <p className={bridgeReady ? 'ok' : 'fail'}>
+            {bridgeReady ? '✓' : '✗'} Bridge ready: <code>{String(bridgeReady)}</code>
+          </p>
+          <p>Bridge 메서드 ({bridgeMethods.length}개):</p>
+          <ul>
+            {bridgeMethods.map((m) => <li key={m}>{m}</li>)}
+          </ul>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<SmokeTest />);
+  </script>
+</body>
+</html>

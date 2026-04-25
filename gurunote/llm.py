@@ -393,6 +393,7 @@ def translate_transcript(
     config: Optional[LLMConfig] = None,
     progress: Optional[ProgressFn] = None,
     video_context: Optional[dict] = None,
+    stop_event=None,  # threading.Event — chunk 사이 polling
 ) -> str:
     """
     Transcript → 한국어로 번역된 스크립트 (문자열).
@@ -404,6 +405,9 @@ def translate_transcript(
         progress: 진행 콜백
         video_context: YouTube 메타데이터 dict (AudioDownloadResult.to_context_dict()
             형태). 제공되면 LLM 의 화자 이름 추론과 챕터 유지에 활용된다.
+        stop_event: threading.Event — set 되면 청크 사이에 RuntimeError raise.
+            gui.PipelineWorker._stop_event 와 같은 인스턴스를 넘겨 사용자
+            중지 요청을 단계 내부에서 catch.
     """
     log = progress or (lambda _msg: None)
     config = config or LLMConfig.from_env()
@@ -417,6 +421,8 @@ def translate_transcript(
 
     translated_parts: List[str] = []
     for i, chunk in enumerate(chunks, start=1):
+        if stop_event is not None and stop_event.is_set():
+            raise RuntimeError("사용자가 작업 중지를 요청했습니다.")
         # 청크 간 쿨다운 — API Rate Limit 방지 (첫 청크는 건너뜀)
         if i > 1:
             time.sleep(CHUNK_DELAY_SEC)
@@ -451,6 +457,7 @@ def summarize_translation(
     config: Optional[LLMConfig] = None,
     progress: Optional[ProgressFn] = None,
     video_context: Optional[dict] = None,
+    stop_event=None,  # threading.Event — partial 사이 polling
 ) -> str:
     """
     번역본 → 마크다운 요약 (영상 제목/인사이트/타임라인 섹션).
@@ -458,9 +465,16 @@ def summarize_translation(
 
     video_context 가 제공되면 공식 챕터 목록을 타임라인 섹션의 뼈대로
     사용하도록 LLM 에 주입한다.
+
+    stop_event: threading.Event — set 되면 partial 요약 사이 / 최종 통합 직전에
+    RuntimeError raise. translate_transcript 와 같은 패턴.
     """
     log = progress or (lambda _msg: None)
     config = config or LLMConfig.from_env()
+
+    def _check_stop() -> None:
+        if stop_event is not None and stop_event.is_set():
+            raise RuntimeError("사용자가 작업 중지를 요청했습니다.")
 
     system = SUMMARY_SYSTEM_PROMPT.format(title=title)
     context_block = build_video_context_block(video_context)
@@ -479,6 +493,7 @@ def summarize_translation(
         size = 0
         for p in paragraphs:
             if size + len(p) > DEFAULT_CHUNK_CHAR_LIMIT and buf:
+                _check_stop()
                 partial = _call_llm(
                     config,
                     system=system,
@@ -492,6 +507,7 @@ def summarize_translation(
             buf.append(p)
             size += len(p)
         if buf:
+            _check_stop()
             partials.append(
                 _call_llm(
                     config,
@@ -506,6 +522,7 @@ def summarize_translation(
             "최종 요약본을 한 번 더 정리해 줘.\n\n" + "\n\n---\n\n".join(partials)
         )
         log("📝 부분 요약 통합 중…")
+        _check_stop()
         return _call_llm(
             config,
             system=system,
@@ -514,6 +531,7 @@ def summarize_translation(
         ).strip()
 
     log("📝 GuruNote 요약본 생성 중…")
+    _check_stop()
     return _call_llm(
         config,
         system=system,

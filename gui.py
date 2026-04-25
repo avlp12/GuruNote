@@ -284,6 +284,7 @@ class PipelineWorker:
             translated = translate_transcript(
                 transcript, config=llm_cfg, progress=self._log,
                 video_context=video_ctx,
+                stop_event=self._stop_event,
             )
             self._log(f"[Step 3] OK: 번역 완료 ({len(translated):,} chars)")
             self._set_progress(0.78)
@@ -296,6 +297,7 @@ class PipelineWorker:
                 config=llm_cfg,
                 progress=self._log,
                 video_context=video_ctx,
+                stop_event=self._stop_event,
             )
             self._log("[Step 4] OK: 요약 완료")
             self._set_progress(0.88)

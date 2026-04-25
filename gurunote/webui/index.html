@@ -712,6 +712,14 @@ input { font: inherit; }
 .hidden { display: none !important; }
 .muted { color: var(--gn-text-dim); }
 </style>
+
+<!-- Phase 2A Step 3a-2: Material 3 styles + React vendor (옵션 A 점진적). -->
+<!-- 이 시점에선 vanilla UI 와 공존만 — display:none 인 #react-overlay 가 React mount 검증용. -->
+<!-- Step 3a-3 부터 sidebar 등 컴포넌트 단위로 vanilla → React 교체. -->
+<link rel="stylesheet" href="styles/material3.css" />
+<script src="vendor/react.production.min.js"></script>
+<script src="vendor/react-dom.production.min.js"></script>
+<script src="vendor/babel.min.js"></script>
 </head>
 <body>
 
@@ -2006,7 +2014,7 @@ document.getElementById("stop-btn").addEventListener("click", async () => {
   if (!currentJobId) return;
   try {
     await callApi("stop_pipeline", currentJobId);
-    toast("중지 요청을 보냈습니다.");
+    toast("중지 요청을 보냈습니다. 현재 단계가 끝나면 중지됩니다.");
   } catch (e) {
     console.error("[stop_pipeline] error:", e);
     toast(humanizeError(e), "error");
@@ -2117,6 +2125,42 @@ document.addEventListener("keydown", (e) => {
 });
 
 console.info("[GuruNote WebView] Phase 1-B loaded. Pipeline wiring active.");
+</script>
+
+<!-- Phase 2A Step 3a-2: React mount sanity (display:none — Step 3a-3 부터 visible UI 로 교체). -->
+<div id="react-overlay" style="display: none"></div>
+<script type="text/babel">
+  (function () {
+    const { useState, useEffect } = React;
+    function ShellTest() {
+      const [phase] = useState('Step 3a-2 작동 중');
+      const [appInfo, setAppInfo] = useState(null);
+      useEffect(() => {
+        const check = async () => {
+          if (window.pywebview?.api?.get_app_info) {
+            try {
+              const info = await window.pywebview.api.get_app_info();
+              setAppInfo(info);
+              console.info('[GuruNote WebView] React shell — get_app_info OK:', info);
+            } catch (e) {
+              console.warn('[GuruNote WebView] React shell — get_app_info failed:', e);
+            }
+          }
+        };
+        check();
+        window.addEventListener('pywebviewready', check);
+        return () => window.removeEventListener('pywebviewready', check);
+      }, []);
+      return (
+        <div>
+          <div>{phase}</div>
+          <pre>{JSON.stringify(appInfo, null, 2)}</pre>
+        </div>
+      );
+    }
+    const mount = document.getElementById('react-overlay');
+    if (mount) ReactDOM.createRoot(mount).render(<ShellTest />);
+  })();
 </script>
 
 </body>

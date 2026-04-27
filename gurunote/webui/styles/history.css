@@ -199,3 +199,87 @@
   border: 1px dashed var(--gn-border-subtle);
   border-radius: var(--r-md);
 }
+
+/* === Phase 2B-3b: 검색 바 + 필터 chips === */
+.history-toolbar {
+  flex-wrap: wrap;
+}
+
+.search-box {
+  position: relative;
+  flex: 1;
+  min-width: 280px;
+  max-width: 480px;
+}
+.search-box__icon {
+  position: absolute;
+  left: var(--sp-3);
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--gn-on-surface-muted);
+  pointer-events: none;
+  font-size: 18px;
+}
+.search-box__input {
+  width: 100%;
+  height: 40px;
+  padding: 0 var(--sp-5) 0 calc(var(--sp-5) + 16px);
+  border: 1px solid var(--gn-border);
+  border-radius: var(--r-pill);
+  background: var(--gn-surface);
+  font-size: 13px;
+  outline: none;
+  transition: border-color 100ms;
+}
+.search-box__input:focus { border-color: var(--gn-primary); }
+.search-box__clear {
+  position: absolute;
+  right: var(--sp-2);
+  top: 50%;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  color: var(--gn-on-surface-muted);
+}
+.search-box__clear:hover {
+  background: var(--gn-surface-container);
+  color: var(--gn-on-surface);
+}
+
+.filter-chips {
+  display: flex;
+  gap: var(--sp-2);
+}
+.filter-chip {
+  padding: 6px 12px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--gn-border);
+  background: var(--gn-surface);
+  color: var(--gn-on-surface-muted);
+  font-size: 12px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.filter-chip:hover {
+  background: var(--gn-surface-container);
+  color: var(--gn-on-surface);
+}
+.filter-chip--active {
+  background: var(--gn-primary-soft);
+  color: var(--gn-primary);
+  border-color: var(--gn-primary);
+}
+.filter-chip__icon { font-size: 14px; }
+
+.history-result-meta {
+  font-size: 12px;
+  color: var(--gn-on-surface-muted);
+  margin-bottom: var(--sp-2);
+}
+.history-result-meta b { color: var(--gn-on-surface); font-weight: 600; }

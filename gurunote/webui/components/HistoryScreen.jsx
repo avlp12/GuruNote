@@ -10,7 +10,29 @@
  * Phase 2B-3b/c/d 에서 검색/필터/정렬/facet 추가.
  */
 
-const { useState, useEffect } = React;
+const { useState, useEffect, useMemo } = React;
+
+/* === Search helpers (Phase 2B-3b) === */
+function useDebounced(value, delay) {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+  useEffect(() => {
+    const id = setTimeout(() => setDebouncedValue(value), delay);
+    return () => clearTimeout(id);
+  }, [value, delay]);
+  return debouncedValue;
+}
+
+function filterItems(items, term) {
+  if (!term) return items;
+  const t = term.toLowerCase().trim();
+  if (!t) return items;
+  return items.filter((item) => {
+    const title = (item.organized_title || item.title || '').toLowerCase();
+    const uploader = (item.uploader || '').toLowerCase();
+    const tags = (item.tags || []).join(' ').toLowerCase();
+    return title.includes(t) || uploader.includes(t) || tags.includes(t);
+  });
+}
 
 const STATUS_BADGE = {
   completed: { label: '완료',    cls: 'job-card__badge--success' },
@@ -107,6 +129,21 @@ function HistoryScreen() {
 
   useEffect(() => { loadHistory(); }, []);
 
+  // Phase 2B-3b: 검색 + chips state
+  const [searchInput, setSearchInput] = useState('');
+  const debouncedSearch = useDebounced(searchInput, 150);
+  const filteredItems = useMemo(
+    () => filterItems(items, debouncedSearch),
+    [items, debouncedSearch]
+  );
+
+  const handleChipClick = (chip) => {
+    // Phase 2B-3 후속에서 backend wiring (markdown body / embedding 의미 검색).
+    if (window.showToast) {
+      window.showToast(`${chip} 검색은 Phase 2B-3 후속에서 활성화됩니다.`);
+    }
+  };
+
   const handleCardClick = (item) => {
     // Phase 2B-3d / 2B-4 에서 detail view 또는 EditorScreen 으로 이동.
     console.log('[JobCard click]', item.job_id, item.organized_title || item.title);
@@ -126,7 +163,47 @@ function HistoryScreen() {
       </div>
 
       <div className="history-toolbar">
-        {/* Phase 2B-3b: 검색 바, 필터 chips */}
+        <div className="search-box">
+          <span className="msi search-box__icon">search</span>
+          <input
+            type="text"
+            className="search-box__input"
+            placeholder="제목 / 업로더 / 태그 검색..."
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            autoComplete="off"
+          />
+          {searchInput && (
+            <button
+              type="button"
+              className="search-box__clear"
+              onClick={() => setSearchInput('')}
+              aria-label="검색어 비우기"
+            >
+              <span className="msi" style={{ fontSize: 18 }}>close</span>
+            </button>
+          )}
+        </div>
+
+        <div className="filter-chips">
+          <button
+            type="button"
+            className="filter-chip"
+            onClick={() => handleChipClick('본문 포함')}
+          >
+            <span className="filter-chip__icon msi">description</span>
+            본문 포함
+          </button>
+          <button
+            type="button"
+            className="filter-chip"
+            onClick={() => handleChipClick('의미 검색')}
+          >
+            <span className="filter-chip__icon msi">psychology</span>
+            의미 검색
+          </button>
+        </div>
+
         {/* Phase 2B-3c: 정렬 dropdown */}
         <button
           type="button"
@@ -138,6 +215,12 @@ function HistoryScreen() {
           새로고침
         </button>
       </div>
+
+      {debouncedSearch && (
+        <div className="history-result-meta">
+          "<b>{debouncedSearch}</b>" 검색 결과 <b>{filteredItems.length}</b>개 · 전체 {items.length}개
+        </div>
+      )}
 
       {error && (
         <div className="history-empty" style={{ borderColor: 'var(--gn-danger)', color: 'var(--gn-danger)' }}>
@@ -152,9 +235,15 @@ function HistoryScreen() {
         </div>
       )}
 
-      {!loading && items.length > 0 && (
+      {!loading && !error && items.length > 0 && debouncedSearch && filteredItems.length === 0 && (
+        <div className="history-empty">
+          "{debouncedSearch}" 에 해당하는 노트가 없습니다.
+        </div>
+      )}
+
+      {!loading && filteredItems.length > 0 && (
         <div className="job-grid">
-          {items.map(item => (
+          {filteredItems.map(item => (
             <JobCard key={item.job_id} item={item} onClick={handleCardClick} />
           ))}
         </div>

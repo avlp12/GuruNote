@@ -147,7 +147,10 @@ class Api:
             webview.OPEN_DIALOG,
             allow_multiple=False,
             file_types=(
-                "Audio/Video (*.mp3;*.wav;*.flac;*.m4a;*.aac;*.ogg;*.wma;*.opus;"
+                # pywebview 4.x label regex `[\w ]+` rejects '/' — keep label
+                # ASCII word chars + spaces only. See webview/util.py
+                # parse_file_type → "is not a valid file filter" otherwise.
+                "Audio Video Files (*.mp3;*.wav;*.flac;*.m4a;*.aac;*.ogg;*.wma;*.opus;"
                 "*.mp4;*.mkv;*.avi;*.mov;*.webm;*.wmv;*.flv;*.ts;*.m4v)",
                 "All files (*.*)",
             ),

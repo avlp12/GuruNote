@@ -2,7 +2,7 @@
 <!-- SPDX-License-Identifier: Elastic-2.0
      Copyright (c) 2026 GuruNote contributors.
 
-     Phase 2B-1: Sidebar + App + 5 화면 placeholder.
+     Phase 2B-2: MainScreen + Sidebar + 4 화면 placeholder.
      컴포넌트: gurunote/webui/components/ (우리 코드, cp 아님)
      디자인 reference: docs/design/v2-reference.html (시각적 참고용)
 -->
@@ -14,6 +14,7 @@
 
   <link rel="stylesheet" href="styles/base.css">
   <link rel="stylesheet" href="styles/sidebar.css">
+  <link rel="stylesheet" href="styles/main.css">
 
   <script src="vendor/react.production.min.js"></script>
   <script src="vendor/react-dom.production.min.js"></script>
@@ -22,8 +23,9 @@
 <body>
   <div id="root"></div>
 
-  <!-- Component scripts: order matters (Sidebar → App) -->
+  <!-- Component scripts: order matters (Sidebar → MainScreen → App) -->
   <script type="text/babel" src="components/Sidebar.jsx"></script>
+  <script type="text/babel" src="components/MainScreen.jsx"></script>
   <script type="text/babel" src="components/App.jsx"></script>
 
   <script type="text/babel">

@@ -140,13 +140,16 @@
 
 .sidebar__spacer { flex: 1; }
 
-/* === Main area (5 화면 placeholder 자리) === */
+/* === Main area (각 화면이 자체 layout 처리) === */
 .app-main {
   height: 100vh;
-  overflow-y: auto;
+  overflow: hidden;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
+}
+/* placeholder 화면 (Phase 2B-3/2B-4) 만 center align */
+.app-main > .screen-placeholder {
+  margin: auto;
 }
 .screen-placeholder {
   text-align: center;

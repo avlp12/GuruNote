@@ -22,6 +22,8 @@ failure as a placeholder. Final shape will be settled before broad wiring.
 from __future__ import annotations
 
 import platform
+import re
+from pathlib import Path
 from typing import Any, Optional
 
 # pywebview is imported lazily inside methods that need it so that this module
@@ -69,6 +71,34 @@ _SECRET_KEYS: frozenset[str] = frozenset({
     "HUGGINGFACE_TOKEN",
     "NOTION_TOKEN",
 })
+
+
+# === thumbnail enrichment helpers (Phase 2B-3) ===
+
+_YT_VIDEO_ID = re.compile(r"(?:v=|youtu\.be/|shorts/|embed/)([a-zA-Z0-9_-]{11})")
+
+
+def _extract_youtube_video_id(url: Optional[str]) -> Optional[str]:
+    """YouTube URL 에서 11-char video ID 추출. 비-YouTube URL → None."""
+    if not url:
+        return None
+    m = _YT_VIDEO_ID.search(url)
+    return m.group(1) if m else None
+
+
+def _resolve_thumbnail_url(video_id: Optional[str]) -> Optional[str]:
+    """video_id 기반 thumbnail URL.
+
+    1순위: ``~/.gurunote/thumbnails/{video_id}.jpg`` cached → ``file://`` URI
+    2순위: ``https://img.youtube.com/vi/{video_id}/hqdefault.jpg``
+    None 입력 → None
+    """
+    if not video_id:
+        return None
+    cached = Path.home() / ".gurunote" / "thumbnails" / f"{video_id}.jpg"
+    if cached.exists():
+        return cached.as_uri()
+    return f"https://img.youtube.com/vi/{video_id}/hqdefault.jpg"
 
 
 class Api:
@@ -351,15 +381,41 @@ class Api:
 
     # ============================================================ history (TODO)
 
-    def list_history(self, limit: Optional[int] = None, offset: int = 0) -> dict:
+    def list_history(self, payload: Any = None, *, limit: Optional[int] = None, offset: int = 0) -> dict:
         """Return a slice of the history index.
 
         Backed by ``gurunote.history.load_index`` — the same store that the
         legacy CTk/Streamlit UIs read. WebView pipeline runs land here too
         because ``gui.PipelineWorker`` already calls ``save_job`` on
         completion (success and failure paths).
+
+        Phase 2B-3: each item is enriched with ``video_id`` + ``thumbnail_url``
+        so the React JobCard can render thumbnails without round-tripping
+        again. Resolution priority: cached ``~/.gurunote/thumbnails/`` →
+        YouTube hqdefault → ``None`` (front-end gradient fallback).
+
+        Calling conventions (pywebview 4.x JS bridge marshals JS args
+        positionally, so a JS object becomes a single positional dict):
+
+          - JS:     ``api.list_history({limit: 100, offset: 0})``
+          - JS:     ``api.list_history()``
+          - Python: ``api.list_history(limit=100)``  (kwarg form preserved)
         """
         from gurunote.history import load_index  # noqa: PLC0415
+
+        # Normalize JS-style ``{limit, offset}`` payload, while preserving the
+        # original keyword-only form that Python callers may use.
+        if isinstance(payload, dict):
+            limit = payload.get("limit", limit)
+            offset = payload.get("offset", offset)
+        elif isinstance(payload, int):
+            # Legacy positional ``api.list_history(100)``.
+            limit = payload
+        # Type guards — protect against malformed JS values reaching slice().
+        if not isinstance(offset, int):
+            offset = 0
+        if limit is not None and not isinstance(limit, int):
+            limit = None
 
         try:
             items = load_index()
@@ -368,6 +424,10 @@ class Api:
                 items = items[offset:]
             if limit is not None:
                 items = items[:limit]
+            for item in items:
+                video_id = _extract_youtube_video_id(item.get("source_url"))
+                item["video_id"] = video_id
+                item["thumbnail_url"] = _resolve_thumbnail_url(video_id)
             return {"ok": True, "total": total, "items": items}
         except Exception as exc:  # noqa: BLE001
             return self._err("HISTORY_LIST_FAILED", f"{type(exc).__name__}: {exc}")

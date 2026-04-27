@@ -52,7 +52,11 @@ function App() {
       <div className="app-shell">
         <Sidebar route={route} onNavigate={setRoute} version={version} />
         <main className="app-main">
-          {route === 'main' ? <MainScreen /> : <ScreenPlaceholder route={route} />}
+          {
+            route === 'main'    ? <MainScreen /> :
+            route === 'history' ? <HistoryScreen /> :
+            <ScreenPlaceholder route={route} />
+          }
         </main>
       </div>
       <div id="toast-container" className="toast-container" />

@@ -2,99 +2,33 @@
 <!-- SPDX-License-Identifier: Elastic-2.0
      Copyright (c) 2026 GuruNote contributors.
 
-     Phase 2B 신축 baseline.
-     Phase 1-C vanilla 폐기 (docs/legacy/phase1c/index.html 에 archive).
-     레퍼런스: docs/design/v2-reference.html
-     컴포넌트 자산: docs/design/extracted/
-
-     This is a placeholder shell. Step 2B-1 builds Sidebar + App + ROUTES on top.
+     Phase 2B-1: Sidebar + App + 5 화면 placeholder.
+     컴포넌트: gurunote/webui/components/ (우리 코드, cp 아님)
+     디자인 reference: docs/design/v2-reference.html (시각적 참고용)
 -->
 <html lang="ko">
 <head>
   <meta charset="utf-8">
-  <title>GuruNote — 데스크탑 앱</title>
+  <title>GuruNote</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
-  <!-- material3 CSS — Step 2B 진행하며 cleanup -->
-  <link rel="stylesheet" href="styles/material3.css">
+  <link rel="stylesheet" href="styles/base.css">
+  <link rel="stylesheet" href="styles/sidebar.css">
 
-  <!-- React + ReactDOM + Babel (vendor) -->
   <script src="vendor/react.production.min.js"></script>
   <script src="vendor/react-dom.production.min.js"></script>
   <script src="vendor/babel.min.js"></script>
-
-  <style>
-    /* Phase 2B-0 임시 baseline. Step 2B-1 부터 material3.css 가 본격 적용. */
-    html, body {
-      margin: 0; padding: 0;
-      height: 100vh;
-      overflow: hidden;
-      font-family: -apple-system, BlinkMacSystemFont, "Pretendard", system-ui, sans-serif;
-      background: #f8fafd;
-      color: #1a1c1e;
-    }
-    #root {
-      height: 100vh;
-      width: 100vw;
-    }
-    .baseline-placeholder {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      height: 100vh;
-      flex-direction: column;
-      gap: 16px;
-      color: #666;
-    }
-    .baseline-placeholder h1 { margin: 0; font-size: 20px; font-weight: 600; }
-    .baseline-placeholder p { margin: 0; font-size: 14px; }
-  </style>
 </head>
 <body>
   <div id="root"></div>
 
+  <!-- Component scripts: order matters (Sidebar → App) -->
+  <script type="text/babel" src="components/Sidebar.jsx"></script>
+  <script type="text/babel" src="components/App.jsx"></script>
+
   <script type="text/babel">
-    /* Phase 2B-0 baseline — Step 2B-1 에서 Sidebar + App + ROUTES 로 교체 */
-    function BaselineApp() {
-      const [info, setInfo] = React.useState(null);
-      const [error, setError] = React.useState(null);
-
-      React.useEffect(() => {
-        const probe = async () => {
-          while (!window.pywebview?.api) {
-            await new Promise(r => setTimeout(r, 50));
-          }
-          try {
-            const result = await window.pywebview.api.get_app_info();
-            setInfo(result);
-          } catch (e) {
-            setError(String(e));
-          }
-        };
-        probe();
-      }, []);
-
-      return (
-        <div className="baseline-placeholder">
-          <h1>GuruNote — Phase 2B 신축 baseline</h1>
-          <p>Step 2B-0: clean React app baseline ready.</p>
-          {info && (
-            <p style={{ fontSize: 12, color: '#888' }}>
-              bridge OK · version {info.version || '?'} · {info.platform || '?'} · {info.machine || '?'}
-            </p>
-          )}
-          {error && (
-            <p style={{ color: '#b00020', fontSize: 12 }}>bridge probe error: {error}</p>
-          )}
-          <p style={{ fontSize: 12, color: '#888' }}>
-            Next: Step 2B-1 — Sidebar + App + 5-screen routes
-          </p>
-        </div>
-      );
-    }
-
     const root = ReactDOM.createRoot(document.getElementById('root'));
-    root.render(<BaselineApp />);
+    root.render(<App />);
   </script>
 </body>
 </html>

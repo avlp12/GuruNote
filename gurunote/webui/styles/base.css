@@ -1,0 +1,112 @@
+/* SPDX-License-Identifier: Elastic-2.0
+ * Copyright (c) 2026 GuruNote contributors.
+ *
+ * Phase 2B-1: GuruNote design tokens + 폰트 + 기본 reset.
+ * 의도: Material 3 라이트 테마 spec 을 우리 디자인 토큰으로 정리.
+ *       Phase 2B 진행하며 step 별로 필요한 selector 만 추가.
+ */
+
+/* === 폰트 === */
+@font-face {
+  font-family: "Pretendard Variable";
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+  src: url("../vendor/fonts/Pretendard-Variable.woff2") format("woff2-variations");
+}
+
+@font-face {
+  font-family: "Material Symbols Outlined";
+  font-weight: 100 700;
+  font-style: normal;
+  font-display: block;  /* swap 하지 않음 — ligature 가 텍스트로 깜빡이는 거 방지 */
+  src: url("../vendor/fonts/MaterialSymbolsOutlined.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+  src: url("../vendor/fonts/JetBrainsMono.woff2") format("woff2");
+}
+
+/* === 디자인 토큰 (라이트 테마) === */
+:root {
+  /* Surface */
+  --gn-bg: #f8fafd;              /* 앱 배경 */
+  --gn-surface: #ffffff;         /* 카드 / sidebar 표면 */
+  --gn-surface-container: #f1f3f9;
+  --gn-on-surface: #1a1c1e;      /* 일반 텍스트 */
+  --gn-on-surface-muted: #6b7280;
+
+  /* Primary (Material 3 blue) */
+  --gn-primary: #1a73e8;
+  --gn-primary-hover: #1967d2;
+  --gn-primary-soft: #e8f0fe;
+  --gn-on-primary: #ffffff;
+
+  /* Border */
+  --gn-border: #dadce0;
+  --gn-border-subtle: #e8eaed;
+
+  /* Status */
+  --gn-success: #1e7e34;
+  --gn-warning: #b06000;
+  --gn-danger: #b00020;
+
+  /* Spacing */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+
+  /* Radius */
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-pill: 9999px;
+
+  /* Sidebar */
+  --sidebar-w: 260px;
+
+  /* Fonts */
+  --font-sans: "Pretendard Variable", -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", Menlo, Monaco, Consolas, monospace;
+}
+
+/* === Reset === */
+*, *::before, *::after { box-sizing: border-box; }
+html, body, #root { margin: 0; padding: 0; }
+html, body {
+  height: 100vh;
+  overflow: hidden;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--gn-on-surface);
+  background: var(--gn-bg);
+  -webkit-font-smoothing: antialiased;
+}
+button { font: inherit; cursor: pointer; border: none; background: none; padding: 0; color: inherit; }
+input, select, textarea { font: inherit; }
+a { color: inherit; text-decoration: none; }
+
+/* === Material Symbols Outlined ligature === */
+.msi {
+  font-family: "Material Symbols Outlined";
+  font-weight: normal;
+  font-style: normal;
+  font-size: 20px;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-feature-settings: "liga";
+  -webkit-font-smoothing: antialiased;
+  font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 24;
+}

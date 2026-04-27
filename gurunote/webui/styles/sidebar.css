@@ -1,0 +1,165 @@
+/* SPDX-License-Identifier: Elastic-2.0
+ * Copyright (c) 2026 GuruNote contributors.
+ *
+ * Phase 2B-1: Sidebar — 우리 코드 (cp 아님).
+ * 디자인 spec: docs/design/v2-reference.html 의 .gn-sidebar 시각 부분만 참고.
+ */
+
+.app-shell {
+  display: grid;
+  grid-template-columns: var(--sidebar-w) 1fr;
+  height: 100vh;
+  background: var(--gn-bg);
+}
+
+.sidebar {
+  background: var(--gn-surface);
+  border-right: 1px solid var(--gn-border-subtle);
+  padding: var(--sp-4) var(--sp-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  overflow-y: auto;
+}
+
+/* Brand */
+.sidebar__brand {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+}
+.sidebar__brand-logo {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--r-md);
+  background: var(--gn-primary);
+  color: var(--gn-on-primary);
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  font-size: 18px;
+}
+.sidebar__brand-name {
+  font-weight: 600;
+  font-size: 15px;
+  line-height: 1.2;
+}
+.sidebar__brand-ver {
+  font-size: 11px;
+  color: var(--gn-on-surface-muted);
+  font-family: var(--font-mono);
+  margin-top: 2px;
+}
+
+/* CTA */
+.sidebar__cta {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--gn-border);
+  border-radius: var(--r-pill);
+  background: var(--gn-surface);
+  color: var(--gn-on-surface);
+  font-size: 14px;
+  font-weight: 500;
+  transition: background-color 100ms ease;
+  text-align: left;
+  width: 100%;
+}
+.sidebar__cta:hover {
+  background: var(--gn-surface-container);
+}
+.sidebar__cta-shortcut {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--gn-on-surface-muted);
+}
+
+/* Nav group */
+.sidebar__nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.sidebar__nav-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--gn-on-surface-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: var(--sp-3) var(--sp-3) var(--sp-1);
+}
+
+/* Nav item */
+.sidebar__nav-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--r-md);
+  color: var(--gn-on-surface);
+  font-weight: 500;
+  font-size: 14px;
+  user-select: none;
+  cursor: pointer;
+  transition: background-color 100ms ease;
+  width: 100%;
+  text-align: left;
+}
+.sidebar__nav-item:hover {
+  background: var(--gn-surface-container);
+}
+.sidebar__nav-item--active {
+  background: var(--gn-primary-soft);
+  color: var(--gn-primary);
+  font-weight: 600;
+}
+.sidebar__nav-item--active .msi {
+  color: var(--gn-primary);
+}
+.sidebar__nav-item .msi {
+  font-size: 20px;
+  flex-shrink: 0;
+}
+.sidebar__nav-badge {
+  margin-left: auto;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--gn-on-surface-muted);
+  background: var(--gn-surface-container);
+  padding: 1px 8px;
+  border-radius: var(--r-pill);
+}
+.sidebar__nav-item--active .sidebar__nav-badge {
+  background: rgba(26, 115, 232, 0.12);
+  color: var(--gn-primary);
+}
+
+.sidebar__spacer { flex: 1; }
+
+/* === Main area (5 화면 placeholder 자리) === */
+.app-main {
+  height: 100vh;
+  overflow-y: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.screen-placeholder {
+  text-align: center;
+  padding: var(--sp-6);
+}
+.screen-placeholder h2 {
+  font-size: 24px;
+  font-weight: 600;
+  margin: 0 0 var(--sp-2) 0;
+  color: var(--gn-on-surface);
+}
+.screen-placeholder p {
+  font-size: 14px;
+  color: var(--gn-on-surface-muted);
+  margin: 0;
+}

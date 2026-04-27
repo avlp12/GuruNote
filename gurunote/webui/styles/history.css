@@ -208,8 +208,8 @@
 .search-box {
   position: relative;
   flex: 1;
-  min-width: 280px;
-  max-width: 480px;
+  min-width: 240px;
+  max-width: 360px;
 }
 .search-box__icon {
   position: absolute;
@@ -283,3 +283,39 @@
   margin-bottom: var(--sp-2);
 }
 .history-result-meta b { color: var(--gn-on-surface); font-weight: 600; }
+
+/* === Phase 2B-3c-rework: 정렬 chips (dropdown 폐기) === */
+.sort-chips {
+  display: inline-flex;
+  gap: var(--sp-1);
+  align-items: center;
+}
+.sort-chips__label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--gn-on-surface-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-right: var(--sp-2);
+}
+.sort-chip {
+  padding: 6px 12px;
+  border-radius: var(--r-pill);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--gn-on-surface-muted);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background-color 100ms, color 100ms, border-color 100ms;
+}
+.sort-chip:hover:not(.sort-chip--active) {
+  background: var(--gn-surface-container);
+  color: var(--gn-on-surface);
+}
+.sort-chip--active {
+  background: var(--gn-primary-soft);
+  color: var(--gn-primary);
+  border-color: var(--gn-primary);
+  font-weight: 600;
+}

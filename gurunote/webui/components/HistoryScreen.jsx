@@ -10,7 +10,7 @@
  * Phase 2B-3b/c/d 에서 검색/필터/정렬/facet 추가.
  */
 
-const { useState, useEffect, useMemo } = React;
+const { useState, useEffect, useMemo, useRef } = React;
 
 /* === Search helpers (Phase 2B-3b) === */
 function useDebounced(value, delay) {
@@ -32,6 +32,54 @@ function filterItems(items, term) {
     const tags = (item.tags || []).join(' ').toLowerCase();
     return title.includes(t) || uploader.includes(t) || tags.includes(t);
   });
+}
+
+/* === Sort helpers (Phase 2B-3c) === */
+const SORT_OPTIONS = [
+  { id: 'latest',   label: '최신순' },
+  { id: 'oldest',   label: '오래된순' },
+  { id: 'duration', label: '길이 긴 순' },
+  { id: 'title',    label: '제목 A-Z' },
+];
+
+function sortItems(items, sortBy) {
+  // 비파괴 — 항상 새 배열 반환.
+  const arr = [...items];
+  switch (sortBy) {
+    case 'oldest':
+      return arr.sort((a, b) =>
+        (a.created_at || '').localeCompare(b.created_at || ''));
+    case 'duration':
+      return arr.sort((a, b) =>
+        (b.duration_sec || 0) - (a.duration_sec || 0));
+    case 'title':
+      return arr.sort((a, b) =>
+        (a.organized_title || a.title || '').localeCompare(
+          b.organized_title || b.title || '', 'ko'));
+    case 'latest':
+    default:
+      return arr.sort((a, b) =>
+        (b.created_at || '').localeCompare(a.created_at || ''));
+  }
+}
+
+function SortChips({ value, onChange }) {
+  return (
+    <div className="sort-chips" role="radiogroup" aria-label="정렬 기준">
+      {SORT_OPTIONS.map((opt) => (
+        <button
+          key={opt.id}
+          type="button"
+          role="radio"
+          aria-checked={value === opt.id}
+          className={'sort-chip' + (value === opt.id ? ' sort-chip--active' : '')}
+          onClick={() => onChange(opt.id)}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  );
 }
 
 const STATUS_BADGE = {
@@ -98,43 +146,24 @@ function JobCard({ item, onClick }) {
   );
 }
 
-function HistoryScreen() {
-  const [items, setItems] = useState([]);
-  const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  const loadHistory = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      while (!window.pywebview?.api) {
-        await new Promise(r => setTimeout(r, 50));
-      }
-      // bridge.py 가 인자 없이 호출 시 전체 list 반환 (defensive payload-aware
-      // 패치도 함께 적용됨). 페이지네이션이 필요해지면 Phase 2B-3 후속에서 wiring.
-      const result = await window.pywebview.api.list_history();
-      if (!result?.ok) {
-        throw new Error(result?.error || 'list_history failed');
-      }
-      setItems(result.items || []);
-      setTotal(result.total || 0);
-    } catch (e) {
-      console.error('[HistoryScreen]', e);
-      setError(e.message || String(e));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => { loadHistory(); }, []);
-
+/**
+ * HistoryScreen — props 로 items / loading / error / onReload 받음.
+ * list_history 호출은 App.jsx 에서 lifting 하여 Sidebar 카운트와 공유.
+ */
+function HistoryScreen({ items, total, loading, error, onReload }) {
   // Phase 2B-3b: 검색 + chips state
   const [searchInput, setSearchInput] = useState('');
   const debouncedSearch = useDebounced(searchInput, 150);
   const filteredItems = useMemo(
     () => filterItems(items, debouncedSearch),
     [items, debouncedSearch]
+  );
+
+  // Phase 2B-3c: 정렬 state — 검색 결과에 정렬 적용
+  const [sortBy, setSortBy] = useState('latest');
+  const sortedFilteredItems = useMemo(
+    () => sortItems(filteredItems, sortBy),
+    [filteredItems, sortBy]
   );
 
   const handleChipClick = (chip) => {
@@ -204,11 +233,12 @@ function HistoryScreen() {
           </button>
         </div>
 
-        {/* Phase 2B-3c: 정렬 dropdown */}
+        <SortChips value={sortBy} onChange={setSortBy} />
+
         <button
           type="button"
           className="btn btn--ghost history-toolbar__refresh"
-          onClick={loadHistory}
+          onClick={onReload}
           disabled={loading}
         >
           <span className="msi">refresh</span>
@@ -235,15 +265,15 @@ function HistoryScreen() {
         </div>
       )}
 
-      {!loading && !error && items.length > 0 && debouncedSearch && filteredItems.length === 0 && (
+      {!loading && !error && items.length > 0 && debouncedSearch && sortedFilteredItems.length === 0 && (
         <div className="history-empty">
           "{debouncedSearch}" 에 해당하는 노트가 없습니다.
         </div>
       )}
 
-      {!loading && filteredItems.length > 0 && (
+      {!loading && sortedFilteredItems.length > 0 && (
         <div className="job-grid">
-          {filteredItems.map(item => (
+          {sortedFilteredItems.map(item => (
             <JobCard key={item.job_id} item={item} onClick={handleCardClick} />
           ))}
         </div>

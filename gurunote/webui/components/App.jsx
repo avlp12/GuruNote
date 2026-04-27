@@ -1,11 +1,12 @@
 /* SPDX-License-Identifier: Elastic-2.0
  * Copyright (c) 2026 GuruNote contributors.
  *
- * Phase 2B-1 + 2B-2: App — Sidebar + route-based screen switch.
- * MainScreen 활성화 (Phase 2B-2). 나머지 4 화면은 placeholder (Phase 2B-3 / 2B-4).
+ * Phase 2B-1 + 2B-2 + 2B-3c-rework: App — Sidebar + route-based screen switch.
+ * Phase 2B-3c-rework: list_history state lifting — Sidebar 의 nav/library 카운트
+ * 와 HistoryScreen 의 카드 그리드가 같은 데이터를 공유.
  */
 
-const { useState, useEffect } = React;
+const { useState, useEffect, useCallback } = React;
 
 const ROUTE_LABELS = {
   main:      { title: '생성',      phase: '2B-2' },
@@ -29,11 +30,38 @@ function App() {
   const [route, setRoute] = useState('main');
   const [version, setVersion] = useState(null);
 
+  // History state — Sidebar 카운트 + HistoryScreen 그리드 공유.
+  const [historyItems, setHistoryItems] = useState([]);
+  const [historyTotal, setHistoryTotal] = useState(0);
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [historyError, setHistoryError] = useState(null);
+
+  const loadHistory = useCallback(async () => {
+    setHistoryLoading(true);
+    setHistoryError(null);
+    try {
+      while (!window.pywebview?.api) {
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      const result = await window.pywebview.api.list_history();
+      if (!result?.ok) {
+        throw new Error(result?.error || 'list_history failed');
+      }
+      setHistoryItems(result.items || []);
+      setHistoryTotal(result.total || 0);
+    } catch (e) {
+      console.error('[App] list_history failed:', e);
+      setHistoryError(e.message || String(e));
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     const probe = async () => {
       while (!window.pywebview?.api && !cancelled) {
-        await new Promise(r => setTimeout(r, 50));
+        await new Promise((r) => setTimeout(r, 50));
       }
       if (cancelled) return;
       try {
@@ -44,17 +72,32 @@ function App() {
       }
     };
     probe();
+    loadHistory();
     return () => { cancelled = true; };
-  }, []);
+  }, [loadHistory]);
 
   return (
     <>
       <div className="app-shell">
-        <Sidebar route={route} onNavigate={setRoute} version={version} />
+        <Sidebar
+          route={route}
+          onNavigate={setRoute}
+          version={version}
+          historyItems={historyItems}
+          historyTotal={historyTotal}
+        />
         <main className="app-main">
           {
             route === 'main'    ? <MainScreen /> :
-            route === 'history' ? <HistoryScreen /> :
+            route === 'history' ? (
+              <HistoryScreen
+                items={historyItems}
+                total={historyTotal}
+                loading={historyLoading}
+                error={historyError}
+                onReload={loadHistory}
+              />
+            ) :
             <ScreenPlaceholder route={route} />
           }
         </main>

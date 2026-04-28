@@ -16,11 +16,36 @@
 
 const { useState, useEffect, useMemo } = React;
 
-const EDITOR_TABS = [
-  { id: 'summary', label: '요약',     icon: 'auto_awesome' },
-  { id: 'korean',  label: '한국어',   icon: 'translate' },
-  { id: 'english', label: '영어 원문', icon: 'description' },
+/* Phase 2B-4a-2: 사용자 발견 — '영어 원문' 라벨이 한국어 원본에는 부적절.
+   탭 id/라벨 변경 + 한국어 detected 시 '번역' 탭 숨김 (번역 결과 = 원문 동일하므로 무의미). */
+const EDITOR_TABS_BASE = [
+  { id: 'summary',     label: '요약', icon: 'auto_awesome' },
+  { id: 'translation', label: '번역', icon: 'translate', langDependent: true },
+  { id: 'original',    label: '원문', icon: 'subject' },
 ];
+
+/* 한국어 detected 시 '번역' 탭 (langDependent) 제거. */
+function getVisibleTabs(detectedLanguage) {
+  const isKorean = detectedLanguage === 'ko' || detectedLanguage === 'kor' || detectedLanguage === 'korean';
+  if (isKorean) return EDITOR_TABS_BASE.filter((t) => !t.langDependent);
+  return EDITOR_TABS_BASE;
+}
+
+/* 한글/라틴 letter 비율 — backend 가 detected_language 미제공 시 fallback.
+   Path 형태 입력은 basename + 확장자 제거 후 counting (로컬 파일 대비). */
+function estimateKorean(s) {
+  if (!s) return 0;
+  const base = (s.split(/[\\/]/).pop() || '').replace(/\.[a-z0-9]+$/i, '');
+  let korean = 0;
+  let latin = 0;
+  for (const ch of base) {
+    const code = ch.codePointAt(0);
+    if ((code >= 0xAC00 && code <= 0xD7A3) || (code >= 0x1100 && code <= 0x11FF)) korean++;
+    else if (/[a-zA-Z]/.test(ch)) latin++;
+  }
+  const total = korean + latin;
+  return total > 0 ? korean / total : 0;
+}
 
 function fmtDuration(sec) {
   if (sec == null || sec <= 0) return '';
@@ -79,6 +104,19 @@ function EditorScreen({ jobId, onBackToHistory }) {
     load();
     return () => { cancelled = true; };
   }, [jobId]);
+
+  // Phase 2B-4a-2: detected_language 결정 — backend 미제공 시 fallback (title basename 한글 비율).
+  // organized_title 은 LLM 번역이라 항상 한글 → fallback 에 사용 안 함.
+  const detectedLang = item?.detected_language ||
+    (item?.title && estimateKorean(item.title) > 0.5 ? 'ko' : null);
+  const visibleTabs = useMemo(() => getVisibleTabs(detectedLang), [detectedLang]);
+
+  // activeTab 이 숨겨진 탭이면 첫 visible 로 fallback
+  useEffect(() => {
+    if (!visibleTabs.find((t) => t.id === activeTab)) {
+      setActiveTab(visibleTabs[0]?.id || 'summary');
+    }
+  }, [visibleTabs, activeTab]);
 
   const dirty = mode === 'edit' && editedContent !== markdown;
 
@@ -186,7 +224,7 @@ function EditorScreen({ jobId, onBackToHistory }) {
         {/* Main: tabs + mode + content */}
         <div className="editor-screen__main">
           <div className="editor-tabs">
-            {EDITOR_TABS.map((tab) => (
+            {visibleTabs.map((tab) => (
               <button
                 key={tab.id}
                 type="button"
@@ -254,20 +292,26 @@ function EditorScreen({ jobId, onBackToHistory }) {
             />
           )}
 
-          {activeTab === 'korean' && (
+          {activeTab === 'translation' && (
             <div className="editor-content">
               <div className="editor-empty" style={{ paddingTop: 80 }}>
                 <span className="msi">translate</span>
-                <div>한국어 transcript 표시는 Phase 2B-4 후속 wiring 예정입니다.</div>
+                <div>한국어 번역 데이터는 Phase 2B-4 후속에서 wiring 됩니다.</div>
+                <div style={{ fontSize: 12, marginTop: 8 }}>
+                  (read_job 결과에 transcript_korean 필드가 추가되면 자동 표시)
+                </div>
               </div>
             </div>
           )}
 
-          {activeTab === 'english' && (
+          {activeTab === 'original' && (
             <div className="editor-content">
               <div className="editor-empty" style={{ paddingTop: 80 }}>
-                <span className="msi">description</span>
-                <div>영어 원문 transcript 표시는 Phase 2B-4 후속 wiring 예정입니다.</div>
+                <span className="msi">subject</span>
+                <div>원문 transcript 는 Phase 2B-4 후속에서 wiring 됩니다.</div>
+                <div style={{ fontSize: 12, marginTop: 8 }}>
+                  (read_job 결과에 transcript_original 필드가 추가되면 자동 표시)
+                </div>
               </div>
             </div>
           )}

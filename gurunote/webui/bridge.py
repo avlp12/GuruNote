@@ -432,15 +432,24 @@ class Api:
         except Exception as exc:  # noqa: BLE001
             return self._err("HISTORY_LIST_FAILED", f"{type(exc).__name__}: {exc}")
 
-    def get_history_detail(self, job_id: str) -> dict:
+    def get_history_detail(self, payload: Any = None, *, job_id: Optional[str] = None) -> dict:
         """Return ``{markdown, full_html, meta, filename}`` for one job.
 
         ``full_html`` is server-side rendered with the same markdown
         extensions used by the live pipeline so the front-end's existing
         ``renderResult()`` can consume it without branching.
+
+        pywebview JS bridge marshals JS objects as a single positional dict —
+        accepts ``api.get_history_detail({job_id})`` and ``api.get_history_detail(job_id)``.
         """
         import markdown as _markdown  # noqa: PLC0415
         from gurunote.history import get_job_markdown, load_index  # noqa: PLC0415
+
+        # Normalize payload (dict / str positional / kwarg).
+        if isinstance(payload, dict):
+            job_id = payload.get("job_id", job_id)
+        elif isinstance(payload, str):
+            job_id = payload
 
         if not isinstance(job_id, str) or not job_id:
             return self._err("INVALID_ID", "job_id must be a non-empty string")
@@ -478,19 +487,58 @@ class Api:
 
     # ============================================================ note edit (TODO)
 
-    def update_note(self, job_id: str, markdown: str) -> dict:
-        """Persist edited markdown back to disk."""
-        raise NotImplementedError("update_note: wired in Phase 5")
+    def update_note(self, payload: Any = None, *, job_id: Optional[str] = None, markdown: Optional[str] = None) -> dict:
+        """Persist edited markdown back to ``~/.gurunote/jobs/<job_id>/result.md``.
+
+        pywebview JS bridge marshals JS objects as a single positional dict.
+        Accepts ``api.update_note({job_id, markdown})`` (JS) and
+        ``api.update_note(job_id, markdown)`` (Python positional).
+
+        Returns ``{ok: True, path: str}`` or ``{ok: False, error, code}``.
+        """
+        # Normalize payload shapes.
+        if isinstance(payload, dict):
+            job_id = payload.get("job_id", job_id)
+            markdown = payload.get("markdown", markdown)
+        elif isinstance(payload, str) and not isinstance(markdown, str):
+            # Python positional: update_note(job_id, markdown)
+            # If only one str passed, treat as job_id (markdown must be set via kwarg).
+            job_id = payload
+
+        if not isinstance(job_id, str) or not job_id:
+            return self._err("INVALID_ID", "job_id must be a non-empty string")
+        if "/" in job_id or "\\" in job_id or ".." in job_id:
+            return self._err("INVALID_ID", "job_id contains path separators")
+        if not isinstance(markdown, str):
+            return self._err("INVALID_MARKDOWN", "markdown must be a string")
+
+        try:
+            from gurunote.history import JOBS_DIR  # noqa: PLC0415
+            job_dir = JOBS_DIR / job_id
+            if not job_dir.exists():
+                return self._err("HISTORY_NOT_FOUND", f"no job dir for {job_id}")
+            result_path = job_dir / "result.md"
+            result_path.write_text(markdown, encoding="utf-8")
+            return {"ok": True, "path": str(result_path)}
+        except OSError as exc:
+            return self._err("WRITE_FAILED", f"{type(exc).__name__}: {exc}")
 
     # ============================================================ exporters
 
-    def save_result_as(self, markdown: str, default_filename: str) -> dict:
+    def save_result_as(self, payload: Any = None, default_filename: Any = None, *,
+                       markdown: Optional[str] = None) -> dict:
         """Open native Save dialog and write ``markdown`` to the chosen path.
 
         Used by the result card's "저장" button and ⌘S shortcut. The caller
         passes the markdown currently rendered in the UI (``result.full_md``)
         plus a suggested filename (autosave basename, or ``GuruNote_<title>.md``
         as fallback).
+
+        pywebview JS bridge marshals JS objects as a single positional dict.
+        Accepts:
+          - JS object: ``api.save_result_as({markdown, default_filename})``
+          - JS positional: ``api.save_result_as(markdown_str, default_filename_str)``
+          - Python kwargs: ``api.save_result_as(markdown=..., default_filename=...)``
 
         Returns:
             ``{"path": str, "cancelled": False}`` on success,
@@ -502,7 +550,14 @@ class Api:
         actively chose, not alongside the auto-captured copies).
         """
         import webview  # noqa: PLC0415
-        from pathlib import Path  # noqa: PLC0415
+
+        # Normalize payload shapes.
+        if isinstance(payload, dict):
+            markdown = payload.get("markdown", markdown)
+            default_filename = payload.get("default_filename", default_filename)
+        elif isinstance(payload, str):
+            # Legacy positional: save_result_as(markdown, default_filename)
+            markdown = payload
 
         if not isinstance(markdown, str):
             return self._err("SAVE_FAILED", f"markdown must be str, got {type(markdown).__name__}")

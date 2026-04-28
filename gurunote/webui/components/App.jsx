@@ -30,6 +30,13 @@ function App() {
   const [route, setRoute] = useState('main');
   const [version, setVersion] = useState(null);
 
+  // Phase 2B-4a: 현재 편집 중인 job_id (HistoryScreen → EditorScreen 진입)
+  const [currentJobId, setCurrentJobId] = useState(null);
+  const navigateToEditor = useCallback((jobId) => {
+    setCurrentJobId(jobId);
+    setRoute('editor');
+  }, []);
+
   // History state — Sidebar 카운트 + HistoryScreen 그리드 공유.
   const [historyItems, setHistoryItems] = useState([]);
   const [historyTotal, setHistoryTotal] = useState(0);
@@ -96,6 +103,13 @@ function App() {
                 loading={historyLoading}
                 error={historyError}
                 onReload={loadHistory}
+                onEditNote={navigateToEditor}
+              />
+            ) :
+            route === 'editor' ? (
+              <EditorScreen
+                jobId={currentJobId}
+                onBackToHistory={() => setRoute('history')}
               />
             ) :
             <ScreenPlaceholder route={route} />

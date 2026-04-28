@@ -239,7 +239,7 @@ function ActiveFilters({ search, activeFacets, onClearSearch, onResetFacet, onCl
 }
 
 /* === DetailPanel (Phase 2B-3d) — slide-in modal === */
-function DetailPanel({ item, onClose }) {
+function DetailPanel({ item, onClose, onEdit }) {
   useEffect(() => {
     const onEsc = (e) => { if (e.key === 'Escape') onClose(); };
     document.addEventListener('keydown', onEsc);
@@ -310,7 +310,7 @@ function DetailPanel({ item, onClose }) {
         </div>
 
         <div className="detail-actions-bar">
-          <button type="button" className="btn btn--ghost" onClick={() => window.showToast?.('Phase 2B-4 노트 편집 화면에서 활성화됩니다.')}>
+          <button type="button" className="btn btn--ghost" onClick={() => { if (onEdit) onEdit(item); onClose(); }}>
             <span className="msi">edit</span>
             편집
           </button>
@@ -346,7 +346,7 @@ function formatDuration(sec) {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
-function JobCard({ item, onClick }) {
+function JobCard({ item, onClick, onEdit }) {
   const [imgError, setImgError] = useState(false);
   const status = STATUS_BADGE[item.status] || { label: item.status || '?', cls: '' };
   const title = item.organized_title || item.title || '제목 없음';
@@ -401,7 +401,7 @@ function JobCard({ item, onClick }) {
           type="button"
           className="job-action"
           title="편집"
-          onClick={() => window.showToast?.('Phase 2B-4 노트 편집 화면에서 활성화됩니다.')}
+          onClick={() => onEdit && onEdit(item)}
         >
           <span className="msi">edit</span>
         </button>
@@ -438,7 +438,7 @@ function JobCard({ item, onClick }) {
  * HistoryScreen — props 로 items / loading / error / onReload 받음.
  * list_history 호출은 App.jsx 에서 lifting 하여 Sidebar 카운트와 공유.
  */
-function HistoryScreen({ items, total, loading, error, onReload }) {
+function HistoryScreen({ items, total, loading, error, onReload, onEditNote }) {
   // Phase 2B-3b: 검색 + chips state
   const [searchInput, setSearchInput] = useState('');
   const debouncedSearch = useDebounced(searchInput, 150);
@@ -615,7 +615,12 @@ function HistoryScreen({ items, total, loading, error, onReload }) {
           {!loading && sortedFinalItems.length > 0 && (
             <div className="job-grid">
               {sortedFinalItems.map((item) => (
-                <JobCard key={item.job_id} item={item} onClick={handleCardClick} />
+                <JobCard
+                  key={item.job_id}
+                  item={item}
+                  onClick={handleCardClick}
+                  onEdit={(it) => onEditNote && onEditNote(it.job_id)}
+                />
               ))}
             </div>
           )}
@@ -633,7 +638,11 @@ function HistoryScreen({ items, total, loading, error, onReload }) {
       </div>
 
       {detailItem && (
-        <DetailPanel item={detailItem} onClose={() => setDetailItem(null)} />
+        <DetailPanel
+          item={detailItem}
+          onClose={() => setDetailItem(null)}
+          onEdit={(it) => onEditNote && onEditNote(it.job_id)}
+        />
       )}
     </div>
   );

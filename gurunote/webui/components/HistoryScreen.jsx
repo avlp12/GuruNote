@@ -63,6 +63,44 @@ function sortItems(items, sortBy) {
   }
 }
 
+/* === Facet helpers (Phase 2B-3d) === */
+const FACET_GROUPS = [
+  { id: 'field',    icon: 'category', label: '주제' },
+  { id: 'uploader', icon: 'person',   label: '인물' },
+  { id: 'title',    icon: 'subject',  label: '제목' },
+  { id: 'tag',      icon: 'sell',     label: '태그' },
+];
+
+function buildFacets(items) {
+  const fields = new Map();
+  const uploaders = new Map();
+  const titles = new Set();
+  const tags = new Map();
+
+  for (const it of items) {
+    if (it.field) fields.set(it.field, (fields.get(it.field) || 0) + 1);
+    if (it.uploader) uploaders.set(it.uploader, (uploaders.get(it.uploader) || 0) + 1);
+    if (it.organized_title) titles.add(it.organized_title);
+    for (const tag of (it.tags || [])) {
+      if (tag) tags.set(tag, (tags.get(tag) || 0) + 1);
+    }
+  }
+
+  const toSortedArr = (map) =>
+    [...map.entries()]
+      .map(([label, count]) => ({ label, count }))
+      .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, 'ko'));
+
+  return {
+    field:    toSortedArr(fields),
+    uploader: toSortedArr(uploaders),
+    title:    [...titles]
+                .sort((a, b) => a.localeCompare(b, 'ko'))
+                .map((t) => ({ label: t, count: 1 })),
+    tag:      toSortedArr(tags),
+  };
+}
+
 function SortChips({ value, onChange }) {
   return (
     <div className="sort-chips" role="radiogroup" aria-label="정렬 기준">
@@ -78,6 +116,214 @@ function SortChips({ value, onChange }) {
           {opt.label}
         </button>
       ))}
+    </div>
+  );
+}
+
+/* === FacetPanel (Phase 2B-3d) === */
+function FacetPanel({ items, activeFacets, onToggle }) {
+  const [collapsed, setCollapsed] = useState(new Set());
+  const [searchTerm, setSearchTerm] = useState('');
+
+  const facets = useMemo(() => buildFacets(items), [items]);
+
+  const toggleGroup = (id) => {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const filterFacetItems = (arr) => {
+    const t = searchTerm.trim().toLowerCase();
+    if (!t) return arr;
+    return arr.filter((it) => it.label.toLowerCase().includes(t));
+  };
+
+  return (
+    <aside className="history-screen__facets">
+      <div className="facet-panel__header">
+        <span className="msi" style={{ fontSize: 16 }}>account_tree</span>
+        <span>내비게이션</span>
+      </div>
+
+      <input
+        type="text"
+        className="facet-panel__search"
+        placeholder="트리 내 검색..."
+        value={searchTerm}
+        onChange={(e) => setSearchTerm(e.target.value)}
+      />
+
+      {FACET_GROUPS.map((group) => {
+        const arr = filterFacetItems(facets[group.id] || []);
+        if (arr.length === 0) return null;
+        const isCollapsed = collapsed.has(group.id);
+        return (
+          <div
+            key={group.id}
+            className={'facet-group' + (isCollapsed ? ' facet-group--collapsed' : '')}
+          >
+            <button
+              type="button"
+              className="facet-group__header"
+              onClick={() => toggleGroup(group.id)}
+              aria-expanded={!isCollapsed}
+            >
+              <span className="msi facet-group__icon">{group.icon}</span>
+              <span>{group.label}</span>
+              <span className="facet-group__count">{arr.length}</span>
+              <span className="msi facet-group__chevron">expand_more</span>
+            </button>
+            <div className="facet-group__items">
+              {arr.slice(0, 30).map((item) => {
+                const facetKey = `${group.id}:${item.label}`;
+                const active = activeFacets.has(facetKey);
+                return (
+                  <button
+                    key={facetKey}
+                    type="button"
+                    className={'facet-item' + (active ? ' facet-item--active' : '')}
+                    onClick={() => onToggle(group.id, item.label)}
+                  >
+                    <span className="facet-item__dot" />
+                    <span className="facet-item__label" title={item.label}>{item.label}</span>
+                    <span className="facet-item__count">{item.count}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </aside>
+  );
+}
+
+/* === ActiveFilters chain (Phase 2B-3d) === */
+function ActiveFilters({ search, activeFacets, onClearSearch, onResetFacet, onClearAll }) {
+  const facetArr = [...activeFacets];
+  if (!search && facetArr.length === 0) return null;
+
+  return (
+    <div className="active-filters">
+      <span>적용된 필터:</span>
+      {search && (
+        <span className="active-filter">
+          검색: "{search}"
+          <button type="button" className="active-filter__remove" onClick={onClearSearch} aria-label="검색 제거">
+            <span className="msi" style={{ fontSize: 12 }}>close</span>
+          </button>
+        </span>
+      )}
+      {facetArr.map((key) => {
+        const idx = key.indexOf(':');
+        const group = key.slice(0, idx);
+        const label = key.slice(idx + 1);
+        const groupLabel = (FACET_GROUPS.find((g) => g.id === group) || {}).label || group;
+        return (
+          <span key={key} className="active-filter">
+            {groupLabel}: {label}
+            <button type="button" className="active-filter__remove" onClick={() => onResetFacet(key)} aria-label="필터 제거">
+              <span className="msi" style={{ fontSize: 12 }}>close</span>
+            </button>
+          </span>
+        );
+      })}
+      <button type="button" className="active-filters__clear" onClick={onClearAll}>
+        모두 비우기
+      </button>
+    </div>
+  );
+}
+
+/* === DetailPanel (Phase 2B-3d) — slide-in modal === */
+function DetailPanel({ item, onClose }) {
+  useEffect(() => {
+    const onEsc = (e) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onEsc);
+    return () => document.removeEventListener('keydown', onEsc);
+  }, [onClose]);
+
+  if (!item) return null;
+
+  const title = item.organized_title || item.title || '제목 없음';
+  const dur = item.duration_sec > 0
+    ? `${Math.floor(item.duration_sec / 60)}:${String(Math.floor(item.duration_sec % 60)).padStart(2, '0')}`
+    : null;
+
+  return (
+    <div className="detail-overlay" onClick={onClose}>
+      <div className="detail-panel" onClick={(e) => e.stopPropagation()}>
+        <div className="detail-panel__header">
+          <h2 className="detail-panel__title" title={title}>{title}</h2>
+          <button type="button" className="detail-panel__close" onClick={onClose} aria-label="닫기">
+            <span className="msi">close</span>
+          </button>
+        </div>
+
+        <div className="detail-panel__body">
+          <div className="detail-thumb">
+            {item.thumbnail_url && <img src={item.thumbnail_url} alt={title} />}
+          </div>
+
+          <dl className="detail-meta-grid">
+            {item.field        && (<><dt>주제</dt><dd>{item.field}</dd></>)}
+            {item.uploader     && (<><dt>업로더</dt><dd>{item.uploader}</dd></>)}
+            {item.upload_date  && (<><dt>업로드일</dt><dd>{item.upload_date}</dd></>)}
+            {item.created_at   && (<><dt>생성일</dt><dd>{item.created_at}</dd></>)}
+            {dur               && (<><dt>길이</dt><dd>{dur}</dd></>)}
+            {item.num_speakers > 0 && (<><dt>화자 수</dt><dd>{item.num_speakers}명</dd></>)}
+            {item.stt_engine   && (<><dt>STT</dt><dd>{item.stt_engine}</dd></>)}
+            {item.llm_provider && (<><dt>LLM</dt><dd>{item.llm_provider}</dd></>)}
+            {item.status       && (<><dt>상태</dt><dd>{item.status}</dd></>)}
+            {item.source_url   && (<><dt>출처</dt><dd>{item.source_url}</dd></>)}
+          </dl>
+
+          {item.tags && item.tags.length > 0 && (
+            <>
+              <div className="detail-section-title">태그</div>
+              <div className="detail-tags">
+                {item.tags.map((tag) => (
+                  <span key={tag} className="detail-tag">{tag}</span>
+                ))}
+              </div>
+            </>
+          )}
+
+          {item.error_message && (
+            <>
+              <div className="detail-section-title" style={{ color: 'var(--gn-danger)' }}>오류 메시지</div>
+              <div style={{ fontSize: 12, color: 'var(--gn-danger)', whiteSpace: 'pre-wrap' }}>
+                {item.error_message}
+              </div>
+            </>
+          )}
+
+          <div className="detail-section-title">본문</div>
+          <div style={{ color: 'var(--gn-on-surface-muted)', fontSize: 13 }}>
+            {item.has_markdown
+              ? '본문 미리보기는 Phase 2B-4 (노트 편집 화면) 에서 표시됩니다.'
+              : '본문 데이터가 없습니다.'}
+          </div>
+        </div>
+
+        <div className="detail-actions-bar">
+          <button type="button" className="btn btn--ghost" onClick={() => window.showToast?.('Phase 2B-4 노트 편집 화면에서 활성화됩니다.')}>
+            <span className="msi">edit</span>
+            편집
+          </button>
+          <button type="button" className="btn btn--ghost" onClick={() => window.showToast?.('Phase 2B-4 다운로드 wiring 예정')}>
+            <span className="msi">download</span>
+            다운로드
+          </button>
+          <button type="button" className="btn btn--ghost" onClick={() => window.showToast?.('Phase 2B-3 후속 — 연관 노트 추천')}>
+            <span className="msi">hub</span>
+            연관 노트
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -142,6 +388,48 @@ function JobCard({ item, onClick }) {
           </div>
         )}
       </div>
+      <div className="job-card__actions" onClick={(e) => e.stopPropagation()}>
+        <button
+          type="button"
+          className="job-action"
+          title="열기"
+          onClick={() => onClick && onClick(item)}
+        >
+          <span className="msi">open_in_new</span>
+        </button>
+        <button
+          type="button"
+          className="job-action"
+          title="편집"
+          onClick={() => window.showToast?.('Phase 2B-4 노트 편집 화면에서 활성화됩니다.')}
+        >
+          <span className="msi">edit</span>
+        </button>
+        <button
+          type="button"
+          className="job-action"
+          title="다운로드"
+          onClick={() => window.showToast?.('Phase 2B-4 다운로드 wiring 예정')}
+        >
+          <span className="msi">download</span>
+        </button>
+        <button
+          type="button"
+          className="job-action"
+          title="연관 노트"
+          onClick={() => window.showToast?.('Phase 2B-3 후속 — 연관 노트 추천')}
+        >
+          <span className="msi">hub</span>
+        </button>
+        <button
+          type="button"
+          className="job-action job-action--more"
+          title="더 보기"
+          onClick={() => window.showToast?.('Phase 2B-3 후속 — 즐겨찾기/공유/삭제 등')}
+        >
+          <span className="msi">more_horiz</span>
+        </button>
+      </div>
     </article>
   );
 }
@@ -159,26 +447,69 @@ function HistoryScreen({ items, total, loading, error, onReload }) {
     [items, debouncedSearch]
   );
 
-  // Phase 2B-3c: 정렬 state — 검색 결과에 정렬 적용
+  // Phase 2B-3d: facet filter — Set of "groupId:label"
+  const [activeFacets, setActiveFacets] = useState(new Set());
+
+  const handleFacetToggle = (groupId, label) => {
+    const key = `${groupId}:${label}`;
+    setActiveFacets((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  };
+
+  const handleResetFacet = (key) => {
+    setActiveFacets((prev) => {
+      const next = new Set(prev);
+      next.delete(key);
+      return next;
+    });
+  };
+
+  const handleClearAll = () => {
+    setSearchInput('');
+    setActiveFacets(new Set());
+  };
+
+  // facet filter — 검색 결과에 적용 (AND across groups)
+  const facetFilteredItems = useMemo(() => {
+    if (activeFacets.size === 0) return filteredItems;
+    return filteredItems.filter((item) => {
+      for (const key of activeFacets) {
+        const idx = key.indexOf(':');
+        const group = key.slice(0, idx);
+        const label = key.slice(idx + 1);
+        switch (group) {
+          case 'field':    if (item.field !== label) return false; break;
+          case 'uploader': if (item.uploader !== label) return false; break;
+          case 'title':    if (item.organized_title !== label) return false; break;
+          case 'tag':      if (!(item.tags || []).includes(label)) return false; break;
+          default: break;
+        }
+      }
+      return true;
+    });
+  }, [filteredItems, activeFacets]);
+
+  // Phase 2B-3c: 정렬 state — facet 결과 위에 적용 (filter chain 의 마지막)
   const [sortBy, setSortBy] = useState('latest');
-  const sortedFilteredItems = useMemo(
-    () => sortItems(filteredItems, sortBy),
-    [filteredItems, sortBy]
+  const sortedFinalItems = useMemo(
+    () => sortItems(facetFilteredItems, sortBy),
+    [facetFilteredItems, sortBy]
   );
 
+  // Phase 2B-3d: detail view state
+  const [detailItem, setDetailItem] = useState(null);
+
   const handleChipClick = (chip) => {
-    // Phase 2B-3 후속에서 backend wiring (markdown body / embedding 의미 검색).
     if (window.showToast) {
       window.showToast(`${chip} 검색은 Phase 2B-3 후속에서 활성화됩니다.`);
     }
   };
 
   const handleCardClick = (item) => {
-    // Phase 2B-3d / 2B-4 에서 detail view 또는 EditorScreen 으로 이동.
-    console.log('[JobCard click]', item.job_id, item.organized_title || item.title);
-    if (window.showToast) {
-      window.showToast(`노트 열기 (Phase 2B-4): ${item.organized_title || item.title}`);
-    }
+    setDetailItem(item);
   };
 
   return (
@@ -246,41 +577,63 @@ function HistoryScreen({ items, total, loading, error, onReload }) {
         </button>
       </div>
 
-      {debouncedSearch && (
-        <div className="history-result-meta">
-          "<b>{debouncedSearch}</b>" 검색 결과 <b>{filteredItems.length}</b>개 · 전체 {items.length}개
-        </div>
-      )}
+      <ActiveFilters
+        search={debouncedSearch}
+        activeFacets={activeFacets}
+        onClearSearch={() => setSearchInput('')}
+        onResetFacet={handleResetFacet}
+        onClearAll={handleClearAll}
+      />
 
-      {error && (
-        <div className="history-empty" style={{ borderColor: 'var(--gn-danger)', color: 'var(--gn-danger)' }}>
-          오류: {error}
-        </div>
-      )}
+      <div className="history-screen__body">
+        <div className="history-screen__main">
+          {debouncedSearch && (
+            <div className="history-result-meta">
+              "<b>{debouncedSearch}</b>" 검색 결과 <b>{sortedFinalItems.length}</b>개 · 전체 {items.length}개
+            </div>
+          )}
 
-      {!loading && !error && items.length === 0 && (
-        <div className="history-empty">
-          아직 증류된 노트가 없습니다.<br />
-          생성 화면에서 첫 노트를 만들어보세요.
-        </div>
-      )}
+          {error && (
+            <div className="history-empty" style={{ borderColor: 'var(--gn-danger)', color: 'var(--gn-danger)' }}>
+              오류: {error}
+            </div>
+          )}
 
-      {!loading && !error && items.length > 0 && debouncedSearch && sortedFilteredItems.length === 0 && (
-        <div className="history-empty">
-          "{debouncedSearch}" 에 해당하는 노트가 없습니다.
-        </div>
-      )}
+          {!loading && !error && items.length === 0 && (
+            <div className="history-empty">
+              아직 증류된 노트가 없습니다.<br />
+              생성 화면에서 첫 노트를 만들어보세요.
+            </div>
+          )}
 
-      {!loading && sortedFilteredItems.length > 0 && (
-        <div className="job-grid">
-          {sortedFilteredItems.map(item => (
-            <JobCard key={item.job_id} item={item} onClick={handleCardClick} />
-          ))}
-        </div>
-      )}
+          {!loading && !error && items.length > 0 && (debouncedSearch || activeFacets.size > 0) && sortedFinalItems.length === 0 && (
+            <div className="history-empty">
+              조건에 해당하는 노트가 없습니다.
+            </div>
+          )}
 
-      {loading && (
-        <div className="history-loading">불러오는 중...</div>
+          {!loading && sortedFinalItems.length > 0 && (
+            <div className="job-grid">
+              {sortedFinalItems.map((item) => (
+                <JobCard key={item.job_id} item={item} onClick={handleCardClick} />
+              ))}
+            </div>
+          )}
+
+          {loading && (
+            <div className="history-loading">불러오는 중...</div>
+          )}
+        </div>
+
+        <FacetPanel
+          items={items}
+          activeFacets={activeFacets}
+          onToggle={handleFacetToggle}
+        />
+      </div>
+
+      {detailItem && (
+        <DetailPanel item={detailItem} onClose={() => setDetailItem(null)} />
       )}
     </div>
   );

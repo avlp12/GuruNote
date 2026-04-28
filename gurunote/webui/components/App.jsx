@@ -112,6 +112,15 @@ function App() {
                 onBackToHistory={() => setRoute('history')}
               />
             ) :
+            route === 'dashboard' ? (
+              <DashboardScreen
+                items={historyItems}
+                total={historyTotal}
+                loading={historyLoading}
+                error={historyError}
+                onReload={loadHistory}
+              />
+            ) :
             <ScreenPlaceholder route={route} />
           }
         </main>

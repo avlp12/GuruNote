@@ -1,0 +1,233 @@
+/* SPDX-License-Identifier: Elastic-2.0
+ * Copyright (c) 2026 GuruNote contributors.
+ *
+ * Phase 2B-4b: DashboardScreen — 분석 통계 화면.
+ */
+
+.dashboard-screen {
+  height: 100vh;
+  overflow-y: auto;
+  padding: var(--sp-5) var(--sp-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+}
+
+.dashboard-topbar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  flex-shrink: 0;
+}
+.dashboard-topbar__crumbs {
+  font-size: 12px;
+  color: var(--gn-on-surface-muted);
+}
+.dashboard-topbar__title {
+  font-size: 22px;
+  font-weight: 700;
+}
+.dashboard-topbar__sub {
+  font-size: 13px;
+  color: var(--gn-on-surface-muted);
+  margin-top: 4px;
+}
+
+/* === Stat cards row === */
+.dashboard-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--sp-3);
+}
+.stat-card {
+  background: var(--gn-surface);
+  border: 1px solid var(--gn-border-subtle);
+  border-radius: var(--r-md);
+  padding: var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.stat-card__icon {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--r-sm);
+  background: var(--gn-primary-soft);
+  color: var(--gn-primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: var(--sp-2);
+}
+.stat-card__icon .msi { font-size: 20px; }
+.stat-card__label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--gn-on-surface-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.stat-card__value {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--gn-on-surface);
+  line-height: 1.2;
+}
+.stat-card__sub {
+  font-size: 11px;
+  color: var(--gn-on-surface-muted);
+}
+
+/* === Section block === */
+.dashboard-section {
+  background: var(--gn-surface);
+  border: 1px solid var(--gn-border-subtle);
+  border-radius: var(--r-md);
+  padding: var(--sp-4) var(--sp-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.dashboard-section__title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--gn-on-surface);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.dashboard-section__title .msi {
+  font-size: 18px;
+  color: var(--gn-on-surface-muted);
+}
+
+/* === Field bar chart === */
+.field-bars {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.field-bar {
+  display: grid;
+  grid-template-columns: 140px 1fr 50px;
+  gap: var(--sp-3);
+  align-items: center;
+  font-size: 12px;
+}
+.field-bar__label {
+  color: var(--gn-on-surface);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.field-bar__track {
+  height: 8px;
+  background: var(--gn-surface-container);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.field-bar__fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--gn-primary) 0%, #6366f1 100%);
+  border-radius: 4px;
+  transition: width 200ms ease-out;
+}
+.field-bar__count {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--gn-on-surface-muted);
+  text-align: right;
+}
+
+/* === Tag cloud === */
+.tag-cloud {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  align-items: baseline;
+  padding: var(--sp-2) 0;
+}
+.tag-cloud__item {
+  padding: 3px 10px;
+  border-radius: var(--r-pill);
+  background: var(--gn-surface-container);
+  color: var(--gn-on-surface);
+  border: 1px solid var(--gn-border-subtle);
+  cursor: default;
+  white-space: nowrap;
+  transition: background-color 100ms, transform 100ms;
+}
+.tag-cloud__item:hover {
+  background: var(--gn-primary-soft);
+  color: var(--gn-primary);
+  transform: translateY(-1px);
+}
+.tag-cloud__count {
+  font-size: 0.7em;
+  font-family: var(--font-mono);
+  color: var(--gn-on-surface-muted);
+  margin-left: 4px;
+}
+
+/* === Activity timeline === */
+.timeline-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 120px;
+  padding-top: var(--sp-2);
+}
+.timeline-bar {
+  flex: 1;
+  min-width: 4px;
+  background: linear-gradient(180deg, var(--gn-primary) 0%, #6366f1 100%);
+  border-radius: 2px 2px 0 0;
+  position: relative;
+  transition: opacity 100ms;
+  min-height: 2px;
+}
+.timeline-bar:hover {
+  opacity: 0.85;
+}
+.timeline-bar--empty {
+  background: var(--gn-surface-container);
+  border-radius: 2px 2px 0 0;
+}
+.timeline-axis {
+  display: flex;
+  justify-content: space-between;
+  margin-top: var(--sp-2);
+  font-size: 10px;
+  color: var(--gn-on-surface-muted);
+  font-family: var(--font-mono);
+}
+
+/* === Empty state === */
+.dashboard-empty {
+  padding: var(--sp-6);
+  text-align: center;
+  color: var(--gn-on-surface-muted);
+  font-size: 14px;
+}
+.dashboard-empty .msi {
+  font-size: 48px;
+  color: var(--gn-border);
+  display: block;
+  margin: 0 auto var(--sp-2);
+}
+
+/* Responsive */
+@media (max-width: 1080px) {
+  .dashboard-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (max-width: 720px) {
+  .dashboard-stats {
+    grid-template-columns: 1fr;
+  }
+  .field-bar {
+    grid-template-columns: 100px 1fr 40px;
+  }
+}

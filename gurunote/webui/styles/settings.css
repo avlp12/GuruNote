@@ -1,0 +1,362 @@
+/* SPDX-License-Identifier: Elastic-2.0
+ * Copyright (c) 2026 GuruNote contributors.
+ * Phase 2B-4c-1: SettingsScreen — Reference 디자인 (extracted/screens-editor-dashboard-settings.jsx 기반).
+ * Layout: 2-column (좌 nav 6항목 + 우 content card). */
+
+.settings-screen {
+  height: 100vh;
+  overflow-y: auto;
+  padding: var(--sp-5) var(--sp-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+
+.settings-topbar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  flex-shrink: 0;
+}
+.settings-topbar__crumbs {
+  font-size: 12px;
+  color: var(--gn-on-surface-muted);
+}
+.settings-topbar__title {
+  font-size: 22px;
+  font-weight: 700;
+}
+.settings-topbar__sub {
+  font-size: 13px;
+  color: var(--gn-on-surface-muted);
+}
+
+/* === 2-column layout === */
+.settings-layout {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  gap: var(--sp-4);
+  flex: 1;
+  min-height: 0;
+}
+
+/* === Nav (좌측) === */
+.settings-nav {
+  background: var(--gn-surface);
+  border: 1px solid var(--gn-border-subtle);
+  border-radius: var(--r-md);
+  padding: var(--sp-3);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  height: fit-content;
+  position: sticky;
+  top: var(--sp-5);
+}
+.settings-nav-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--r-sm);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--gn-on-surface);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  transition: background-color 100ms;
+}
+.settings-nav-item:hover { background: var(--gn-surface-container); }
+.settings-nav-item--active {
+  background: var(--gn-primary-soft);
+  color: var(--gn-primary);
+  font-weight: 600;
+}
+.settings-nav-item__icon {
+  font-size: 18px;
+  color: var(--gn-on-surface-muted);
+}
+.settings-nav-item--active .settings-nav-item__icon { color: var(--gn-primary); }
+.settings-nav-item__label { flex: 1; }
+.settings-nav-item__chevron {
+  font-size: 16px;
+  color: var(--gn-on-surface-muted);
+  opacity: 0;
+}
+.settings-nav-item--active .settings-nav-item__chevron { opacity: 1; color: var(--gn-primary); }
+
+/* === Content (우측) === */
+.settings-content {
+  background: var(--gn-surface);
+  border: 1px solid var(--gn-border-subtle);
+  border-radius: var(--r-md);
+  padding: var(--sp-5) var(--sp-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  overflow-y: auto;
+}
+.settings-content__header {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-bottom: var(--sp-3);
+  border-bottom: 1px solid var(--gn-border-subtle);
+}
+.settings-content__title {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--gn-on-surface);
+}
+.settings-content__sub {
+  font-size: 12px;
+  color: var(--gn-on-surface-muted);
+}
+
+/* === Detect banner (자동 감지 결과) === */
+.detect-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--r-sm);
+  background: var(--gn-surface-container);
+  border-left: 3px solid var(--gn-primary);
+  font-size: 13px;
+}
+.detect-banner--good {
+  border-left-color: #006633;
+  background: rgba(0, 102, 51, 0.06);
+}
+.detect-banner__icon {
+  font-size: 22px;
+  color: var(--gn-primary);
+  flex-shrink: 0;
+}
+.detect-banner--good .detect-banner__icon { color: #006633; }
+.detect-banner__body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.detect-banner__title {
+  font-weight: 600;
+  color: var(--gn-on-surface);
+}
+.detect-banner__sub {
+  font-size: 11px;
+  color: var(--gn-on-surface-muted);
+}
+.detect-banner__action {
+  flex-shrink: 0;
+}
+
+/* === Provider grid (4 cards) === */
+.provider-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--sp-3);
+}
+.provider-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--r-md);
+  border: 1.5px solid var(--gn-border);
+  background: var(--gn-surface);
+  cursor: pointer;
+  transition: border-color 100ms, transform 100ms;
+  position: relative;
+}
+.provider-card:hover {
+  transform: translateY(-1px);
+}
+.provider-card--active {
+  border-color: var(--gn-primary);
+  background: var(--gn-primary-soft);
+}
+.provider-card__dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  margin-bottom: 4px;
+}
+.provider-card__name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--gn-on-surface);
+}
+.provider-card__model {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--gn-on-surface-muted);
+  word-break: break-all;
+}
+.provider-card__check {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  font-size: 18px;
+  color: var(--gn-primary);
+}
+
+/* === Field === */
+.settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.settings-field__label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--gn-on-surface);
+}
+.settings-field__help {
+  font-size: 11px;
+  color: var(--gn-on-surface-muted);
+  margin-top: 2px;
+}
+.settings-field__input-wrap {
+  position: relative;
+  display: flex;
+}
+.settings-field__input {
+  width: 100%;
+  height: 36px;
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--gn-border);
+  border-radius: var(--r-sm);
+  background: var(--gn-bg);
+  font-size: 13px;
+  color: var(--gn-on-surface);
+  outline: none;
+  transition: border-color 100ms;
+}
+.settings-field__input:focus {
+  border-color: var(--gn-primary);
+}
+.settings-field__input--mono {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.settings-field__input--has-toggle {
+  padding-right: 36px;
+}
+.settings-field__toggle {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: transparent;
+  border: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--gn-on-surface-muted);
+  cursor: pointer;
+}
+.settings-field__toggle:hover {
+  background: var(--gn-surface-container);
+  color: var(--gn-on-surface);
+}
+.settings-field__toggle .msi { font-size: 16px; }
+
+/* === Field row (3 column for advanced) === */
+.settings-field-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--sp-3);
+}
+
+/* === Action bar === */
+.settings-actions {
+  display: flex;
+  gap: var(--sp-2);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--gn-border-subtle);
+  margin-top: var(--sp-3);
+}
+.settings-actions__spacer { flex: 1; }
+
+/* === Section icon (header decorations) === */
+.settings-section-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--r-sm);
+  background: var(--gn-primary-soft);
+  color: var(--gn-primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.settings-section-icon .msi { font-size: 18px; }
+
+/* === Placeholder (for nav items not yet implemented) === */
+.settings-placeholder {
+  padding: var(--sp-6);
+  text-align: center;
+  color: var(--gn-on-surface-muted);
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.settings-placeholder .msi {
+  font-size: 48px;
+  color: var(--gn-border);
+}
+
+/* === Test result === */
+.test-result {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--r-sm);
+  font-size: 12px;
+  margin-top: var(--sp-2);
+}
+.test-result--success {
+  background: rgba(0, 102, 51, 0.1);
+  color: #006633;
+}
+.test-result--error {
+  background: rgba(176, 0, 32, 0.1);
+  color: var(--gn-danger);
+}
+.test-result .msi { font-size: 16px; }
+
+/* Responsive */
+@media (max-width: 1080px) {
+  .settings-layout {
+    grid-template-columns: 200px 1fr;
+  }
+  .provider-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (max-width: 720px) {
+  .settings-layout {
+    grid-template-columns: 1fr;
+  }
+  .settings-nav {
+    position: static;
+  }
+  .provider-grid {
+    grid-template-columns: 1fr;
+  }
+  .settings-field-row {
+    grid-template-columns: 1fr;
+  }
+}

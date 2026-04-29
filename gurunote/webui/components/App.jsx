@@ -121,6 +121,9 @@ function App() {
                 onReload={loadHistory}
               />
             ) :
+            route === 'settings' ? (
+              <SettingsScreen />
+            ) :
             <ScreenPlaceholder route={route} />
           }
         </main>

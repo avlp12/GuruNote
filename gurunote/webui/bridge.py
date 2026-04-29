@@ -375,9 +375,237 @@ class Api:
                 "SETTINGS_SAVE_FAILED", f"{type(exc).__name__}: {exc}"
             )
 
-    def test_connection(self, provider: str) -> dict:
-        """Probe the given LLM provider with a minimal call."""
-        raise NotImplementedError("test_connection: wired in Phase 4")
+    def detect_hardware(self, payload: Any = None) -> dict:
+        """Detect platform / GPU and recommend an STT engine.
+
+        Phase 2B-4c-1: Settings screen "STT 엔진" section uses this to render
+        the auto-detect banner ("MLX Whisper 자동 선택됨 — Apple Silicon …").
+
+        Returns a flat dict with platform/cpu_arch/is_apple_silicon, memory_gb,
+        gpu={available,type,name}, recommended_stt ∈ {mlx, whisperx, cpu},
+        and a human-readable ``banner`` for direct UI rendering. Failures
+        degrade gracefully to memory_gb=0.0 / gpu={available:False} rather
+        than raising — the UI is informational, not load-bearing.
+        """
+        import os  # noqa: PLC0415
+        import platform as _platform  # noqa: PLC0415
+
+        system = _platform.system().lower()
+        machine = _platform.machine()
+        is_apple_silicon = system == "darwin" and machine in ("arm64", "aarch64")
+
+        memory_gb = 0.0
+        try:
+            import psutil  # noqa: PLC0415
+            memory_gb = round(psutil.virtual_memory().total / (1024 ** 3), 1)
+        except ImportError:
+            if system == "darwin":
+                try:
+                    import subprocess  # noqa: PLC0415
+                    result = subprocess.run(
+                        ["sysctl", "-n", "hw.memsize"],
+                        capture_output=True, text=True, check=True, timeout=2,
+                    )
+                    memory_gb = round(int(result.stdout.strip()) / (1024 ** 3), 1)
+                except Exception:  # noqa: BLE001
+                    pass
+
+        gpu_info: dict = {"available": False, "type": "none", "name": "-"}
+        if is_apple_silicon:
+            gpu_info = {
+                "available": True,
+                "type": "metal_mps",
+                "name": "Apple Silicon GPU (Metal/MPS)",
+            }
+        else:
+            try:
+                import subprocess  # noqa: PLC0415
+                result = subprocess.run(
+                    ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
+                    capture_output=True, text=True, timeout=2,
+                )
+                if result.returncode == 0 and result.stdout.strip():
+                    gpu_info = {
+                        "available": True,
+                        "type": "cuda",
+                        "name": result.stdout.strip().split("\n")[0],
+                    }
+            except Exception:  # noqa: BLE001
+                pass
+
+        if is_apple_silicon:
+            recommended = "mlx"
+            banner = (
+                f"MLX Whisper 자동 선택됨 — Apple Silicon ({machine}) 감지 · "
+                f"Metal/MPS GPU 가속 · {memory_gb}GB Unified Memory"
+            )
+        elif gpu_info["type"] == "cuda":
+            recommended = "whisperx"
+            banner = (
+                f"WhisperX 자동 선택됨 — {gpu_info['name']} 감지 · "
+                f"CUDA 가속 · {memory_gb}GB RAM"
+            )
+        else:
+            recommended = "cpu"
+            banner = (
+                f"CPU STT 사용 — GPU 미감지 · {memory_gb}GB RAM "
+                "(성능 제한적)"
+            )
+
+        return {
+            "ok": True,
+            "platform": system,
+            "cpu_arch": machine,
+            "is_apple_silicon": is_apple_silicon,
+            "memory_gb": memory_gb,
+            "gpu": gpu_info,
+            "recommended_stt": recommended,
+            "banner": banner,
+        }
+
+    def test_connection(
+        self,
+        payload: Any = None,
+        *,
+        provider: Optional[str] = None,
+    ) -> dict:
+        """Probe the given LLM provider with a minimal API call.
+
+        Phase 2B-4c-1: Settings screen "연결 테스트" button. Issues a 1-token
+        ping against the configured endpoint and surfaces ``latency_ms`` +
+        the model name on success, or the underlying exception name + message
+        on failure. Errors are returned as ``{ok: False, …}`` rather than
+        raised so the front-end can switch on shape.
+
+        Provider routing — env var sources:
+          - openai / openai_compatible: OPENAI_API_KEY (+ OPENAI_BASE_URL),
+            OPENAI_MODEL or LLM_MODEL (default ``gpt-4o-mini``)
+          - anthropic: ANTHROPIC_API_KEY, ANTHROPIC_MODEL
+          - gemini: GOOGLE_API_KEY or GEMINI_API_KEY, GEMINI_MODEL
+
+        Accepts JS object payload (``{provider}``), positional string
+        (``test_connection('openai')``), and Python kwarg form.
+        """
+        import os  # noqa: PLC0415
+        import time  # noqa: PLC0415
+
+        if isinstance(payload, dict):
+            provider = payload.get("provider", provider)
+        elif isinstance(payload, str):
+            provider = payload
+
+        if not provider:
+            provider = os.environ.get("LLM_PROVIDER", "openai_compatible")
+
+        start = time.time()
+
+        try:
+            if provider in ("openai", "openai_compatible"):
+                api_key = os.environ.get("OPENAI_API_KEY")
+                base_url = (
+                    os.environ.get("OPENAI_BASE_URL")
+                    or os.environ.get("LLM_BASE_URL")
+                )
+                model = (
+                    os.environ.get("OPENAI_MODEL")
+                    or os.environ.get("LLM_MODEL")
+                    or "gpt-4o-mini"
+                )
+                if not api_key:
+                    return self._err(
+                        "NO_API_KEY",
+                        "OPENAI_API_KEY 가 설정되지 않았습니다.",
+                    )
+                from openai import OpenAI  # noqa: PLC0415
+                client = (
+                    OpenAI(api_key=api_key, base_url=base_url)
+                    if base_url
+                    else OpenAI(api_key=api_key)
+                )
+                client.chat.completions.create(
+                    model=model,
+                    messages=[{"role": "user", "content": "ping"}],
+                    max_tokens=1,
+                    timeout=10.0,
+                )
+                latency_ms = int((time.time() - start) * 1000)
+                return {
+                    "ok": True,
+                    "provider": provider,
+                    "model": model,
+                    "latency_ms": latency_ms,
+                    "message": f"연결 성공 · {model} · {latency_ms}ms",
+                }
+
+            if provider == "anthropic":
+                api_key = os.environ.get("ANTHROPIC_API_KEY")
+                model = os.environ.get(
+                    "ANTHROPIC_MODEL", "claude-sonnet-4-20250514"
+                )
+                if not api_key:
+                    return self._err(
+                        "NO_API_KEY",
+                        "ANTHROPIC_API_KEY 가 설정되지 않았습니다.",
+                    )
+                from anthropic import Anthropic  # noqa: PLC0415
+                client = Anthropic(api_key=api_key)
+                client.messages.create(
+                    model=model,
+                    max_tokens=1,
+                    messages=[{"role": "user", "content": "ping"}],
+                    timeout=10.0,
+                )
+                latency_ms = int((time.time() - start) * 1000)
+                return {
+                    "ok": True,
+                    "provider": provider,
+                    "model": model,
+                    "latency_ms": latency_ms,
+                    "message": f"연결 성공 · {model} · {latency_ms}ms",
+                }
+
+            if provider == "gemini":
+                api_key = (
+                    os.environ.get("GOOGLE_API_KEY")
+                    or os.environ.get("GEMINI_API_KEY")
+                )
+                model = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+                if not api_key:
+                    return self._err(
+                        "NO_API_KEY",
+                        "GOOGLE_API_KEY 또는 GEMINI_API_KEY 가 설정되지 않았습니다.",
+                    )
+                import google.generativeai as genai  # noqa: PLC0415
+                genai.configure(api_key=api_key)
+                m = genai.GenerativeModel(model)
+                m.generate_content(
+                    "ping",
+                    generation_config={"max_output_tokens": 1},
+                )
+                latency_ms = int((time.time() - start) * 1000)
+                return {
+                    "ok": True,
+                    "provider": provider,
+                    "model": model,
+                    "latency_ms": latency_ms,
+                    "message": f"연결 성공 · {model} · {latency_ms}ms",
+                }
+
+            return self._err(
+                "UNKNOWN_PROVIDER", f"알 수 없는 provider: {provider}"
+            )
+
+        except Exception as exc:  # noqa: BLE001
+            latency_ms = int((time.time() - start) * 1000)
+            error_type = type(exc).__name__
+            return {
+                "ok": False,
+                "provider": provider,
+                "error": str(exc),
+                "code": error_type,
+                "latency_ms": latency_ms,
+                "message": f"{error_type}: {str(exc)[:120]}",
+            }
 
     # ============================================================ history (TODO)
 

@@ -463,6 +463,112 @@ class Api:
             "banner": banner,
         }
 
+    def detect_obsidian_vault(self, payload: Any = None) -> dict:
+        """Auto-detect an Obsidian Vault from common macOS locations.
+
+        Phase 2B-4c-2: Settings screen "Obsidian Vault" section uses this for
+        the auto-detect banner ("Vault 감지됨 — /path/to/Vault").
+
+        Detection priority:
+          1. ``OBSIDIAN_VAULT_PATH`` env var (if it points to a valid Vault)
+          2. ``~/Library/Mobile Documents/iCloud~md~obsidian/Documents/*``
+             (iCloud-synced Obsidian)
+          3. ``~/Documents/Obsidian/*``
+          4. ``~/Obsidian/*``
+
+        A folder counts as a valid Vault iff it contains a ``.obsidian/``
+        subdirectory. Returns the first valid hit as ``path`` plus a
+        ``candidates`` list of all auto-discovered Vaults.
+        """
+        import os  # noqa: PLC0415
+        from pathlib import Path  # noqa: PLC0415
+
+        home = Path.home()
+        candidates_dirs = [
+            home / "Library" / "Mobile Documents" / "iCloud~md~obsidian" / "Documents",
+            home / "Documents" / "Obsidian",
+            home / "Obsidian",
+        ]
+
+        found_vaults: list[str] = []
+        for parent in candidates_dirs:
+            if not parent.exists():
+                continue
+            try:
+                for child in parent.iterdir():
+                    if child.is_dir() and (child / ".obsidian").exists():
+                        found_vaults.append(str(child))
+            except (OSError, PermissionError):
+                continue
+
+        env_path = os.environ.get("OBSIDIAN_VAULT_PATH", "").strip()
+        if env_path:
+            env_path_obj = Path(env_path).expanduser()
+            if env_path_obj.exists() and (env_path_obj / ".obsidian").exists():
+                return {
+                    "ok": True,
+                    "detected": True,
+                    "path": str(env_path_obj),
+                    "source": "env",
+                    "candidates": found_vaults,
+                }
+
+        if found_vaults:
+            return {
+                "ok": True,
+                "detected": True,
+                "path": found_vaults[0],
+                "source": "auto_detected",
+                "candidates": found_vaults,
+            }
+
+        return {
+            "ok": True,
+            "detected": False,
+            "path": None,
+            "source": None,
+            "candidates": [],
+        }
+
+    def select_obsidian_vault_dir(self, payload: Any = None) -> dict:
+        """Open a native folder dialog and return the selected Vault path.
+
+        Phase 2B-4c-2: Settings screen "Obsidian Vault → 찾아보기" button.
+        Validates that the selected folder contains ``.obsidian/`` and
+        surfaces the result via ``valid_vault``; persisting the path to
+        env / ``.env`` is the front-end's job (via ``save_settings``).
+
+        Returns:
+            ``{ok: True, path: str, valid_vault: bool}`` on selection,
+            ``{ok: False, cancelled: True}`` if the user dismisses the dialog,
+            ``{ok: False, error, code}`` on dialog failure.
+        """
+        import webview  # noqa: PLC0415
+
+        window = self._require_window()
+        try:
+            result = window.create_file_dialog(
+                webview.FOLDER_DIALOG,
+                allow_multiple=False,
+            )
+        except Exception as exc:  # noqa: BLE001 — native dialog errors are opaque
+            return self._err("DIALOG_FAILED", f"{type(exc).__name__}: {exc}")
+
+        if not result:
+            return {"ok": False, "cancelled": True}
+
+        selected = result[0] if isinstance(result, (list, tuple)) else result
+        if not selected:
+            return {"ok": False, "cancelled": True}
+
+        path_obj = Path(selected)
+        valid_vault = (path_obj / ".obsidian").exists()
+        return {
+            "ok": True,
+            "path": str(path_obj),
+            "valid_vault": valid_vault,
+        }
+
     def test_connection(
         self,
         payload: Any = None,

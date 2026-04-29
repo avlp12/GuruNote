@@ -326,6 +326,231 @@ function SettingsSTT({ values, secretsSet, onChange, onSave, dirty }) {
   );
 }
 
+/* === Obsidian Section === */
+function SettingsObsidian({ values, secretsSet, onChange, onSave, dirty }) {
+  const [vaultInfo, setVaultInfo] = useState(null);
+  const [detecting, setDetecting] = useState(false);
+
+  const detectVault = useCallback(async () => {
+    setDetecting(true);
+    try {
+      const result = await window.pywebview.api.detect_obsidian_vault();
+      setVaultInfo(result);
+    } catch (e) {
+      console.error('[Obsidian] detect_obsidian_vault:', e);
+    } finally {
+      setDetecting(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    detectVault();
+  }, [detectVault]);
+
+  const handleBrowse = async () => {
+    try {
+      const result = await window.pywebview.api.select_obsidian_vault_dir();
+      if (result?.ok && !result.cancelled) {
+        onChange('OBSIDIAN_VAULT_PATH', result.path);
+        if (!result.valid_vault && window.showToast) {
+          window.showToast('선택한 폴더에 .obsidian/ 가 없습니다 — Vault 가 아닐 수 있음', 'warning');
+        }
+      }
+    } catch (e) {
+      console.error('[Obsidian] select dir:', e);
+      if (window.showToast) window.showToast(`폴더 선택 오류: ${e.message}`, 'error');
+    }
+  };
+
+  const currentPath = values.OBSIDIAN_VAULT_PATH || '';
+
+  return (
+    <>
+      <div className="settings-content__header">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-2)' }}>
+          <div className="settings-section-icon">
+            <span className="msi">hub</span>
+          </div>
+          <div>
+            <div className="settings-content__title">Obsidian Vault</div>
+            <div className="settings-content__sub">노트 자동 저장 위치 (마크다운 출력)</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Detect banner */}
+      {vaultInfo && vaultInfo.detected && (
+        <div className="detect-banner detect-banner--good">
+          <span className="msi detect-banner__icon">check_circle</span>
+          <div className="detect-banner__body">
+            <div className="detect-banner__title">Vault 감지됨</div>
+            <div className="detect-banner__sub" style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}>
+              {vaultInfo.path}
+            </div>
+          </div>
+          <div className="detect-banner__action">
+            <button
+              type="button"
+              className="btn btn--ghost"
+              onClick={detectVault}
+              disabled={detecting}
+              style={{ height: 28, padding: '0 12px', fontSize: 12 }}
+            >
+              <span className="msi" style={{ fontSize: 14 }}>refresh</span>
+              {detecting ? '감지 중...' : '재감지'}
+            </button>
+          </div>
+        </div>
+      )}
+      {vaultInfo && !vaultInfo.detected && (
+        <div className="detect-banner">
+          <span className="msi detect-banner__icon">info</span>
+          <div className="detect-banner__body">
+            <div className="detect-banner__title">Vault 미감지</div>
+            <div className="detect-banner__sub">
+              아래 '찾아보기' 버튼으로 Vault 경로를 직접 선택하세요.
+            </div>
+          </div>
+          <div className="detect-banner__action">
+            <button
+              type="button"
+              className="btn btn--ghost"
+              onClick={detectVault}
+              disabled={detecting}
+              style={{ height: 28, padding: '0 12px', fontSize: 12 }}
+            >
+              <span className="msi" style={{ fontSize: 14 }}>refresh</span>
+              {detecting ? '감지 중...' : '재감지'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Vault Path */}
+      <Field label="Vault 경로" help="Obsidian Vault 폴더 (.obsidian/ 가 있는 폴더)">
+        <div style={{ display: 'flex', gap: 'var(--sp-2)' }}>
+          <input
+            type="text"
+            className="settings-field__input settings-field__input--mono"
+            value={currentPath}
+            onChange={(e) => onChange('OBSIDIAN_VAULT_PATH', e.target.value)}
+            placeholder="/Users/me/Documents/MyVault"
+            style={{ flex: 1 }}
+          />
+          <button
+            type="button"
+            className="btn btn--ghost"
+            onClick={handleBrowse}
+            style={{ flexShrink: 0 }}
+          >
+            <span className="msi">folder_open</span>
+            찾아보기
+          </button>
+        </div>
+      </Field>
+
+      {/* Subfolder */}
+      <Field label="하위 폴더" help="Vault 내 GuruNote 노트 저장 폴더 (없으면 생성)">
+        <input
+          type="text"
+          className="settings-field__input settings-field__input--mono"
+          value={values.OBSIDIAN_SUBFOLDER || ''}
+          onChange={(e) => onChange('OBSIDIAN_SUBFOLDER', e.target.value)}
+          placeholder="GuruNote"
+        />
+      </Field>
+
+      {/* Action bar */}
+      <div className="settings-actions">
+        <div className="settings-actions__spacer" />
+        <button
+          type="button"
+          className="btn btn--primary"
+          onClick={onSave}
+          disabled={!dirty}
+        >
+          <span className="msi">save</span>
+          저장 {dirty ? `(${dirty})` : ''}
+        </button>
+      </div>
+    </>
+  );
+}
+
+/* === Notion Section === */
+function SettingsNotion({ values, secretsSet, onChange, onSave, dirty }) {
+  return (
+    <>
+      <div className="settings-content__header">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-2)' }}>
+          <div className="settings-section-icon">
+            <span className="msi">cloud</span>
+          </div>
+          <div>
+            <div className="settings-content__title">Notion 통합</div>
+            <div className="settings-content__sub">노트를 Notion 페이지/데이터베이스로 export</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Integration Token */}
+      <Field
+        label="Integration Token"
+        help="https://www.notion.so/my-integrations 에서 발급한 secret"
+      >
+        <SecretInput
+          value={values.NOTION_TOKEN || ''}
+          onChange={(v) => onChange('NOTION_TOKEN', v)}
+          isSet={secretsSet.NOTION_TOKEN}
+          placeholder="secret_..."
+          mono
+        />
+      </Field>
+
+      {/* Parent ID */}
+      <Field
+        label="Parent ID (UUID)"
+        help="노트가 저장될 database 또는 page 의 UUID"
+      >
+        <input
+          type="text"
+          className="settings-field__input settings-field__input--mono"
+          value={values.NOTION_PARENT_ID || ''}
+          onChange={(e) => onChange('NOTION_PARENT_ID', e.target.value)}
+          placeholder="1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d"
+        />
+      </Field>
+
+      {/* Parent Type */}
+      <Field label="Parent Type">
+        <select
+          className="settings-field__input settings-field__input--mono"
+          value={values.NOTION_PARENT_TYPE || 'database'}
+          onChange={(e) => onChange('NOTION_PARENT_TYPE', e.target.value)}
+          style={{ height: 36, cursor: 'pointer' }}
+        >
+          <option value="database">database</option>
+          <option value="page">page</option>
+        </select>
+      </Field>
+
+      {/* Action bar */}
+      <div className="settings-actions">
+        <div className="settings-actions__spacer" />
+        <button
+          type="button"
+          className="btn btn--primary"
+          onClick={onSave}
+          disabled={!dirty}
+        >
+          <span className="msi">save</span>
+          저장 {dirty ? `(${dirty})` : ''}
+        </button>
+      </div>
+    </>
+  );
+}
+
 /* === Placeholder Section === */
 function SettingsPlaceholder({ icon, label, sub }) {
   return (
@@ -503,10 +728,22 @@ function SettingsScreen() {
             />
           )}
           {activeNav === 'obsidian' && (
-            <SettingsPlaceholder icon="hub" label="Obsidian Vault" sub="자동 저장 위치 설정 (Step 2B-4c-2 예정)" />
+            <SettingsObsidian
+              values={values}
+              secretsSet={secretsSet}
+              onChange={handleChange}
+              onSave={handleSave}
+              dirty={dirtyCount}
+            />
           )}
           {activeNav === 'notion' && (
-            <SettingsPlaceholder icon="cloud" label="Notion 통합" sub="Integration Token (Step 2B-4c-2 예정)" />
+            <SettingsNotion
+              values={values}
+              secretsSet={secretsSet}
+              onChange={handleChange}
+              onSave={handleSave}
+              dirty={dirtyCount}
+            />
           )}
           {activeNav === 'advanced' && (
             <SettingsPlaceholder icon="tune" label="고급" sub="WhisperX (NVIDIA), 청크 크기 등 (Step 2B-4c-3 예정)" />

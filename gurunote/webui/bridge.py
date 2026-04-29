@@ -136,10 +136,12 @@ class Api:
     # ============================================================ app info
 
     def get_app_info(self) -> dict:
-        """Return version, platform, and basic hardware info.
+        """Return version, platform, hardware info, and project metadata.
 
         Used by the front-end on initial load to populate the sidebar
         version label and conditionally show Apple Silicon-only options.
+        Phase 2B-4c-3: also exposes ``license`` and ``github_url`` for the
+        Settings → "GuruNote 정보" panel.
         """
         try:
             from gurunote import __version__
@@ -147,12 +149,15 @@ class Api:
             __version__ = "unknown"
 
         return {
+            "ok": True,
             "version": __version__,
             "platform": platform.system(),
             "machine": platform.machine(),
             "is_apple_silicon": (
                 platform.system() == "Darwin" and platform.machine() == "arm64"
             ),
+            "license": "Elastic License 2.0",
+            "github_url": "https://github.com/avlp12/GuruNote",
         }
 
     # ============================================================ file picker

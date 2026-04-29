@@ -360,3 +360,106 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* === Settings Group (advanced 섹션 그룹화) === */
+.settings-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-4);
+  background: var(--gn-surface-container);
+  border-radius: var(--r-md);
+  border: 1px solid var(--gn-border-subtle);
+}
+.settings-group__title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--gn-on-surface);
+  letter-spacing: 0.2px;
+}
+.settings-group__sub {
+  font-size: 11px;
+  color: var(--gn-on-surface-muted);
+  margin-top: -8px;
+  line-height: 1.5;
+}
+
+/* === About Section === */
+.settings-about {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: var(--sp-6) var(--sp-4);
+  gap: var(--sp-3);
+}
+.settings-about__logo {
+  width: 72px;
+  height: 72px;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #1a73e8, #4285f4);
+  color: white;
+  font-size: 36px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 16px rgba(26, 115, 232, 0.25);
+}
+.settings-about__name {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--gn-on-surface);
+  margin-top: var(--sp-2);
+}
+.settings-about__version {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--gn-on-surface-muted);
+}
+.settings-about__desc {
+  font-size: 13px;
+  color: var(--gn-on-surface);
+  line-height: 1.6;
+  max-width: 480px;
+  margin-top: var(--sp-2);
+}
+.settings-about__meta {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin-top: var(--sp-4);
+  width: 100%;
+  max-width: 480px;
+}
+.settings-about__meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--gn-surface-container);
+  border-radius: var(--r-sm);
+  font-size: 12px;
+}
+.settings-about__meta-label {
+  color: var(--gn-on-surface-muted);
+  font-weight: 500;
+}
+.settings-about__meta-value {
+  font-family: var(--font-mono);
+  color: var(--gn-on-surface);
+}
+.settings-about__meta-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--gn-primary);
+  text-decoration: none;
+  font-family: var(--font-mono);
+}
+.settings-about__meta-link:hover {
+  text-decoration: underline;
+}
+.settings-about__update-btn {
+  margin-top: var(--sp-4);
+}

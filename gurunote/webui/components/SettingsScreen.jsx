@@ -551,24 +551,209 @@ function SettingsNotion({ values, secretsSet, onChange, onSave, dirty }) {
   );
 }
 
-/* === Placeholder Section === */
-function SettingsPlaceholder({ icon, label, sub }) {
+/* === Advanced Section === */
+function SettingsAdvanced({ values, secretsSet, onChange, onSave, dirty }) {
   return (
     <>
       <div className="settings-content__header">
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-2)' }}>
           <div className="settings-section-icon">
-            <span className="msi">{icon}</span>
+            <span className="msi">tune</span>
           </div>
           <div>
-            <div className="settings-content__title">{label}</div>
-            <div className="settings-content__sub">{sub}</div>
+            <div className="settings-content__title">고급</div>
+            <div className="settings-content__sub">전문가용 설정 — 다른 LLM provider 키 + WhisperX (NVIDIA)</div>
           </div>
         </div>
       </div>
-      <div className="settings-placeholder">
-        <span className="msi">construction</span>
-        <div>이 섹션은 다음 step (Phase 2B-4c-2 또는 4c-3) 에서 구현됩니다.</div>
+
+      {/* === Anthropic === */}
+      <div className="settings-group">
+        <div className="settings-group__title">Anthropic</div>
+        <Field label="ANTHROPIC_API_KEY">
+          <SecretInput
+            value={values.ANTHROPIC_API_KEY || ''}
+            onChange={(v) => onChange('ANTHROPIC_API_KEY', v)}
+            isSet={secretsSet.ANTHROPIC_API_KEY}
+            placeholder="sk-ant-..."
+            mono
+          />
+        </Field>
+        <Field label="ANTHROPIC_MODEL">
+          <input
+            type="text"
+            className="settings-field__input settings-field__input--mono"
+            value={values.ANTHROPIC_MODEL || ''}
+            onChange={(e) => onChange('ANTHROPIC_MODEL', e.target.value)}
+            placeholder="claude-sonnet-4-20250514"
+          />
+        </Field>
+      </div>
+
+      {/* === Gemini === */}
+      <div className="settings-group">
+        <div className="settings-group__title">Google Gemini</div>
+        <Field label="GOOGLE_API_KEY">
+          <SecretInput
+            value={values.GOOGLE_API_KEY || ''}
+            onChange={(v) => onChange('GOOGLE_API_KEY', v)}
+            isSet={secretsSet.GOOGLE_API_KEY}
+            placeholder="AIza..."
+            mono
+          />
+        </Field>
+        <Field label="GEMINI_MODEL">
+          <input
+            type="text"
+            className="settings-field__input settings-field__input--mono"
+            value={values.GEMINI_MODEL || ''}
+            onChange={(e) => onChange('GEMINI_MODEL', e.target.value)}
+            placeholder="gemini-2.5-flash"
+          />
+        </Field>
+      </div>
+
+      {/* === WhisperX === */}
+      <div className="settings-group">
+        <div className="settings-group__title">WhisperX (NVIDIA GPU 환경)</div>
+        <div className="settings-group__sub">CUDA 가속 STT — Linux/Windows 환경에서 사용. Mac 에서는 MLX Whisper 사용 권장.</div>
+        <div className="settings-field-row" style={{ gridTemplateColumns: '2fr 1fr' }}>
+          <Field label="WHISPERX_MODEL">
+            <input
+              type="text"
+              className="settings-field__input settings-field__input--mono"
+              value={values.WHISPERX_MODEL || ''}
+              onChange={(e) => onChange('WHISPERX_MODEL', e.target.value)}
+              placeholder="distil-large-v3"
+            />
+          </Field>
+          <Field label="WHISPERX_BATCH_SIZE">
+            <input
+              type="text"
+              className="settings-field__input settings-field__input--mono"
+              value={values.WHISPERX_BATCH_SIZE || ''}
+              onChange={(e) => onChange('WHISPERX_BATCH_SIZE', e.target.value)}
+              placeholder="16"
+            />
+          </Field>
+        </div>
+      </div>
+
+      {/* === AssemblyAI === */}
+      <div className="settings-group">
+        <div className="settings-group__title">AssemblyAI (선택적 클라우드 STT)</div>
+        <Field label="ASSEMBLYAI_API_KEY">
+          <SecretInput
+            value={values.ASSEMBLYAI_API_KEY || ''}
+            onChange={(v) => onChange('ASSEMBLYAI_API_KEY', v)}
+            isSet={secretsSet.ASSEMBLYAI_API_KEY}
+            placeholder="AssemblyAI API key"
+            mono
+          />
+        </Field>
+      </div>
+
+      {/* Action bar */}
+      <div className="settings-actions">
+        <div className="settings-actions__spacer" />
+        <button
+          type="button"
+          className="btn btn--primary"
+          onClick={onSave}
+          disabled={!dirty}
+        >
+          <span className="msi">save</span>
+          저장 {dirty ? `(${dirty})` : ''}
+        </button>
+      </div>
+    </>
+  );
+}
+
+/* === About Section === */
+function SettingsAbout() {
+  const [appInfo, setAppInfo] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        while (!window.pywebview?.api && !cancelled) {
+          await new Promise((r) => setTimeout(r, 50));
+        }
+        if (cancelled) return;
+        const result = await window.pywebview.api.get_app_info();
+        if (!cancelled && result?.ok) setAppInfo(result);
+      } catch (e) {
+        console.error('[About] get_app_info:', e);
+      }
+    };
+    load();
+    return () => { cancelled = true; };
+  }, []);
+
+  const handleCheckUpdate = () => {
+    if (window.showToast) {
+      window.showToast('업데이트 확인 기능은 곧 추가됩니다 (Phase 2C 예정)', 'info');
+    }
+  };
+
+  return (
+    <>
+      <div className="settings-content__header">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-2)' }}>
+          <div className="settings-section-icon">
+            <span className="msi">info</span>
+          </div>
+          <div>
+            <div className="settings-content__title">GuruNote 정보</div>
+            <div className="settings-content__sub">버전 · 라이선스 · 저장소</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="settings-about">
+        <div className="settings-about__logo">
+          <span>G</span>
+        </div>
+        <div className="settings-about__name">GuruNote</div>
+        <div className="settings-about__version">
+          v{appInfo?.version || '0.8.0.6'}
+        </div>
+        <div className="settings-about__desc">
+          유튜브 링크 한 줄로 한국어 요약본을 생성합니다.
+          음성 → 텍스트 → 번역 → 요약 → 마크다운까지, 로컬에서 끝까지.
+        </div>
+
+        <div className="settings-about__meta">
+          <div className="settings-about__meta-row">
+            <span className="settings-about__meta-label">라이선스</span>
+            <span className="settings-about__meta-value">{appInfo?.license || 'Elastic License 2.0'}</span>
+          </div>
+          {appInfo?.github_url && (
+            <div className="settings-about__meta-row">
+              <span className="settings-about__meta-label">저장소</span>
+              <a
+                href={appInfo.github_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="settings-about__meta-link"
+              >
+                <span className="msi" style={{ fontSize: 14 }}>open_in_new</span>
+                {appInfo.github_url.replace('https://', '')}
+              </a>
+            </div>
+          )}
+        </div>
+
+        <button
+          type="button"
+          className="btn btn--tonal settings-about__update-btn"
+          onClick={handleCheckUpdate}
+        >
+          <span className="msi">system_update</span>
+          업데이트 확인
+        </button>
       </div>
     </>
   );
@@ -746,10 +931,16 @@ function SettingsScreen() {
             />
           )}
           {activeNav === 'advanced' && (
-            <SettingsPlaceholder icon="tune" label="고급" sub="WhisperX (NVIDIA), 청크 크기 등 (Step 2B-4c-3 예정)" />
+            <SettingsAdvanced
+              values={values}
+              secretsSet={secretsSet}
+              onChange={handleChange}
+              onSave={handleSave}
+              dirty={dirtyCount}
+            />
           )}
           {activeNav === 'about' && (
-            <SettingsPlaceholder icon="info" label="GuruNote 정보" sub="버전, 라이선스 (Step 2B-4c-3 예정)" />
+            <SettingsAbout />
           )}
         </div>
       </div>

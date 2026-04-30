@@ -121,11 +121,25 @@ function SortChips({ value, onChange }) {
 }
 
 /* === FacetPanel (Phase 2B-3d) === */
-function FacetPanel({ items, activeFacets, onToggle }) {
+function FacetPanel({ items, activeFacets, onToggle, initialExpandedGroup }) {
+  // Phase 2B-5a: groups start expanded by default (empty Set). initialExpandedGroup
+  // is informational here — all groups already expand on mount, but we use it as
+  // the trigger to scrollIntoView the named group's header.
   const [collapsed, setCollapsed] = useState(new Set());
   const [searchTerm, setSearchTerm] = useState('');
+  const groupHeaderRefs = useRef({});
 
   const facets = useMemo(() => buildFacets(items), [items]);
+
+  // Phase 2B-5a: scroll the requested group's header into view on mount.
+  useEffect(() => {
+    if (!initialExpandedGroup) return;
+    const el = groupHeaderRefs.current[initialExpandedGroup];
+    if (el && typeof el.scrollIntoView === 'function') {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const toggleGroup = (id) => {
     setCollapsed((prev) => {
@@ -168,6 +182,7 @@ function FacetPanel({ items, activeFacets, onToggle }) {
             <button
               type="button"
               className="facet-group__header"
+              ref={(el) => { groupHeaderRefs.current[group.id] = el; }}
               onClick={() => toggleGroup(group.id)}
               aria-expanded={!isCollapsed}
             >
@@ -438,7 +453,14 @@ function JobCard({ item, onClick, onEdit }) {
  * HistoryScreen — props 로 items / loading / error / onReload 받음.
  * list_history 호출은 App.jsx 에서 lifting 하여 Sidebar 카운트와 공유.
  */
-function HistoryScreen({ items, total, loading, error, onReload, onEditNote }) {
+function HistoryScreen({
+  items, total, loading, error, onReload, onEditNote,
+  // Phase 2B-5a: 1-shot initial filter from sidebar library shortcuts
+  initialFacets,           // Set<"groupId:label"> | undefined
+  initialTimeWindow,       // null | number (days) | undefined
+  initialExpandedGroup,    // 'tag' | 'field' | ... | undefined — auto-expand + scrollIntoView
+  onFilterApplied,         // () => void — called once on mount so App.jsx can clear historyFilter
+}) {
   // Phase 2B-3b: 검색 + chips state
   const [searchInput, setSearchInput] = useState('');
   const debouncedSearch = useDebounced(searchInput, 150);
@@ -448,7 +470,18 @@ function HistoryScreen({ items, total, loading, error, onReload, onEditNote }) {
   );
 
   // Phase 2B-3d: facet filter — Set of "groupId:label"
-  const [activeFacets, setActiveFacets] = useState(new Set());
+  const [activeFacets, setActiveFacets] = useState(
+    () => (initialFacets ? new Set(initialFacets) : new Set())
+  );
+
+  // Phase 2B-5a: 시간 window filter — facet 와 별개의 dimension (AND)
+  const [timeWindow, setTimeWindow] = useState(initialTimeWindow || null);
+
+  // Phase 2B-5a: 1-shot reset — initial filter 를 mount 시 1회 적용 후 부모에 알림
+  useEffect(() => {
+    if (onFilterApplied) onFilterApplied();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleFacetToggle = (groupId, label) => {
     const key = `${groupId}:${label}`;
@@ -470,6 +503,7 @@ function HistoryScreen({ items, total, loading, error, onReload, onEditNote }) {
   const handleClearAll = () => {
     setSearchInput('');
     setActiveFacets(new Set());
+    setTimeWindow(null);
   };
 
   // facet filter — 검색 결과에 적용 (AND across groups)
@@ -492,11 +526,21 @@ function HistoryScreen({ items, total, loading, error, onReload, onEditNote }) {
     });
   }, [filteredItems, activeFacets]);
 
-  // Phase 2B-3c: 정렬 state — facet 결과 위에 적용 (filter chain 의 마지막)
+  // Phase 2B-5a: timeWindow filter — facet 결과 위에 적용 (별도 dimension)
+  const timeWindowFilteredItems = useMemo(() => {
+    if (!timeWindow) return facetFilteredItems;
+    const cutoff = Date.now() - timeWindow * 24 * 60 * 60 * 1000;
+    return facetFilteredItems.filter((it) => {
+      const ts = it.created_at ? Date.parse(it.created_at) : NaN;
+      return Number.isFinite(ts) && ts >= cutoff;
+    });
+  }, [facetFilteredItems, timeWindow]);
+
+  // Phase 2B-3c: 정렬 state — timeWindow 결과 위에 적용 (filter chain 의 마지막)
   const [sortBy, setSortBy] = useState('latest');
   const sortedFinalItems = useMemo(
-    () => sortItems(facetFilteredItems, sortBy),
-    [facetFilteredItems, sortBy]
+    () => sortItems(timeWindowFilteredItems, sortBy),
+    [timeWindowFilteredItems, sortBy]
   );
 
   // Phase 2B-3d: detail view state
@@ -566,6 +610,22 @@ function HistoryScreen({ items, total, loading, error, onReload, onEditNote }) {
 
         <SortChips value={sortBy} onChange={setSortBy} />
 
+        {timeWindow && (
+          <div className="hist-toolbar__chip hist-toolbar__chip--active">
+            <span className="msi" style={{ fontSize: 14 }}>schedule</span>
+            최근 {timeWindow}일
+            <button
+              type="button"
+              className="hist-toolbar__chip-clear"
+              onClick={() => setTimeWindow(null)}
+              title="시간 필터 해제"
+              aria-label="시간 필터 해제"
+            >
+              <span className="msi" style={{ fontSize: 14 }}>close</span>
+            </button>
+          </div>
+        )}
+
         <button
           type="button"
           className="btn btn--ghost history-toolbar__refresh"
@@ -606,7 +666,7 @@ function HistoryScreen({ items, total, loading, error, onReload, onEditNote }) {
             </div>
           )}
 
-          {!loading && !error && items.length > 0 && (debouncedSearch || activeFacets.size > 0) && sortedFinalItems.length === 0 && (
+          {!loading && !error && items.length > 0 && (debouncedSearch || activeFacets.size > 0 || timeWindow) && sortedFinalItems.length === 0 && (
             <div className="history-empty">
               조건에 해당하는 노트가 없습니다.
             </div>
@@ -634,6 +694,7 @@ function HistoryScreen({ items, total, loading, error, onReload, onEditNote }) {
           items={items}
           activeFacets={activeFacets}
           onToggle={handleFacetToggle}
+          initialExpandedGroup={initialExpandedGroup}
         />
       </div>
 

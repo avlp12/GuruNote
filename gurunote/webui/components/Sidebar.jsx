@@ -47,19 +47,23 @@ function uniqueTagCount(items) {
   return set.size;
 }
 
-function Sidebar({ route, onNavigate, version, historyItems, historyTotal }) {
+function Sidebar({ route, onNavigate, version, historyItems, historyTotal, onLibraryNav }) {
   const items = historyItems || [];
   const counts = {
     history:    historyTotal != null ? historyTotal : items.length,
-    favorites:  0,  // Phase 2B-3 후속 — favorites 기능 추가 시 wiring
+    favorites:  0,  // Phase 2B-3-backend 에서 favorites 데이터 모델 추가 시 활성화
     recent:     recentItemCount(items, RECENT_DAYS),
     tags:       uniqueTagCount(items),
   };
 
+  // Phase 2B-5a: 라이브러리 항목 wiring.
+  //   - 즐겨찾기: disabled until Phase 2B-3-backend (favorites 데이터 모델 부재)
+  //   - 최근 7일: HistoryScreen + timeWindow=7 (별도 dimension)
+  //   - 태그:     HistoryScreen + tag facet 그룹 자동 펼침 + scroll
   const libraryItems = [
-    { icon: 'star',     label: '즐겨찾기', count: counts.favorites },
-    { icon: 'schedule', label: '최근 7일', count: counts.recent },
-    { icon: 'label',    label: '태그',     count: counts.tags },
+    { id: 'favorites', icon: 'star',     label: '즐겨찾기', count: counts.favorites, disabled: true,  title: 'Phase 2B-3-backend 에서 활성화 예정' },
+    { id: 'recent',    icon: 'schedule', label: '최근 7일', count: counts.recent },
+    { id: 'tags',      icon: 'label',    label: '태그',     count: counts.tags },
   ];
 
   return (
@@ -110,10 +114,19 @@ function Sidebar({ route, onNavigate, version, historyItems, historyTotal }) {
         <div className="sidebar__nav-label">라이브러리</div>
         {libraryItems.map((item) => (
           <button
-            key={item.label}
+            key={item.id}
             type="button"
-            className="sidebar__nav-item"
-            onClick={() => {/* Phase 2B-3 후속에서 wiring */}}
+            className={
+              'sidebar__nav-item' +
+              (item.disabled ? ' sidebar__nav-item--disabled' : '')
+            }
+            onClick={() => {
+              if (item.disabled) return;
+              if (onLibraryNav) onLibraryNav(item.id);
+            }}
+            disabled={item.disabled}
+            title={item.title}
+            aria-disabled={item.disabled || undefined}
           >
             <span className="msi">{item.icon}</span>
             <span>{item.label}</span>

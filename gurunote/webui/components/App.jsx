@@ -43,6 +43,30 @@ function App() {
   const [historyLoading, setHistoryLoading] = useState(true);
   const [historyError, setHistoryError] = useState(null);
 
+  // Phase 2B-5a: 1-shot initial filter for HistoryScreen (sidebar library shortcuts).
+  // Shape: { initialFacets?: Set, initialTimeWindow?: number, initialExpandedGroup?: string }
+  // Cleared by HistoryScreen via onFilterApplied so subsequent direct nav (e.g.
+  // "히스토리" main-nav click) doesn't re-apply a stale filter.
+  const [historyFilter, setHistoryFilter] = useState(null);
+  // Monotonic counter — incremented on every library nav so HistoryScreen's React
+  // key changes, forcing a remount that re-runs useState initializers with the
+  // new initial* props. onFilterApplied does NOT touch this, so resetting
+  // historyFilter to null after mount doesn't trigger a second remount.
+  const [historyFilterKey, setHistoryFilterKey] = useState(0);
+
+  const handleLibraryNav = useCallback((libType) => {
+    if (libType === 'recent') {
+      setHistoryFilter({ initialTimeWindow: 7 });
+      setHistoryFilterKey((k) => k + 1);
+      setRoute('history');
+    } else if (libType === 'tags') {
+      setHistoryFilter({ initialExpandedGroup: 'tag' });
+      setHistoryFilterKey((k) => k + 1);
+      setRoute('history');
+    }
+    // 'favorites' is disabled; no handler invocation.
+  }, []);
+
   const loadHistory = useCallback(async () => {
     setHistoryLoading(true);
     setHistoryError(null);
@@ -92,18 +116,24 @@ function App() {
           version={version}
           historyItems={historyItems}
           historyTotal={historyTotal}
+          onLibraryNav={handleLibraryNav}
         />
         <main className="app-main">
           {
             route === 'main'    ? <MainScreen /> :
             route === 'history' ? (
               <HistoryScreen
+                key={`history-${historyFilterKey}`}
                 items={historyItems}
                 total={historyTotal}
                 loading={historyLoading}
                 error={historyError}
                 onReload={loadHistory}
                 onEditNote={navigateToEditor}
+                initialFacets={historyFilter?.initialFacets}
+                initialTimeWindow={historyFilter?.initialTimeWindow}
+                initialExpandedGroup={historyFilter?.initialExpandedGroup}
+                onFilterApplied={() => setHistoryFilter(null)}
               />
             ) :
             route === 'editor' ? (

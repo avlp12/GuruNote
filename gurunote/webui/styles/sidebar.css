@@ -166,3 +166,14 @@
   color: var(--gn-on-surface-muted);
   margin: 0;
 }
+
+/* === Phase 2B-5a: disabled library item (e.g., 즐겨찾기 pending Phase 2B-3-backend) === */
+.sidebar__nav-item--disabled,
+.sidebar__nav-item--disabled:hover {
+  opacity: 0.45;
+  cursor: not-allowed;
+  background: transparent;
+}
+.sidebar__nav-item--disabled .msi {
+  color: var(--gn-on-surface-muted);
+}

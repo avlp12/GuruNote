@@ -642,3 +642,39 @@
   .history-screen__body { grid-template-columns: 1fr; }
   .history-screen__facets { display: none; }
 }
+
+/* === Phase 2B-5a: toolbar timeWindow chip === */
+.hist-toolbar__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px 4px 8px;
+  border-radius: var(--r-pill);
+  font-size: 12px;
+  font-weight: 500;
+  background: var(--gn-surface-container);
+  color: var(--gn-on-surface);
+  border: 1px solid var(--gn-border-subtle);
+  flex-shrink: 0;
+}
+.hist-toolbar__chip--active {
+  background: var(--gn-primary-soft);
+  color: var(--gn-primary);
+  border-color: var(--gn-primary);
+}
+.hist-toolbar__chip-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: transparent;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  margin-left: 2px;
+}
+.hist-toolbar__chip-clear:hover {
+  background: rgba(0, 0, 0, 0.08);
+}

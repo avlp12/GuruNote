@@ -168,13 +168,13 @@ function ResultPanel({ result, log }) {
 
       {activeTab === 'korean' && (
         <div className="result-empty">
-          {result?.korean_transcript ? '한국어 transcript 표시 영역 (Phase 2B-2 후속)' : '처리 완료 후 표시됩니다.'}
+          {result?.korean_transcript || '처리 완료 후 표시됩니다.'}
         </div>
       )}
 
       {activeTab === 'english' && (
         <div className="result-empty">
-          {result?.english_transcript ? '영어 원문 표시 영역 (Phase 2B-2 후속)' : '처리 완료 후 표시됩니다.'}
+          {result?.english_transcript || '처리 완료 후 표시됩니다.'}
         </div>
       )}
 

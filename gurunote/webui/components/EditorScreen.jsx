@@ -296,7 +296,7 @@ function EditorScreen({ jobId, onBackToHistory }) {
             <div className="editor-content">
               <div className="editor-empty" style={{ paddingTop: 80 }}>
                 <span className="msi">translate</span>
-                <div>한국어 번역 데이터는 Phase 2B-4 후속에서 wiring 됩니다.</div>
+                <div>Phase 2B-3-backend 에서 wiring 됩니다 (transcript 필드 추가).</div>
                 <div style={{ fontSize: 12, marginTop: 8 }}>
                   (read_job 결과에 transcript_korean 필드가 추가되면 자동 표시)
                 </div>
@@ -308,7 +308,7 @@ function EditorScreen({ jobId, onBackToHistory }) {
             <div className="editor-content">
               <div className="editor-empty" style={{ paddingTop: 80 }}>
                 <span className="msi">subject</span>
-                <div>원문 transcript 는 Phase 2B-4 후속에서 wiring 됩니다.</div>
+                <div>Phase 2B-3-backend 에서 wiring 됩니다 (transcript 필드 추가).</div>
                 <div style={{ fontSize: 12, marginTop: 8 }}>
                   (read_job 결과에 transcript_original 필드가 추가되면 자동 표시)
                 </div>
@@ -355,7 +355,7 @@ function EditorScreen({ jobId, onBackToHistory }) {
                   <span className="msi">download</span>
                   마크다운 다운로드
                 </button>
-                <button type="button" className="editor-side__action" onClick={() => window.showToast?.('Phase 2B-3 후속 — 연관 노트 추천')}>
+                <button type="button" className="editor-side__action" onClick={() => window.showToast?.('Phase 3A (RAG) 에서 활성화')}>
                   <span className="msi">hub</span>
                   연관 노트
                 </button>
@@ -366,7 +366,7 @@ function EditorScreen({ jobId, onBackToHistory }) {
                 <button
                   type="button"
                   className="editor-side__action editor-side__action--danger"
-                  onClick={() => window.showToast?.('Phase 2B-4 후속 — 삭제 wiring 예정')}
+                  onClick={() => window.showToast?.('Phase 2B-3-backend 에서 활성화')}
                 >
                   <span className="msi">delete</span>
                   노트 삭제

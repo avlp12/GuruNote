@@ -333,7 +333,7 @@ function DetailPanel({ item, onClose, onEdit }) {
             <span className="msi">download</span>
             다운로드
           </button>
-          <button type="button" className="btn btn--ghost" onClick={() => window.showToast?.('Phase 2B-3 후속 — 연관 노트 추천')}>
+          <button type="button" className="btn btn--ghost" onClick={() => window.showToast?.('Phase 3A (RAG) 에서 활성화')}>
             <span className="msi">hub</span>
             연관 노트
           </button>
@@ -432,7 +432,7 @@ function JobCard({ item, onClick, onEdit }) {
           type="button"
           className="job-action"
           title="연관 노트"
-          onClick={() => window.showToast?.('Phase 2B-3 후속 — 연관 노트 추천')}
+          onClick={() => window.showToast?.('Phase 3A (RAG) 에서 활성화')}
         >
           <span className="msi">hub</span>
         </button>
@@ -440,7 +440,7 @@ function JobCard({ item, onClick, onEdit }) {
           type="button"
           className="job-action job-action--more"
           title="더 보기"
-          onClick={() => window.showToast?.('Phase 2B-3 후속 — 즐겨찾기/공유/삭제 등')}
+          onClick={() => window.showToast?.('Phase 2B-3-backend 에서 활성화')}
         >
           <span className="msi">more_horiz</span>
         </button>
@@ -548,7 +548,7 @@ function HistoryScreen({
 
   const handleChipClick = (chip) => {
     if (window.showToast) {
-      window.showToast(`${chip} 검색은 Phase 2B-3 후속에서 활성화됩니다.`);
+      window.showToast(`${chip} 검색은 Phase 3A (RAG) 에서 활성화됩니다.`);
     }
   };
 

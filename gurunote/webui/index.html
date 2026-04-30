@@ -14,6 +14,7 @@
 
   <link rel="stylesheet" href="styles/base.css">
   <link rel="stylesheet" href="styles/sidebar.css">
+  <link rel="stylesheet" href="styles/topbar.css">
   <link rel="stylesheet" href="styles/main.css">
   <link rel="stylesheet" href="styles/history.css">
   <link rel="stylesheet" href="styles/editor.css">
@@ -27,8 +28,9 @@
 <body>
   <div id="root"></div>
 
-  <!-- Component scripts: order matters (Sidebar → screens → App) -->
+  <!-- Component scripts: order matters (Sidebar → TopBar → screens → App) -->
   <script type="text/babel" src="components/Sidebar.jsx"></script>
+  <script type="text/babel" src="components/TopBar.jsx"></script>
   <script type="text/babel" src="components/MainScreen.jsx"></script>
   <script type="text/babel" src="components/HistoryScreen.jsx"></script>
   <script type="text/babel" src="components/EditorScreen.jsx"></script>

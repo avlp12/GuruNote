@@ -65,7 +65,7 @@ function fmtDuration(sec) {
 }
 
 /* === EditorScreen === */
-function EditorScreen({ jobId, onBackToHistory }) {
+function EditorScreen({ jobId, onBackToLibrary }) {
   const [activeTab, setActiveTab] = useState('summary');
   const [mode, setMode] = useState('read'); // 'read' | 'edit'
   const [item, setItem] = useState(null);
@@ -179,17 +179,13 @@ function EditorScreen({ jobId, onBackToHistory }) {
   if (!jobId) {
     return (
       <div className="editor-screen">
-        <div className="editor-topbar">
-          <div className="editor-topbar__crumbs">GuruNote · 노트 편집</div>
-          <div className="editor-topbar__title">노트 편집</div>
-        </div>
         <div className="editor-empty">
           <span className="msi">edit_note</span>
           <div>편집할 노트를 선택해주세요.</div>
           <button
             type="button"
             className="btn btn--ghost"
-            onClick={onBackToHistory}
+            onClick={onBackToLibrary}
           >
             <span className="msi">history</span>
             라이브러리에서 선택
@@ -210,17 +206,13 @@ function EditorScreen({ jobId, onBackToHistory }) {
   if (error) {
     return (
       <div className="editor-screen">
-        <div className="editor-topbar">
-          <div className="editor-topbar__crumbs">GuruNote · 노트 편집</div>
-          <div className="editor-topbar__title">오류</div>
-        </div>
         <div className="editor-empty">
           <span className="msi" style={{ color: 'var(--gn-danger)' }}>error</span>
           <div style={{ color: 'var(--gn-danger)' }}>{error}</div>
           <button
             type="button"
             className="btn btn--ghost"
-            onClick={onBackToHistory}
+            onClick={onBackToLibrary}
           >
             <span className="msi">history</span>
             라이브러리로
@@ -234,13 +226,6 @@ function EditorScreen({ jobId, onBackToHistory }) {
 
   return (
     <div className="editor-screen">
-      <div className="editor-topbar">
-        <div className="editor-topbar__crumbs">
-          GuruNote · 라이브러리 · 노트 편집
-        </div>
-        <div className="editor-topbar__title" title={title}>{title}</div>
-      </div>
-
       <div className="editor-screen__body">
         {/* Main: tabs + mode + content */}
         <div className="editor-screen__main">
@@ -380,7 +365,7 @@ function EditorScreen({ jobId, onBackToHistory }) {
                   <span className="msi">hub</span>
                   연관 노트
                 </button>
-                <button type="button" className="editor-side__action" onClick={onBackToHistory}>
+                <button type="button" className="editor-side__action" onClick={onBackToLibrary}>
                   <span className="msi">arrow_back</span>
                   라이브러리로
                 </button>

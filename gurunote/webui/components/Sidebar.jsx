@@ -48,6 +48,26 @@ function uniqueTagCount(items) {
 }
 
 function Sidebar({ route, onNavigate, version, historyItems, historyTotal, onLibraryNav }) {
+  // Phase 2B-6a: 좌하단 칩셋 정보 (이름 / 아바타 제외 — 추후 클라우드/멀티유저 시 부활).
+  const [chipInfo, setChipInfo] = React.useState(null);
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      while (!window.pywebview?.api && !cancelled) {
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      if (cancelled) return;
+      try {
+        const r = await window.pywebview.api.detect_hardware();
+        if (cancelled || !r?.ok) return;
+        // 예: "Apple M4 Max · 64GB" / fallback "arm64". memory_gb 가 0 이면 생략.
+        const parts = [r.cpu_brand_string || r.cpu_arch || ''];
+        if (r.memory_gb && r.memory_gb > 0) parts.push(`${Math.round(r.memory_gb)}GB`);
+        setChipInfo(parts.filter(Boolean).join(' · '));
+      } catch (_e) { /* footer 는 정보성, 실패 시 빈 칩 */ }
+    })();
+    return () => { cancelled = true; };
+  }, []);
   const items = historyItems || [];
   const counts = {
     history:    historyTotal != null ? historyTotal : items.length,
@@ -139,7 +159,13 @@ function Sidebar({ route, onNavigate, version, historyItems, historyTotal, onLib
 
       <div className="sidebar__spacer" />
 
-      {/* 사용자 footer 는 폐기. 추후 멀티 유저 시 추가 (사용자 결정). */}
+      {/* Phase 2B-6a: 좌하단 칩셋 정보만. 이름/아바타는 추후 클라우드 멀티유저 시. */}
+      {chipInfo && (
+        <div className="sidebar__footer" title={chipInfo}>
+          <span className="msi">memory</span>
+          <span className="sidebar__footer-text">{chipInfo}</span>
+        </div>
+      )}
     </aside>
   );
 }

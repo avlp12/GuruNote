@@ -14,15 +14,6 @@
   gap: var(--sp-4);
 }
 
-.history-topbar {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-1);
-  margin-bottom: var(--sp-3);
-}
-.history-topbar__crumbs { font-size: 12px; color: var(--gn-on-surface-muted); }
-.history-topbar__title { font-size: 22px; font-weight: 700; }
-.history-topbar__sub { font-size: 13px; color: var(--gn-on-surface-muted); }
 
 /* === Toolbar (검색 + 액션 — Phase 2B-3b 에서 wiring) === */
 .history-toolbar {

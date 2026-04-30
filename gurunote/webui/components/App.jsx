@@ -123,17 +123,19 @@ function App() {
 
   return (
     <>
-      <div className="app-shell">
-        <Sidebar
-          route={route}
-          onNavigate={handleSidebarNavigate}
-          version={version}
-          historyItems={historyItems}
-          historyTotal={historyTotal}
-          onLibraryNav={handleLibraryNav}
-        />
-        <main className="app-main">
-          {
+      <div className="gn-window">
+        <div className="gn-body">
+          <Sidebar
+            route={route}
+            onNavigate={handleSidebarNavigate}
+            version={version}
+            historyItems={historyItems}
+            historyTotal={historyTotal}
+            onLibraryNav={handleLibraryNav}
+          />
+          <main className="gn-main">
+            <TopBar route={route} />
+            <div className="gn-content">{
             route === 'main'    ? <MainScreen /> :
             route === 'history' ? (
               <HistoryScreen
@@ -153,7 +155,7 @@ function App() {
             route === 'editor' ? (
               <EditorScreen
                 jobId={currentJobId}
-                onBackToHistory={() => setRoute('history')}
+                onBackToLibrary={() => setRoute('history')}
               />
             ) :
             route === 'dashboard' ? (
@@ -169,8 +171,9 @@ function App() {
               <SettingsScreen />
             ) :
             <ScreenPlaceholder route={route} />
-          }
-        </main>
+          }</div>
+          </main>
+        </div>
       </div>
       <div id="toast-container" className="toast-container" />
     </>

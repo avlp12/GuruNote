@@ -12,25 +12,6 @@
   gap: var(--sp-4);
 }
 
-.settings-topbar {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-1);
-  flex-shrink: 0;
-}
-.settings-topbar__crumbs {
-  font-size: 12px;
-  color: var(--gn-on-surface-muted);
-}
-.settings-topbar__title {
-  font-size: 22px;
-  font-weight: 700;
-}
-.settings-topbar__sub {
-  font-size: 13px;
-  color: var(--gn-on-surface-muted);
-}
-
 /* === 2-column layout === */
 .settings-layout {
   display: grid;

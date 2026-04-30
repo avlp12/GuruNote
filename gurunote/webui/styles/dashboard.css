@@ -13,26 +13,6 @@
   gap: var(--sp-5);
 }
 
-.dashboard-topbar {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-1);
-  flex-shrink: 0;
-}
-.dashboard-topbar__crumbs {
-  font-size: 12px;
-  color: var(--gn-on-surface-muted);
-}
-.dashboard-topbar__title {
-  font-size: 22px;
-  font-weight: 700;
-}
-.dashboard-topbar__sub {
-  font-size: 13px;
-  color: var(--gn-on-surface-muted);
-  margin-top: 4px;
-}
-
 /* === Stat cards row === */
 .dashboard-stats {
   display: grid;

@@ -1,0 +1,151 @@
+/* SPDX-License-Identifier: Elastic-2.0
+ * Copyright (c) 2026 GuruNote contributors.
+ *
+ * Phase 2B-6a: 글로벌 TopBar (gn-appbar) + window/body layout 재구성.
+ *
+ * Reference: docs/design/extracted/app-sidebar-and-routes.jsx:152-182,
+ *            material3-from-template.css:435-490 의 .gn-appbar / .gn-search.
+ *
+ * 우리 환경은 pywebview 가 native titlebar 제공 → reference 의 .gn-titlebar
+ * (가짜 macOS 트래픽 라이트 + 제목) 는 채택 안 함.
+ */
+
+/* === Window / body layout (이전 .app-shell 대체) === */
+.gn-window {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--gn-bg);
+}
+
+.gn-body {
+  flex: 1;
+  display: grid;
+  grid-template-columns: var(--sidebar-w) 1fr;
+  min-height: 0;
+}
+
+.gn-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--gn-bg);
+  overflow: hidden;
+}
+
+.gn-content {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* placeholder 화면 — 글로벌 appbar 아래에서 중앙 정렬 */
+.gn-content > .screen-placeholder {
+  margin: auto;
+}
+
+/* === Top app bar === */
+.gn-appbar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: 12px 24px;
+  background: var(--gn-surface);
+  border-bottom: 1px solid var(--gn-border-subtle);
+  min-height: 60px;
+  flex-shrink: 0;
+}
+
+.gn-appbar__lead {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.gn-appbar__crumbs {
+  font-size: 12px;
+  color: var(--gn-on-surface-muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.gn-appbar__crumb-sep { font-size: 14px; }
+
+.gn-appbar__title {
+  font-size: 20px;
+  font-weight: 600;
+  margin: 0;
+  letter-spacing: -0.01em;
+  color: var(--gn-on-surface);
+}
+
+/* === Search (right side) === */
+.gn-search {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--gn-surface-container);
+  border-radius: var(--r-pill);
+  padding: 8px 16px;
+  width: 320px;
+  cursor: text;
+  transition: background-color 120ms, box-shadow 120ms;
+}
+.gn-search:hover { background: var(--gn-surface); }
+.gn-search:focus-within {
+  background: var(--gn-surface);
+  box-shadow: 0 0 0 2px var(--gn-primary-soft);
+}
+.gn-search .msi {
+  color: var(--gn-on-surface-muted);
+  font-size: 18px;
+  flex-shrink: 0;
+}
+.gn-search__input {
+  border: none;
+  outline: none;
+  background: transparent;
+  flex: 1;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--gn-on-surface);
+  cursor: text;
+  min-width: 0;
+}
+.gn-search__input::placeholder { color: var(--gn-on-surface-muted); }
+.gn-search__shortcut {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  color: var(--gn-on-surface-muted);
+  padding: 2px 6px;
+  background: var(--gn-surface);
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+/* === Sidebar footer (chip info only — 사용자 이름 / 아바타 / more 제외) === */
+.sidebar__footer {
+  padding: var(--sp-3) var(--sp-3);
+  border-top: 1px solid var(--gn-border-subtle);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: 11px;
+  color: var(--gn-on-surface-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sidebar__footer .msi {
+  font-size: 14px;
+  flex-shrink: 0;
+}
+.sidebar__footer-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

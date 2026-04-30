@@ -226,17 +226,17 @@ function DashboardScreen({ items, total, loading, error, onReload }) {
 
   return (
     <div className="dashboard-screen">
-      <div className="dashboard-topbar">
-        <div className="dashboard-topbar__crumbs">GuruNote · 대시보드</div>
-        <div className="dashboard-topbar__title">분석 통계</div>
-        <div className="dashboard-topbar__sub">
-          {loading
-            ? '불러오는 중...'
-            : error
-              ? `오류: ${error}`
-              : `증류된 노트 ${stats.total}개 기반 통계`}
+      {loading && (
+        <div className="dashboard-empty" style={{ color: 'var(--gn-on-surface-muted)' }}>
+          불러오는 중...
         </div>
-      </div>
+      )}
+      {error && (
+        <div className="dashboard-empty" style={{ color: 'var(--gn-danger)' }}>
+          <span className="msi">error</span>
+          <div>오류: {error}</div>
+        </div>
+      )}
 
       {!loading && stats.total === 0 && !error && (
         <div className="dashboard-empty">

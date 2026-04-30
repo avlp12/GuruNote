@@ -5,13 +5,6 @@
  * 디자인 spec: docs/design/v2-reference.html 의 .gn-sidebar 시각 부분만 참고.
  */
 
-.app-shell {
-  display: grid;
-  grid-template-columns: var(--sidebar-w) 1fr;
-  height: 100vh;
-  background: var(--gn-bg);
-}
-
 .sidebar {
   background: var(--gn-surface);
   border-right: 1px solid var(--gn-border-subtle);
@@ -140,17 +133,8 @@
 
 .sidebar__spacer { flex: 1; }
 
-/* === Main area (각 화면이 자체 layout 처리) === */
-.app-main {
-  height: 100vh;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
-/* placeholder 화면 (Phase 2B-3/2B-4) 만 center align */
-.app-main > .screen-placeholder {
-  margin: auto;
-}
+/* Phase 2B-6a: .app-main / .app-shell 은 gn-window/gn-body/gn-main/gn-content 로
+   교체됨 (topbar.css 참조). placeholder 의 자체 padding 만 보존. */
 .screen-placeholder {
   text-align: center;
   padding: var(--sp-6);

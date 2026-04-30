@@ -846,9 +846,6 @@ function SettingsScreen() {
   if (loading) {
     return (
       <div className="settings-screen">
-        <div className="settings-topbar">
-          <div className="settings-topbar__title">설정</div>
-        </div>
         <div style={{ padding: 'var(--sp-6)', color: 'var(--gn-on-surface-muted)' }}>
           불러오는 중...
         </div>
@@ -859,9 +856,6 @@ function SettingsScreen() {
   if (error) {
     return (
       <div className="settings-screen">
-        <div className="settings-topbar">
-          <div className="settings-topbar__title">설정</div>
-        </div>
         <div style={{ color: 'var(--gn-danger)', padding: 'var(--sp-4)' }}>오류: {error}</div>
       </div>
     );
@@ -869,12 +863,6 @@ function SettingsScreen() {
 
   return (
     <div className="settings-screen">
-      <div className="settings-topbar">
-        <div className="settings-topbar__crumbs">GuruNote · 설정</div>
-        <div className="settings-topbar__title">설정</div>
-        <div className="settings-topbar__sub">API 키 · 엔진 · 통합 관리</div>
-      </div>
-
       <div className="settings-layout">
         {/* Nav */}
         <nav className="settings-nav">

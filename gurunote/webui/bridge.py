@@ -415,6 +415,21 @@ class Api:
                 except Exception:  # noqa: BLE001
                     pass
 
+        # Phase 2B-6a: chip brand string for sidebar footer (e.g. "Apple M4 Max").
+        # macOS 만 정확한 brand 제공; 다른 OS / 실패 시 machine 값으로 폴백.
+        cpu_brand_string = machine
+        if system == "darwin":
+            try:
+                import subprocess  # noqa: PLC0415
+                br = subprocess.run(
+                    ["sysctl", "-n", "machdep.cpu.brand_string"],
+                    capture_output=True, text=True, check=True, timeout=2,
+                )
+                if br.stdout.strip():
+                    cpu_brand_string = br.stdout.strip()
+            except Exception:  # noqa: BLE001
+                pass
+
         gpu_info: dict = {"available": False, "type": "none", "name": "-"}
         if is_apple_silicon:
             gpu_info = {
@@ -461,6 +476,7 @@ class Api:
             "ok": True,
             "platform": system,
             "cpu_arch": machine,
+            "cpu_brand_string": cpu_brand_string,
             "is_apple_silicon": is_apple_silicon,
             "memory_gb": memory_gb,
             "gpu": gpu_info,

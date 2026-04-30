@@ -558,14 +558,6 @@ function HistoryScreen({
 
   return (
     <div className="history-screen">
-      <div className="history-topbar">
-        <div className="history-topbar__crumbs">GuruNote · 라이브러리</div>
-        <div className="history-topbar__title">작업 히스토리</div>
-        <div className="history-topbar__sub">
-          {loading ? '불러오는 중...' : `증류된 노트 ${total}개 · 지식 라이브러리`}
-        </div>
-      </div>
-
       <div className="history-toolbar">
         <div className="search-box">
           <span className="msi search-box__icon">search</span>

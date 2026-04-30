@@ -24,6 +24,14 @@ const EDITOR_TABS_BASE = [
   { id: 'original',    label: '원문', icon: 'subject' },
 ];
 
+/* Phase 2B-5b-2: bridge 의 _err code → 사용자 친화 한국어 메시지.
+   향후 다른 code 발견 시 여기 추가해 일관성 유지 (raw e.message 폴백). */
+const EDITOR_ERROR_MESSAGES = {
+  HISTORY_NOT_FOUND: '이 노트의 결과 파일이 없습니다 (처리가 완료되지 않았을 수 있습니다).',
+  INVALID_ID: '잘못된 노트 식별자입니다.',
+  READ_FAILED: '노트를 읽는 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.',
+};
+
 /* 한국어 detected 시 '번역' 탭 (langDependent) 제거. */
 function getVisibleTabs(detectedLanguage) {
   const isKorean = detectedLanguage === 'ko' || detectedLanguage === 'kor' || detectedLanguage === 'korean';
@@ -87,7 +95,11 @@ function EditorScreen({ jobId, onBackToHistory }) {
         const result = await window.pywebview.api.get_history_detail({ job_id: jobId });
         if (cancelled) return;
         if (!result?.ok) {
-          throw new Error(result?.error || 'get_history_detail failed');
+          // Phase 2B-5b-2: code 기반 한국어 메시지 (없으면 backend 의 raw error 폴백).
+          const friendly = EDITOR_ERROR_MESSAGES[result?.code]
+            || result?.error
+            || 'get_history_detail failed';
+          throw new Error(friendly);
         }
         setItem(result.meta || null);
         setMarkdown(result.markdown || '');
@@ -202,8 +214,17 @@ function EditorScreen({ jobId, onBackToHistory }) {
           <div className="editor-topbar__crumbs">GuruNote · 노트 편집</div>
           <div className="editor-topbar__title">오류</div>
         </div>
-        <div className="editor-empty" style={{ color: 'var(--gn-danger)' }}>
-          {error}
+        <div className="editor-empty">
+          <span className="msi" style={{ color: 'var(--gn-danger)' }}>error</span>
+          <div style={{ color: 'var(--gn-danger)' }}>{error}</div>
+          <button
+            type="button"
+            className="btn btn--ghost"
+            onClick={onBackToHistory}
+          >
+            <span className="msi">history</span>
+            라이브러리로
+          </button>
         </div>
       </div>
     );

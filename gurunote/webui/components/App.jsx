@@ -37,6 +37,20 @@ function App() {
     setRoute('editor');
   }, []);
 
+  // Phase 2B-5b-2: Sidebar 메인 nav 클릭 wrapper.
+  //   - '노트 편집' 메인 nav 클릭은 특정 노트 컨텍스트가 없는 진입.
+  //     stale currentJobId (이전 세션 / 이전 클릭의 잔재) 가 그대로 남아 깨진
+  //     노트를 다시 fetch 하는 경우가 있음 → 명시적으로 null 로 reset 해서
+  //     EditorScreen 의 empty state 분기로 안전하게 진입.
+  //   - 카드 [편집] 액션의 navigateToEditor 는 이 핸들러를 거치지 않으므로
+  //     명시적 jobId 흐름은 무손상.
+  const handleSidebarNavigate = useCallback((target) => {
+    if (target === 'editor') {
+      setCurrentJobId(null);
+    }
+    setRoute(target);
+  }, []);
+
   // History state — Sidebar 카운트 + HistoryScreen 그리드 공유.
   const [historyItems, setHistoryItems] = useState([]);
   const [historyTotal, setHistoryTotal] = useState(0);
@@ -112,7 +126,7 @@ function App() {
       <div className="app-shell">
         <Sidebar
           route={route}
-          onNavigate={setRoute}
+          onNavigate={handleSidebarNavigate}
           version={version}
           historyItems={historyItems}
           historyTotal={historyTotal}

@@ -6,7 +6,10 @@
  */
 
 .sidebar {
-  background: var(--gn-surface);
+  /* Phase 2B-6b-2: 옅은 회색 — OS native titlebar 와 비슷 톤으로 위쪽 영역 그룹화.
+     본문 카드 (white) 와 명확히 분리. Native titlebar override 시도 폐기 후
+     CSS 영역에서 시각 분리 달성 (cocoa.py lifecycle race 회피). */
+  background: #eef1f6;
   border-right: 1px solid var(--gn-border-subtle);
   padding: var(--sp-4) var(--sp-3);
   display: flex;

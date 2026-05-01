@@ -548,7 +548,9 @@ function HistoryScreen({
 
   const handleChipClick = (chip) => {
     if (window.showToast) {
-      window.showToast(`${chip} 검색은 Phase 3A (RAG) 에서 활성화됩니다.`);
+      // chip 이 이미 '검색' 으로 끝나면 ('의미 검색') 추가 ' 검색' 없이 조사만 — 'X 검색 검색은' 중복 회피.
+      const tail = chip.endsWith('검색') ? '은' : ' 검색은';
+      window.showToast(`${chip}${tail} Phase 3A (RAG) 에서 활성화됩니다.`);
     }
   };
 

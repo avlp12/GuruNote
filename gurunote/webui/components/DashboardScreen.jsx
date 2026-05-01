@@ -1,46 +1,75 @@
 /* SPDX-License-Identifier: Elastic-2.0
  * Copyright (c) 2026 GuruNote contributors.
  *
- * Phase 2B-4b: DashboardScreen — 분석 통계 화면.
+ * Phase 2B-6c: DashboardScreen — KPI + 분야별 + 의미 검색 + 월별 + 태그.
  *
- * Frontend only — bridge 추가 작업 0.
- * App.jsx 의 historyItems (이미 lifting state) 를 props 로 받아서 통계 계산.
+ * Reference: docs/design/extracted/screens-editor-dashboard-settings.jsx:101-219
  *
- * 4 영역:
- *   1. 통계 카드 4개 (총 노트 / 총 처리 시간 / 평균 길이 / 평균 화자 수)
- *   2. 주제 분포 (field facet 가로 bar chart)
- *   3. 태그 cloud (top 30, 빈도 비례 font-size)
- *   4. 활동 timeline (최근 30일 daily count, bar chart)
+ * 사용자 결정:
+ *   - C-1 KPI 4번째: '실패율' (Reference 정합)
+ *   - C-2 의미 검색 인덱스: disabled placeholder + 'Phase 3A (RAG) 에서 활성화' tooltip
+ *     (즐겨찾기 disable 패턴 재활용 — Phase 2B-5a)
+ *   - C-3 월별 추이: 12개월 axis (30일 daily 폐기)
+ *   - C-4 태그 클라우드: 보존 — Row 2 우측
+ *   - Layout: 2 row × (2fr | 1fr) — Row 1: 분야별(2)+의미검색(1) / Row 2: 월별(2)+태그(1)
+ *
+ * Frontend only — bridge 추가 작업 0. App.jsx 의 historyItems (lifting state)
+ * 를 props 로 받아 통계 계산.
+ *
+ * Babel standalone global scope 회피: 모든 top-level const 는 DASH_ 접두사.
  */
 
-const { useMemo } = React;
+const { useMemo, useState } = React;
+
+/* === KPI ico 색 (Reference 정합) === */
+const DASH_KPI_COLORS = {
+  notes:    '#1a73e8',  // blue
+  duration: '#188038',  // green
+  avg:      '#e37400',  // orange
+  failure:  '#7b5ac1',  // purple
+};
+
+/* === 분야별 색 팔레트 — 라벨 hash 로 deterministic 매핑 === */
+const DASH_FIELD_PALETTE = [
+  '#1a73e8',  // blue
+  '#188038',  // green
+  '#e37400',  // orange
+  '#7b5ac1',  // purple
+  '#d93880',  // pink
+  '#00897b',  // teal
+  '#5f6368',  // gray
+  '#c5221f',  // red
+];
+
+function dashFieldColor(label) {
+  let h = 0;
+  for (const c of label) h = (h * 31 + c.charCodeAt(0)) & 0x7fffffff;
+  return DASH_FIELD_PALETTE[h % DASH_FIELD_PALETTE.length];
+}
 
 /* === 통계 헬퍼 === */
 function computeStats(items) {
   if (!items || items.length === 0) {
     return {
       total: 0, totalDuration: 0, avgDuration: 0,
-      avgSpeakers: 0, completedCount: 0,
+      completedCount: 0, failedCount: 0, failurePercent: 0,
     };
   }
   let totalDuration = 0;
-  let speakersSum = 0;
-  let speakersCount = 0;
   let completedCount = 0;
+  let failedCount = 0;
   for (const it of items) {
     if (it.duration_sec > 0) totalDuration += it.duration_sec;
-    if (it.num_speakers > 0) {
-      speakersSum += it.num_speakers;
-      speakersCount++;
-    }
     if (it.status === 'completed' || it.status === 'done') completedCount++;
+    if (it.status === 'failed' || it.status === 'error') failedCount++;
   }
   return {
     total: items.length,
     totalDuration,
     avgDuration: items.length > 0 ? totalDuration / items.length : 0,
-    avgSpeakers: speakersCount > 0 ? speakersSum / speakersCount : 0,
     completedCount,
+    failedCount,
+    failurePercent: items.length > 0 ? (failedCount / items.length) * 100 : 0,
   };
 }
 
@@ -56,19 +85,19 @@ function fmtDurationShort(sec) {
   if (!sec || sec <= 0) return '0:00';
   const h = Math.floor(sec / 3600);
   const m = Math.floor((sec % 3600) / 60);
-  const s = Math.floor(sec % 60);
-  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-  return `${m}:${String(s).padStart(2, '0')}`;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
 }
 
-function buildFieldDistribution(items) {
+function buildFieldDistribution(items, topN = 5) {
   const counts = new Map();
   for (const it of items) {
     if (it.field) counts.set(it.field, (counts.get(it.field) || 0) + 1);
   }
   return [...counts.entries()]
-    .map(([label, count]) => ({ label, count }))
-    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, 'ko'));
+    .map(([label, count]) => ({ label, count, color: dashFieldColor(label) }))
+    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, 'ko'))
+    .slice(0, topN);
 }
 
 function buildTagCloud(items, topN = 30) {
@@ -84,8 +113,8 @@ function buildTagCloud(items, topN = 30) {
     .slice(0, topN);
 }
 
+/* 최근 N일 daily aggregation (Toggle 의 'daily' 모드용) */
 function buildTimeline(items, days = 30) {
-  // 최근 N일 daily count
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const buckets = [];
@@ -95,7 +124,6 @@ function buildTimeline(items, days = 30) {
     buckets.push({ date: d, count: 0 });
   }
   const startMs = buckets[0].date.getTime();
-
   for (const it of items) {
     if (!it.created_at) continue;
     const ts = new Date(it.created_at);
@@ -105,28 +133,85 @@ function buildTimeline(items, days = 30) {
     const ms = dayStart.getTime();
     if (ms < startMs) continue;
     const idx = Math.floor((ms - startMs) / (24 * 60 * 60 * 1000));
-    if (idx >= 0 && idx < buckets.length) {
-      buckets[idx].count++;
-    }
+    if (idx >= 0 && idx < buckets.length) buckets[idx].count++;
   }
   return buckets;
 }
 
+/* 최근 12개월 monthly aggregation (Toggle 의 'monthly' 모드용) */
+function buildMonthlyTrend(items, monthsBack = 12) {
+  const today = new Date();
+  today.setDate(1);
+  today.setHours(0, 0, 0, 0);
+  const buckets = [];
+  for (let i = monthsBack - 1; i >= 0; i--) {
+    const d = new Date(today);
+    d.setMonth(d.getMonth() - i);
+    buckets.push({ year: d.getFullYear(), month: d.getMonth() + 1, count: 0 });
+  }
+  const idxOf = (y, m) => {
+    for (let i = 0; i < buckets.length; i++) {
+      if (buckets[i].year === y && buckets[i].month === m) return i;
+    }
+    return -1;
+  };
+  for (const it of items) {
+    if (!it.created_at) continue;
+    const d = new Date(it.created_at);
+    if (isNaN(d.getTime())) continue;
+    const i = idxOf(d.getFullYear(), d.getMonth() + 1);
+    if (i >= 0) buckets[i].count++;
+  }
+  return buckets;
+}
+
+/* 이번 달 카운트 (KPI delta 용) */
+function countThisMonth(items) {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = now.getMonth();
+  let c = 0;
+  for (const it of items) {
+    if (!it.created_at) continue;
+    const d = new Date(it.created_at);
+    if (isNaN(d.getTime())) continue;
+    if (d.getFullYear() === y && d.getMonth() === m) c++;
+  }
+  return c;
+}
+
 /* === Components === */
-function StatCard({ icon, label, value, sub }) {
+
+/* KPI card — Reference 정합. 큰 숫자 + 컬러 ico + delta.
+   showTrend=false 시 trending_up/down 아이콘 생략 (절대 카운트 같이 trend 의미가
+   모호한 delta 용). */
+function KPICard({ icon, label, value, delta, color, good, showTrend = true }) {
   return (
-    <div className="stat-card">
-      <div className="stat-card__icon">
+    <div className="kpi-card">
+      <div
+        className="kpi-card__ico"
+        style={{ background: `${color}1a`, color }}
+      >
         <span className="msi">{icon}</span>
       </div>
-      <div className="stat-card__label">{label}</div>
-      <div className="stat-card__value">{value}</div>
-      {sub && <div className="stat-card__sub">{sub}</div>}
+      <div className="kpi-card__value">{value}</div>
+      <div className="kpi-card__label">{label}</div>
+      {delta && (
+        <div className={'kpi-card__delta' + (good ? ' kpi-card__delta--good' : '')}>
+          {showTrend && (
+            <span className="msi" style={{ fontSize: 14 }}>
+              {delta.startsWith('-') ? 'trending_down' : 'trending_up'}
+            </span>
+          )}
+          {delta}
+        </div>
+      )}
     </div>
   );
 }
 
-function FieldDistribution({ data, total }) {
+/* 분야별 분포 — 색상 dot + 가로 막대 + count */
+function FieldDistribution({ data }) {
   if (data.length === 0) {
     return (
       <div className="dashboard-empty" style={{ padding: 'var(--sp-4)' }}>
@@ -136,58 +221,67 @@ function FieldDistribution({ data, total }) {
   }
   const max = data[0].count;
   return (
-    <div className="field-bars">
+    <div className="bar-list">
       {data.map((row) => (
-        <div key={row.label} className="field-bar">
-          <div className="field-bar__label" title={row.label}>{row.label}</div>
-          <div className="field-bar__track">
+        <div key={row.label} className="bar-row">
+          <span className="bar-row__label" title={row.label}>
+            <span className="bar-row__dot" style={{ background: row.color }} />
+            {row.label}
+          </span>
+          <div className="bar-row__track">
             <div
-              className="field-bar__fill"
-              style={{ width: `${(row.count / max) * 100}%` }}
+              className="bar-row__fill"
+              style={{ width: `${(row.count / max) * 100}%`, background: row.color }}
             />
           </div>
-          <div className="field-bar__count">
-            {row.count} · {Math.round((row.count / total) * 100)}%
-          </div>
+          <span className="bar-row__count">{row.count}</span>
         </div>
       ))}
     </div>
   );
 }
 
-function TagCloud({ tags }) {
-  if (tags.length === 0) {
-    return (
-      <div className="dashboard-empty" style={{ padding: 'var(--sp-4)' }}>
-        태그 데이터가 없습니다.
-      </div>
-    );
-  }
-  const max = tags[0].count;
-  const min = tags[tags.length - 1].count;
-  const range = Math.max(max - min, 1);
-  // font-size 0.85em ~ 1.4em 매핑
-  const sizeFor = (count) => {
-    const t = (count - min) / range;
-    return (0.85 + t * 0.55).toFixed(2);
+/* 의미 검색 인덱스 — Phase 3A (RAG) 까지 disabled placeholder. */
+function SemanticIndexPlaceholder() {
+  const handleClick = () => {
+    if (window.showToast) {
+      window.showToast('의미 검색 인덱스는 Phase 3A (RAG) 에서 활성화됩니다.', 'info');
+    }
   };
   return (
-    <div className="tag-cloud">
-      {tags.map((tag) => (
-        <span
-          key={tag.label}
-          className="tag-cloud__item"
-          style={{ fontSize: `${sizeFor(tag.count)}em` }}
-          title={`${tag.label} (${tag.count}회)`}
-        >
-          {tag.label}
-          <span className="tag-cloud__count">{tag.count}</span>
-        </span>
-      ))}
+    <div className="semantic-card semantic-card--disabled">
+      <div className="semantic-card__rows">
+        <div className="semantic-card__row">
+          <span className="semantic-card__k">모델</span>
+          <span className="semantic-card__v">—</span>
+        </div>
+        <div className="semantic-card__row">
+          <span className="semantic-card__k">Chunks</span>
+          <span className="semantic-card__v">—</span>
+        </div>
+        <div className="semantic-card__row">
+          <span className="semantic-card__k">작업 수</span>
+          <span className="semantic-card__v">—</span>
+        </div>
+        <div className="semantic-card__row">
+          <span className="semantic-card__k">빌드 시각</span>
+          <span className="semantic-card__v">—</span>
+        </div>
+      </div>
+      <button
+        type="button"
+        className="btn btn--ghost btn--sm semantic-card__action"
+        onClick={handleClick}
+        title="Phase 3A (RAG) 에서 활성화"
+      >
+        <span className="msi">refresh</span>
+        Semantic Rebuild
+      </button>
     </div>
   );
 }
 
+/* 일별 작업 추이 — 최근 N일 (default 30) flex-based 가로 bar 차트 */
 function ActivityTimeline({ buckets }) {
   if (buckets.length === 0) return null;
   const max = Math.max(...buckets.map((b) => b.count), 1);
@@ -195,7 +289,6 @@ function ActivityTimeline({ buckets }) {
   const last = buckets[buckets.length - 1].date;
   const middle = buckets[Math.floor(buckets.length / 2)].date;
   const fmtDate = (d) => `${d.getMonth() + 1}/${d.getDate()}`;
-
   return (
     <>
       <div className="timeline-chart">
@@ -217,12 +310,88 @@ function ActivityTimeline({ buckets }) {
   );
 }
 
+/* 월별 작업 추이 — 최근 12개월 세로 bar */
+function MonthlyTrend({ buckets }) {
+  if (buckets.length === 0) return null;
+  const max = Math.max(...buckets.map((b) => b.count), 1);
+  return (
+    <div className="month-chart">
+      {buckets.map((b) => (
+        <div key={`${b.year}-${b.month}`} className="month-col">
+          <div
+            className={'month-col__bar' + (b.count === 0 ? ' month-col__bar--empty' : '')}
+            style={{ height: b.count === 0 ? '2px' : `${(b.count / max) * 100}%` }}
+            title={`${b.year}년 ${b.month}월 · ${b.count}개`}
+          />
+          <span className="month-col__label">{b.month}월</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* 태그 클라우드 — top 30, 빈도 비례 font-size */
+function TagCloud({ tags }) {
+  if (tags.length === 0) {
+    return (
+      <div className="dashboard-empty" style={{ padding: 'var(--sp-4)' }}>
+        태그 데이터가 없습니다.
+      </div>
+    );
+  }
+  const max = tags[0].count;
+  const min = tags[tags.length - 1].count;
+  const range = Math.max(max - min, 1);
+  const sizeFor = (count) => {
+    const t = (count - min) / range;
+    return (0.85 + t * 0.55).toFixed(2);
+  };
+  return (
+    <div className="tag-cloud">
+      {tags.map((tag) => (
+        <span
+          key={tag.label}
+          className="tag-cloud__item"
+          style={{ fontSize: `${sizeFor(tag.count)}em` }}
+          title={`${tag.label} (${tag.count}회)`}
+        >
+          {tag.label}
+          <span className="tag-cloud__count">{tag.count}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+/* === Card wrapper — dash-grid 안의 표준 카드.
+   extra slot: head 우측에 toggle / 액션 버튼 등 배치 (segmented control 등). */
+function DashCard({ icon, title, sub, span, extra, children }) {
+  const style = span ? { gridColumn: `span ${span}` } : undefined;
+  return (
+    <div className="dash-card" style={style}>
+      <div className="dash-card__head">
+        <span className="msi dash-card__head-ico">{icon}</span>
+        <h3 className="dash-card__head-title">{title}</h3>
+        {sub && <span className="dash-card__head-sub">{sub}</span>}
+        {extra && <div className="dash-card__head-extra">{extra}</div>}
+      </div>
+      <div className="dash-card__body">{children}</div>
+    </div>
+  );
+}
+
 /* === DashboardScreen === */
-function DashboardScreen({ items, total, loading, error, onReload }) {
+function DashboardScreen({ items, loading, error }) {
+  // Phase 2B-6c-3: 작업 추이 axis toggle — daily(30일) / monthly(12개월).
+  // Default 'daily' — 최근 활동 추적이 더 의미 있는 기본값 (사용자 결정).
+  const [trendMode, setTrendMode] = useState('daily');
+
   const stats = useMemo(() => computeStats(items), [items]);
-  const fieldData = useMemo(() => buildFieldDistribution(items), [items]);
+  const fieldData = useMemo(() => buildFieldDistribution(items, 5), [items]);
   const tagData = useMemo(() => buildTagCloud(items, 30), [items]);
-  const timelineData = useMemo(() => buildTimeline(items, 30), [items]);
+  const dailyData = useMemo(() => buildTimeline(items, 30), [items]);
+  const monthlyData = useMemo(() => buildMonthlyTrend(items, 12), [items]);
+  const monthlyDelta = useMemo(() => countThisMonth(items), [items]);
 
   return (
     <div className="dashboard-screen">
@@ -250,55 +419,85 @@ function DashboardScreen({ items, total, loading, error, onReload }) {
 
       {stats.total > 0 && (
         <>
-          <div className="dashboard-stats">
-            <StatCard
+          {/* KPI row — 4 metric cards */}
+          <div className="kpi-grid">
+            <KPICard
               icon="library_books"
-              label="총 노트 수"
+              label="총 노트"
               value={stats.total}
-              sub={`완료 ${stats.completedCount}개`}
+              delta={monthlyDelta > 0 ? `+${monthlyDelta} 이번 달` : null}
+              color={DASH_KPI_COLORS.notes}
             />
-            <StatCard
+            <KPICard
               icon="schedule"
               label="총 처리 시간"
-              value={fmtDurationLong(stats.totalDuration)}
-              sub={fmtDurationShort(stats.totalDuration)}
+              value={fmtDurationShort(stats.totalDuration)}
+              delta={null}
+              color={DASH_KPI_COLORS.duration}
             />
-            <StatCard
-              icon="timer"
-              label="평균 노트 길이"
+            <KPICard
+              icon="timeline"
+              label="평균 길이"
               value={fmtDurationShort(stats.avgDuration)}
-              sub="per 노트"
+              delta={null}
+              color={DASH_KPI_COLORS.avg}
             />
-            <StatCard
-              icon="groups"
-              label="평균 화자 수"
-              value={stats.avgSpeakers > 0 ? stats.avgSpeakers.toFixed(1) : '-'}
-              sub="명 / 노트"
+            <KPICard
+              icon="error_outline"
+              label="실패율"
+              value={`${stats.failurePercent.toFixed(1)}%`}
+              delta={stats.failedCount > 0 ? `실패 ${stats.failedCount}건` : null}
+              color={DASH_KPI_COLORS.failure}
+              good={stats.failurePercent < 5}
+              showTrend={false}
             />
           </div>
 
-          <div className="dashboard-section">
-            <div className="dashboard-section__title">
-              <span className="msi">category</span>
-              주제 분포
-            </div>
-            <FieldDistribution data={fieldData} total={stats.total} />
-          </div>
-
-          <div className="dashboard-section">
-            <div className="dashboard-section__title">
-              <span className="msi">sell</span>
-              태그 클라우드 (상위 30)
-            </div>
-            <TagCloud tags={tagData} />
-          </div>
-
-          <div className="dashboard-section">
-            <div className="dashboard-section__title">
-              <span className="msi">timeline</span>
-              최근 30일 활동
-            </div>
-            <ActivityTimeline buckets={timelineData} />
+          {/* dash-grid: Row 1 (분야별 span2 / 의미검색 1) + Row 2 (월별 span2 / 태그 1) */}
+          <div className="dash-grid">
+            <DashCard icon="pie_chart" title="분야별 분포" sub="top 5" span={2}>
+              <FieldDistribution data={fieldData} />
+            </DashCard>
+            <DashCard icon="auto_awesome" title="의미 검색 인덱스">
+              <SemanticIndexPlaceholder />
+            </DashCard>
+            <DashCard
+              icon="show_chart"
+              title="작업 추이"
+              sub={trendMode === 'daily' ? '최근 30일' : '최근 12개월'}
+              span={2}
+              extra={
+                <div className="dash-toggle" role="radiogroup" aria-label="작업 추이 axis">
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={trendMode === 'daily'}
+                    className={'dash-toggle__btn' + (trendMode === 'daily' ? ' dash-toggle__btn--active' : '')}
+                    onClick={() => setTrendMode('daily')}
+                  >
+                    30일
+                  </button>
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={trendMode === 'monthly'}
+                    className={'dash-toggle__btn' + (trendMode === 'monthly' ? ' dash-toggle__btn--active' : '')}
+                    onClick={() => setTrendMode('monthly')}
+                  >
+                    12개월
+                  </button>
+                </div>
+              }
+            >
+              {trendMode === 'daily' ? (
+                <ActivityTimeline buckets={dailyData} />
+              ) : (
+                <MonthlyTrend buckets={monthlyData} />
+              )}
+            </DashCard>
+            <DashCard icon="sell" title="태그 클라우드" sub={`top ${tagData.length}`}>
+              <TagCloud tags={tagData} />
+            </DashCard>
           </div>
         </>
       )}

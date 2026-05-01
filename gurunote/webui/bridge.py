@@ -819,6 +819,12 @@ class Api:
                 (e for e in load_index() if e.get("job_id") == job_id),
                 {},
             )
+            # Phase 2B-6b: meta 에 thumbnail enrichment (list_history 와 동일 패턴).
+            # EditorScreen 의 Preview 영역 위 썸네일 표시에 필요.
+            if meta:
+                video_id = _extract_youtube_video_id(meta.get("source_url"))
+                meta["video_id"] = video_id
+                meta["thumbnail_url"] = _resolve_thumbnail_url(video_id)
             full_html = _markdown.markdown(
                 md, extensions=["fenced_code", "tables", "toc"]
             )

@@ -523,7 +523,9 @@
 .detail-panel {
   width: min(720px, 90vw);
   height: 100vh;
-  background: var(--gn-bg);
+  /* Phase 2B-6b: --gn-bg 가 outer 회색으로 어두워짐에 따라 detail-panel 도 회색 톤이 됨.
+     원래 의도는 흰색 카드 (별개 surface) — surface 토큰으로 명시 교체해 회귀 회피. */
+  background: var(--gn-surface);
   display: flex;
   flex-direction: column;
   box-shadow: -4px 0 24px rgba(0,0,0,0.18);

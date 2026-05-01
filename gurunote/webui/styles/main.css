@@ -14,22 +14,6 @@
   gap: var(--sp-4);
 }
 
-/* === Topbar (breadcrumb + title) === */
-.main-topbar {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-1);
-  margin-bottom: var(--sp-3);
-}
-.main-topbar__crumbs {
-  font-size: 12px;
-  color: var(--gn-on-surface-muted);
-}
-.main-topbar__title {
-  font-size: 22px;
-  font-weight: 700;
-}
-
 /* === Card (공통 카드 컨테이너) === */
 .card {
   background: var(--gn-surface);
@@ -119,6 +103,15 @@
 }
 .btn--ghost:hover:not(:disabled) { background: var(--gn-surface-container); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Phase 2B-6b: 컴팩트 size — 인라인 액션 바 (editor-head 등) 용 */
+.btn--sm {
+  height: 32px;
+  padding: 0 12px;
+  font-size: 12px;
+  min-width: 0;
+}
+.btn--sm .msi { font-size: 16px; }
 
 /* === Selected file badge (XOR with URL) === */
 .file-badge {

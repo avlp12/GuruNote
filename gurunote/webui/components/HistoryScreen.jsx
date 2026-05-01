@@ -620,7 +620,7 @@ function HistoryScreen({
 
         <button
           type="button"
-          className="btn btn--ghost history-toolbar__refresh"
+          className="btn btn--ghost btn--sm history-toolbar__refresh"
           onClick={onReload}
           disabled={loading}
         >

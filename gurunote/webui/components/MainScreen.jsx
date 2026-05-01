@@ -379,11 +379,6 @@ function MainScreen() {
 
   return (
     <div className="main-screen">
-      <div className="main-topbar">
-        <div className="main-topbar__crumbs">GuruNote · 생성</div>
-        <div className="main-topbar__title">생성</div>
-      </div>
-
       {/* === 입력 카드 === */}
       <section className="card">
         <div className="card__header">

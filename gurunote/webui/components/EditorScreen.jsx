@@ -1,59 +1,41 @@
 /* SPDX-License-Identifier: Elastic-2.0
  * Copyright (c) 2026 GuruNote contributors.
  *
- * Phase 2B-4a: EditorScreen — 노트 편집 화면.
+ * Phase 2B-6b: EditorScreen — split pane (Raw / Preview) + editor-head 액션 바.
  *
- * 디자인 spec (docs/design/v2-reference.html):
- *   - 좌측 main: 4 탭 (요약/한국어/영어/Log) + 모드 토글 (읽기/편집)
- *   - 우측 sidebar (320px): 썸네일 + 메타 + 태그 + 액션
- *   - 1080px 이하 sidebar 자동 숨김 (responsive)
+ * Reference: docs/design/extracted/screens-editor-dashboard-settings.jsx:7-95 의
+ *            EditorScreen + material3-from-template.css:1265-1298
  *
- * Bridge wiring (실제 기존 메서드 활용):
+ * 사용자 결정 (Step 6b):
+ *   - C1-라: tab 시스템 통째 제거 (요약/번역/원문). 단일 markdown (요약) 만.
+ *            번역/원문 placeholder 도 같이 제거 — Phase 2B-3-backend 에서 transcript
+ *            필드 추가 시 정식 UI 결정.
+ *   - C2-라: 우측 액션 sidebar 부분 통합:
+ *            * 메타정보 + 태그 → Preview 영역 위 inline md-meta-strip (chip)
+ *            * 마크다운 다운로드 → editor-head 액션 바
+ *            * 라이브러리로 → editor-head 액션 바
+ *            * 연관 노트 / 노트 삭제 → 통째 제거 (진짜 wiring 시점에 부활)
+ *            * 썸네일 → Preview 영역 위 (실제 thumbnail_url, 6b-1 backend enrichment)
+ *   - E1: ⌘S keydown listener (mount/unmount life-cycle)
+ *   - F3: TopBar 무손상, editor-head 가 file path crumb + title + dirty-dot 담당
+ *
+ * Bridge wiring:
  *   - get_history_detail({job_id}) → {ok, markdown, full_html, meta, filename}
- *   - update_note({job_id, markdown}) → {ok, path}  (Phase 2B-4a 에서 구현)
+ *     (6b-1: meta 에 thumbnail_url + video_id enrichment 추가됨)
+ *   - update_note({job_id, markdown}) → {ok, path}
  *   - save_result_as({markdown, default_filename}) → {path, cancelled}
+ *
+ * Babel standalone global scope 회피: 모든 top-level const 는 EDITOR_ 접두사.
  */
 
-const { useState, useEffect, useMemo } = React;
+const { useState, useEffect, useRef } = React;
 
-/* Phase 2B-4a-2: 사용자 발견 — '영어 원문' 라벨이 한국어 원본에는 부적절.
-   탭 id/라벨 변경 + 한국어 detected 시 '번역' 탭 숨김 (번역 결과 = 원문 동일하므로 무의미). */
-const EDITOR_TABS_BASE = [
-  { id: 'summary',     label: '요약', icon: 'auto_awesome' },
-  { id: 'translation', label: '번역', icon: 'translate', langDependent: true },
-  { id: 'original',    label: '원문', icon: 'subject' },
-];
-
-/* Phase 2B-5b-2: bridge 의 _err code → 사용자 친화 한국어 메시지.
-   향후 다른 code 발견 시 여기 추가해 일관성 유지 (raw e.message 폴백). */
+/* Phase 2B-5b-2: bridge 의 _err code → 사용자 친화 한국어 메시지. */
 const EDITOR_ERROR_MESSAGES = {
   HISTORY_NOT_FOUND: '이 노트의 결과 파일이 없습니다 (처리가 완료되지 않았을 수 있습니다).',
   INVALID_ID: '잘못된 노트 식별자입니다.',
   READ_FAILED: '노트를 읽는 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.',
 };
-
-/* 한국어 detected 시 '번역' 탭 (langDependent) 제거. */
-function getVisibleTabs(detectedLanguage) {
-  const isKorean = detectedLanguage === 'ko' || detectedLanguage === 'kor' || detectedLanguage === 'korean';
-  if (isKorean) return EDITOR_TABS_BASE.filter((t) => !t.langDependent);
-  return EDITOR_TABS_BASE;
-}
-
-/* 한글/라틴 letter 비율 — backend 가 detected_language 미제공 시 fallback.
-   Path 형태 입력은 basename + 확장자 제거 후 counting (로컬 파일 대비). */
-function estimateKorean(s) {
-  if (!s) return 0;
-  const base = (s.split(/[\\/]/).pop() || '').replace(/\.[a-z0-9]+$/i, '');
-  let korean = 0;
-  let latin = 0;
-  for (const ch of base) {
-    const code = ch.codePointAt(0);
-    if ((code >= 0xAC00 && code <= 0xD7A3) || (code >= 0x1100 && code <= 0x11FF)) korean++;
-    else if (/[a-zA-Z]/.test(ch)) latin++;
-  }
-  const total = korean + latin;
-  return total > 0 ? korean / total : 0;
-}
 
 function fmtDuration(sec) {
   if (sec == null || sec <= 0) return '';
@@ -66,8 +48,6 @@ function fmtDuration(sec) {
 
 /* === EditorScreen === */
 function EditorScreen({ jobId, onBackToLibrary }) {
-  const [activeTab, setActiveTab] = useState('summary');
-  const [mode, setMode] = useState('read'); // 'read' | 'edit'
   const [item, setItem] = useState(null);
   const [markdown, setMarkdown] = useState('');
   const [fullHtml, setFullHtml] = useState('');
@@ -81,6 +61,7 @@ function EditorScreen({ jobId, onBackToLibrary }) {
       setItem(null);
       setMarkdown('');
       setFullHtml('');
+      setEditedContent('');
       return undefined;
     }
     let cancelled = false;
@@ -95,7 +76,6 @@ function EditorScreen({ jobId, onBackToLibrary }) {
         const result = await window.pywebview.api.get_history_detail({ job_id: jobId });
         if (cancelled) return;
         if (!result?.ok) {
-          // Phase 2B-5b-2: code 기반 한국어 메시지 (없으면 backend 의 raw error 폴백).
           const friendly = EDITOR_ERROR_MESSAGES[result?.code]
             || result?.error
             || 'get_history_detail failed';
@@ -105,7 +85,6 @@ function EditorScreen({ jobId, onBackToLibrary }) {
         setMarkdown(result.markdown || '');
         setFullHtml(result.full_html || '');
         setEditedContent(result.markdown || '');
-        setMode('read');
       } catch (e) {
         console.error('[EditorScreen] load:', e);
         if (!cancelled) setError(e.message || String(e));
@@ -117,20 +96,7 @@ function EditorScreen({ jobId, onBackToLibrary }) {
     return () => { cancelled = true; };
   }, [jobId]);
 
-  // Phase 2B-4a-2: detected_language 결정 — backend 미제공 시 fallback (title basename 한글 비율).
-  // organized_title 은 LLM 번역이라 항상 한글 → fallback 에 사용 안 함.
-  const detectedLang = item?.detected_language ||
-    (item?.title && estimateKorean(item.title) > 0.5 ? 'ko' : null);
-  const visibleTabs = useMemo(() => getVisibleTabs(detectedLang), [detectedLang]);
-
-  // activeTab 이 숨겨진 탭이면 첫 visible 로 fallback
-  useEffect(() => {
-    if (!visibleTabs.find((t) => t.id === activeTab)) {
-      setActiveTab(visibleTabs[0]?.id || 'summary');
-    }
-  }, [visibleTabs, activeTab]);
-
-  const dirty = mode === 'edit' && editedContent !== markdown;
+  const dirty = editedContent !== markdown;
 
   const handleSave = async () => {
     if (!jobId || !dirty) return;
@@ -141,9 +107,7 @@ function EditorScreen({ jobId, onBackToLibrary }) {
       });
       if (result?.ok) {
         setMarkdown(editedContent);
-        // full_html 은 backend 서버사이드 렌더 — 빠른 갱신 위해 textarea 그대로 유지
-        // (다음 read_job 시 자동 갱신)
-        setMode('read');
+        // full_html 은 backend 서버사이드 렌더 — 다음 read_job 시 자동 갱신.
         if (window.showToast) window.showToast('저장되었습니다.', 'success');
       } else {
         if (window.showToast) window.showToast(`저장 실패: ${result?.error || '알 수 없는 오류'}`, 'error');
@@ -152,6 +116,10 @@ function EditorScreen({ jobId, onBackToLibrary }) {
       console.error('[EditorScreen] update_note:', e);
       if (window.showToast) window.showToast(`저장 오류: ${e.message || e}`, 'error');
     }
+  };
+
+  const handleCancel = () => {
+    setEditedContent(markdown);
   };
 
   const handleDownload = async () => {
@@ -175,7 +143,22 @@ function EditorScreen({ jobId, onBackToLibrary }) {
     }
   };
 
-  // jobId 없을 때 empty state
+  // Phase 2B-6b: ⌘S (Cmd/Ctrl+S) 단축키 — handleSave 의 최신 클로저를 ref 로 보존.
+  const handleSaveRef = useRef(handleSave);
+  handleSaveRef.current = handleSave;
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        handleSaveRef.current();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  /* === jobId 없을 때 empty state (Step 2B-5b-2 보존) === */
   if (!jobId) {
     return (
       <div className="editor-screen">
@@ -203,6 +186,7 @@ function EditorScreen({ jobId, onBackToLibrary }) {
     );
   }
 
+  /* === 오류 상태 (Step 2B-5b-2 보존) === */
   if (error) {
     return (
       <div className="editor-screen">
@@ -222,165 +206,147 @@ function EditorScreen({ jobId, onBackToLibrary }) {
     );
   }
 
+  /* === 정상 상태 — split pane === */
   const title = item?.organized_title || item?.title || '제목 없음';
+  const lineCount = editedContent.split('\n').length;
+  const charCount = editedContent.length;
 
   return (
     <div className="editor-screen">
-      <div className="editor-screen__body">
-        {/* Main: tabs + mode + content */}
-        <div className="editor-screen__main">
-          <div className="editor-tabs">
-            {visibleTabs.map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                className={'editor-tab' + (activeTab === tab.id ? ' editor-tab--active' : '')}
-                onClick={() => setActiveTab(tab.id)}
-              >
-                <span className="msi" style={{ fontSize: 16, marginRight: 6 }}>{tab.icon}</span>
-                {tab.label}
-              </button>
-            ))}
+      {/* === editor-head: 좌 path crumb + title + dirty-dot / 우 액션 바 === */}
+      <div className="editor-head">
+        <div className="editor-head__lead">
+          <div className="editor-head__crumb">
+            <span>라이브러리</span>
+            <span className="msi" style={{ fontSize: 14 }}>chevron_right</span>
+            <span className="editor-head__crumb-current">{title}</span>
           </div>
-
-          {activeTab === 'summary' && (
-            <div className="editor-mode-bar">
-              <span className="editor-mode-bar__label">모드</span>
-              <div className="editor-mode-toggle" role="radiogroup" aria-label="편집 모드">
-                <button
-                  type="button"
-                  role="radio"
-                  aria-checked={mode === 'read'}
-                  className={'editor-mode-btn' + (mode === 'read' ? ' editor-mode-btn--active' : '')}
-                  onClick={() => setMode('read')}
-                >
-                  <span className="msi" style={{ fontSize: 14, marginRight: 4 }}>visibility</span>
-                  읽기
-                </button>
-                <button
-                  type="button"
-                  role="radio"
-                  aria-checked={mode === 'edit'}
-                  className={'editor-mode-btn' + (mode === 'edit' ? ' editor-mode-btn--active' : '')}
-                  onClick={() => setMode('edit')}
-                >
-                  <span className="msi" style={{ fontSize: 14, marginRight: 4 }}>edit</span>
-                  편집
-                </button>
-              </div>
-              {mode === 'edit' && (
-                <button
-                  type="button"
-                  className="btn btn--primary editor-mode-bar__save"
-                  style={{ height: 32, padding: '0 14px', fontSize: 12, minWidth: 0 }}
-                  onClick={handleSave}
-                  disabled={!dirty}
-                >
-                  저장
-                </button>
-              )}
-            </div>
-          )}
-
-          {activeTab === 'summary' && mode === 'read' && (
-            <div
-              className="editor-content editor-content--rendered"
-              dangerouslySetInnerHTML={{ __html: fullHtml }}
-            />
-          )}
-
-          {activeTab === 'summary' && mode === 'edit' && (
-            <textarea
-              className="editor-content__textarea"
-              value={editedContent}
-              onChange={(e) => setEditedContent(e.target.value)}
-              spellCheck={false}
-            />
-          )}
-
-          {activeTab === 'translation' && (
-            <div className="editor-content">
-              <div className="editor-empty" style={{ paddingTop: 80 }}>
-                <span className="msi">translate</span>
-                <div>Phase 2B-3-backend 에서 wiring 됩니다 (transcript 필드 추가).</div>
-                <div style={{ fontSize: 12, marginTop: 8 }}>
-                  (read_job 결과에 transcript_korean 필드가 추가되면 자동 표시)
-                </div>
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'original' && (
-            <div className="editor-content">
-              <div className="editor-empty" style={{ paddingTop: 80 }}>
-                <span className="msi">subject</span>
-                <div>Phase 2B-3-backend 에서 wiring 됩니다 (transcript 필드 추가).</div>
-                <div style={{ fontSize: 12, marginTop: 8 }}>
-                  (read_job 결과에 transcript_original 필드가 추가되면 자동 표시)
-                </div>
-              </div>
-            </div>
-          )}
+          <h2 className="editor-head__title" title={title}>
+            {title}
+            {dirty && <span className="editor-head__dirty" aria-label="저장되지 않은 변경" />}
+          </h2>
         </div>
 
-        {/* Sidebar: thumb + meta + tags + actions */}
-        {item && (
-          <aside className="editor-screen__side">
-            <div className="editor-side__thumb">
-              {item.thumbnail_url && <img src={item.thumbnail_url} alt={title} />}
-            </div>
+        <div className="editor-head__actions">
+          <button
+            type="button"
+            className="btn btn--ghost btn--sm"
+            onClick={handleDownload}
+            title="마크다운 다운로드"
+          >
+            <span className="msi">download</span>
+            다운로드
+          </button>
+          <button
+            type="button"
+            className="btn btn--ghost btn--sm"
+            onClick={onBackToLibrary}
+            title="라이브러리로"
+          >
+            <span className="msi">arrow_back</span>
+            라이브러리
+          </button>
+          {dirty && (
+            <button
+              type="button"
+              className="btn btn--ghost btn--sm"
+              onClick={handleCancel}
+              title="변경 취소"
+            >
+              <span className="msi">close</span>
+              취소
+            </button>
+          )}
+          <button
+            type="button"
+            className="btn btn--primary btn--sm"
+            onClick={handleSave}
+            disabled={!dirty}
+            title="저장 (⌘S)"
+          >
+            <span className="msi">save</span>
+            저장 <span className="editor-head__shortcut">⌘S</span>
+          </button>
+        </div>
+      </div>
 
-            <div className="editor-side__section">
-              <div className="editor-side__section-title">메타 정보</div>
-              <dl className="editor-side__meta">
-                {item.field        && (<><dt>주제</dt><dd>{item.field}</dd></>)}
-                {item.uploader     && (<><dt>업로더</dt><dd>{item.uploader}</dd></>)}
-                {item.upload_date  && (<><dt>업로드일</dt><dd>{item.upload_date}</dd></>)}
-                {item.duration_sec > 0 && (<><dt>길이</dt><dd>{fmtDuration(item.duration_sec)}</dd></>)}
-                {item.num_speakers > 0 && (<><dt>화자 수</dt><dd>{item.num_speakers}명</dd></>)}
-                {item.stt_engine   && (<><dt>STT</dt><dd>{item.stt_engine}</dd></>)}
-                {item.llm_provider && (<><dt>LLM</dt><dd>{item.llm_provider}</dd></>)}
-              </dl>
-            </div>
+      {/* === editor-split: 좌 Raw / 우 Preview === */}
+      <div className="editor-split">
+        <div className="editor-pane">
+          <div className="editor-pane-head">
+            <span className="msi" style={{ fontSize: 14 }}>code</span>
+            <span>Raw · Markdown</span>
+            <span className="editor-pane-head__meta">
+              {lineCount} lines · {charCount} chars
+            </span>
+          </div>
+          <textarea
+            className="editor-textarea"
+            value={editedContent}
+            onChange={(e) => setEditedContent(e.target.value)}
+            spellCheck={false}
+          />
+        </div>
 
-            {item.tags && item.tags.length > 0 && (
-              <div className="editor-side__section">
-                <div className="editor-side__section-title">태그</div>
-                <div className="editor-side__tags">
-                  {item.tags.map((tag) => (
-                    <span key={tag} className="editor-side__tag">{tag}</span>
-                  ))}
-                </div>
+        <div className="editor-pane">
+          <div className="editor-pane-head">
+            <span className="msi" style={{ fontSize: 14 }}>article</span>
+            <span>Preview · Rendered</span>
+            {dirty && (
+              <span className="editor-pane-head__meta editor-pane-head__meta--warn">
+                저장 후 갱신
+              </span>
+            )}
+          </div>
+          <div className="editor-preview">
+            {item?.thumbnail_url && (
+              <div className="editor-thumbnail">
+                <img src={item.thumbnail_url} alt={title} />
               </div>
             )}
 
-            <div className="editor-side__section">
-              <div className="editor-side__section-title">액션</div>
-              <div className="editor-side__actions">
-                <button type="button" className="editor-side__action" onClick={handleDownload}>
-                  <span className="msi">download</span>
-                  마크다운 다운로드
-                </button>
-                <button type="button" className="editor-side__action" onClick={() => window.showToast?.('Phase 3A (RAG) 에서 활성화')}>
-                  <span className="msi">hub</span>
-                  연관 노트
-                </button>
-                <button type="button" className="editor-side__action" onClick={onBackToLibrary}>
-                  <span className="msi">arrow_back</span>
-                  라이브러리로
-                </button>
-                <button
-                  type="button"
-                  className="editor-side__action editor-side__action--danger"
-                  onClick={() => window.showToast?.('Phase 2B-3-backend 에서 활성화')}
-                >
-                  <span className="msi">delete</span>
-                  노트 삭제
-                </button>
-              </div>
+            <div className="md-meta-strip">
+              {item?.uploader && (
+                <span className="md-meta-chip">
+                  <span className="msi">podcasts</span>
+                  {item.uploader}
+                </span>
+              )}
+              {item?.upload_date && (
+                <span className="md-meta-chip">
+                  <span className="msi">event</span>
+                  {item.upload_date}
+                </span>
+              )}
+              {item?.field && (
+                <span className="md-meta-chip">
+                  <span className="msi">label</span>
+                  {item.field}
+                </span>
+              )}
+              {item?.duration_sec > 0 && (
+                <span className="md-meta-chip">
+                  <span className="msi">timer</span>
+                  {fmtDuration(item.duration_sec)}
+                </span>
+              )}
+              {item?.num_speakers > 0 && (
+                <span className="md-meta-chip">
+                  <span className="msi">groups</span>
+                  {item.num_speakers}명
+                </span>
+              )}
+              {Array.isArray(item?.tags) && item.tags.map((tag) => (
+                <span key={tag} className="md-meta-chip md-meta-chip--tag">{tag}</span>
+              ))}
             </div>
-          </aside>
-        )}
+
+            <div
+              className="editor-preview__body"
+              dangerouslySetInnerHTML={{ __html: fullHtml }}
+            />
+          </div>
+        </div>
       </div>
     </div>
   );

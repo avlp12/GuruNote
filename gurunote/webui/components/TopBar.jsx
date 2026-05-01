@@ -31,9 +31,22 @@ const TOPBAR_ROUTE_META = {
   settings:  { crumbs: [],            title: '설정' },
 };
 
-function TopBar({ route }) {
+/* Phase 2B-6d: history sub-context → 동적 title 매핑.
+   crumbs ['라이브러리'] 는 보존, title 만 변경 (시각: '라이브러리' › '최근 7일' 패턴). */
+const TOPBAR_HISTORY_CONTEXT_TITLE = {
+  recent: '최근 7일',
+  tags:   '태그',
+};
+
+function TopBar({ route, historyContext, onSearchOpen }) {
   const meta = TOPBAR_ROUTE_META[route] || { crumbs: [], title: route };
-  const { crumbs, title } = meta;
+  let { crumbs, title } = meta;
+
+  // Phase 2B-6d: history sub-context 가 set 이면 title 동적 변경.
+  if (route === 'history' && historyContext) {
+    const subTitle = TOPBAR_HISTORY_CONTEXT_TITLE[historyContext];
+    if (subTitle) title = subTitle;
+  }
 
   return (
     <div className="gn-appbar">
@@ -51,14 +64,20 @@ function TopBar({ route }) {
         <h2 className="gn-appbar__title">{title}</h2>
       </div>
 
-      <div className="gn-search" onClick={() => { /* Phase 2B-6d: SearchPalette 모달 wiring */ }}>
+      <div
+        className="gn-search"
+        onClick={() => { if (onSearchOpen) onSearchOpen(); }}
+        role="button"
+        aria-label="전체 노트 검색 열기"
+      >
         <span className="msi">search</span>
         <input
           type="text"
           className="gn-search__input"
           placeholder="전체 노트 검색..."
           readOnly
-          aria-label="전체 노트 검색"
+          tabIndex={-1}
+          aria-hidden="true"
         />
         <span className="gn-search__shortcut">⌘K</span>
       </div>

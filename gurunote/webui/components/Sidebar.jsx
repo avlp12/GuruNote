@@ -47,7 +47,7 @@ function uniqueTagCount(items) {
   return set.size;
 }
 
-function Sidebar({ route, onNavigate, version, historyItems, historyTotal, onLibraryNav }) {
+function Sidebar({ route, onNavigate, version, historyItems, historyTotal, onLibraryNav, onNewNote }) {
   // Phase 2B-6a: 좌하단 칩셋 정보 (이름 / 아바타 제외 — 추후 클라우드/멀티유저 시 부활).
   const [chipInfo, setChipInfo] = React.useState(null);
   React.useEffect(() => {
@@ -99,7 +99,13 @@ function Sidebar({ route, onNavigate, version, historyItems, historyTotal, onLib
       <button
         type="button"
         className="sidebar__cta"
-        onClick={() => onNavigate('main')}
+        onClick={() => {
+          // Phase 2B-6d: CTA 차별화 — 메인 nav '생성' 과 다른 의도.
+          //   CTA: form reset (URL/파일 비움) + 메인 진입 — '새 노트 시작'
+          //   Nav '생성': 메인 진입만 (form 보존) — '메인 화면으로 가기'
+          if (onNewNote) onNewNote();
+          else onNavigate('main');
+        }}
       >
         <span className="msi">add</span>
         <span>새 노트 만들기</span>

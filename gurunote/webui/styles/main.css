@@ -346,7 +346,12 @@
   word-break: break-all;
 }
 
-/* === Toast === */
+/* === Toast (Phase 2B-6d: 불투명 흰색 단색 알림) ===
+ * 기존: type 별 rgba(...,0.06) tint 배경 → TopBar search 위에 겹칠 때 transparent
+ *       하게 보여 가독성 떨어짐.
+ * 변경: 배경은 항상 불투명 흰색 surface + border + shadow.
+ *       Type 별 시각 (좌측 color strip 등) 모두 제거 — toast = 단순 알림 한 의미,
+ *       메시지 텍스트로 type 표현 충분 ('저장되었습니다' / '오류 발생' 등). */
 .toast-container {
   position: fixed;
   top: var(--sp-5);
@@ -361,10 +366,11 @@
   min-width: 280px;
   max-width: 420px;
   padding: var(--sp-3) var(--sp-4);
-  border-radius: var(--r-sm);
-  border: 1px solid var(--gn-border);
-  background: var(--gn-surface);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+  border-radius: var(--r-md);
+  border: 1px solid var(--gn-border-subtle);
+  background: var(--gn-surface);  /* 불투명 흰색 — 가독성 보장 */
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.14);
+  color: var(--gn-on-surface);
   font-size: 13px;
   pointer-events: auto;
   opacity: 0;
@@ -377,6 +383,5 @@
   opacity: 1;
   transform: translateY(0);
 }
-.toast--error { border-color: var(--gn-danger); color: var(--gn-danger); background: rgba(176,0,32,0.06); }
-.toast--success { border-color: var(--gn-success); color: var(--gn-success); background: rgba(30,126,52,0.06); }
-.toast--warning { border-color: var(--gn-warning); color: var(--gn-warning); background: rgba(176,96,0,0.06); }
+/* Type modifier (info/success/warning/error) 는 className 으로 유지되지만
+   시각 차이 없음 — JSX 측은 변경 없이 메시지 텍스트로 의미 표현. */

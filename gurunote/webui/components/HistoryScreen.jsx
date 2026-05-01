@@ -71,6 +71,19 @@ const FACET_GROUPS = [
   { id: 'tag',      icon: 'sell',     label: '태그' },
 ];
 
+/* Phase 2B-6d: field facet item 의 컬러 dot — Dashboard 의 컬러 매핑과 정합.
+   Dashboard 의 DASH_FIELD_PALETTE / dashFieldColor 를 의도적으로 복제 (코드 12L,
+   shared module 도입 전 단순 duplicate). 같은 label 은 두 화면에서 동일 색. */
+const HISTORY_FIELD_PALETTE = [
+  '#1a73e8', '#188038', '#e37400', '#7b5ac1',
+  '#d93880', '#00897b', '#5f6368', '#c5221f',
+];
+function historyFieldColor(label) {
+  let h = 0;
+  for (const c of label) h = (h * 31 + c.charCodeAt(0)) & 0x7fffffff;
+  return HISTORY_FIELD_PALETTE[h % HISTORY_FIELD_PALETTE.length];
+}
+
 function buildFacets(items) {
   const fields = new Map();
   const uploaders = new Map();
@@ -195,6 +208,10 @@ function FacetPanel({ items, activeFacets, onToggle, initialExpandedGroup }) {
               {arr.slice(0, 30).map((item) => {
                 const facetKey = `${group.id}:${item.label}`;
                 const active = activeFacets.has(facetKey);
+                // Phase 2B-6d: field facet 만 deterministic 컬러 dot (Dashboard 정합).
+                const dotStyle = group.id === 'field'
+                  ? { background: historyFieldColor(item.label) }
+                  : undefined;
                 return (
                   <button
                     key={facetKey}
@@ -202,7 +219,10 @@ function FacetPanel({ items, activeFacets, onToggle, initialExpandedGroup }) {
                     className={'facet-item' + (active ? ' facet-item--active' : '')}
                     onClick={() => onToggle(group.id, item.label)}
                   >
-                    <span className="facet-item__dot" />
+                    <span
+                      className={'facet-item__dot' + (group.id === 'field' ? ' facet-item__dot--field' : '')}
+                      style={dotStyle}
+                    />
                     <span className="facet-item__label" title={item.label}>{item.label}</span>
                     <span className="facet-item__count">{item.count}</span>
                   </button>

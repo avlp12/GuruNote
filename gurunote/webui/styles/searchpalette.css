@@ -1,0 +1,187 @@
+/* SPDX-License-Identifier: Elastic-2.0
+ * Copyright (c) 2026 GuruNote contributors.
+ *
+ * Phase 2B-6d: SearchPalette — ⌘K 글로벌 검색 모달.
+ *
+ * 우리 자체 디자인 (Reference 에 모달 spec 없음). 시각 spec:
+ *   - Overlay: 반투명 dim backdrop
+ *   - Dialog: 중앙 상단 고정 (top 12vh), max-width 640px
+ *   - Head: search icon + input + Esc hint
+ *   - Results: scroll list, active 시 primary-soft 배경
+ *   - Foot: ↑↓ Enter Esc 단축키 안내
+ */
+
+/* === Overlay (backdrop) === */
+.gn-palette-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.32);
+  z-index: 100;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 12vh;
+  animation: gn-palette-fade-in 100ms ease-out;
+}
+
+@keyframes gn-palette-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* === Dialog === */
+.gn-palette {
+  width: min(640px, 92vw);
+  max-height: 70vh;
+  background: var(--gn-surface);
+  border-radius: var(--r-md);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.22);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: gn-palette-slide-in 140ms ease-out;
+}
+
+@keyframes gn-palette-slide-in {
+  from { transform: translateY(-12px); opacity: 0.85; }
+  to   { transform: translateY(0);     opacity: 1; }
+}
+
+/* === Head: search icon + input + hint === */
+.gn-palette__head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-4) var(--sp-5);
+  border-bottom: 1px solid var(--gn-border-subtle);
+}
+.gn-palette__head-ico {
+  font-size: 22px;
+  color: var(--gn-on-surface-muted);
+}
+.gn-palette__input {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 16px;
+  color: var(--gn-on-surface);
+  font-family: inherit;
+  min-width: 0;
+}
+.gn-palette__input::placeholder { color: var(--gn-on-surface-muted); }
+.gn-palette__head-hint {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--gn-on-surface-muted);
+  padding: 2px 6px;
+  background: var(--gn-surface-container);
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+/* === Results scroll === */
+.gn-palette__results {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--sp-2);
+}
+.gn-palette__empty,
+.gn-palette__hint {
+  padding: var(--sp-5);
+  text-align: center;
+  color: var(--gn-on-surface-muted);
+  font-size: 13px;
+}
+.gn-palette__empty .msi {
+  font-size: 36px;
+  display: block;
+  margin: 0 auto var(--sp-2);
+  color: var(--gn-border);
+}
+
+/* === Result item === */
+.gn-palette__item {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--sp-3) var(--sp-3);
+  border-radius: var(--r-sm);
+  background: transparent;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 80ms;
+}
+.gn-palette__item:hover,
+.gn-palette__item--active {
+  background: var(--gn-primary-soft);
+}
+.gn-palette__item-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--gn-on-surface);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.gn-palette__item--active .gn-palette__item-title {
+  color: var(--gn-primary);
+}
+.gn-palette__item-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 11px;
+}
+.gn-palette__item-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: var(--r-pill);
+  background: var(--gn-surface-container);
+  color: var(--gn-on-surface-muted);
+  white-space: nowrap;
+}
+.gn-palette__item-chip--field {
+  background: var(--gn-primary-soft);
+  color: var(--gn-primary);
+  font-weight: 500;
+}
+.gn-palette__item-uploader {
+  color: var(--gn-on-surface-muted);
+  margin-left: auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+
+/* === Foot: 단축키 안내 === */
+.gn-palette__foot {
+  display: flex;
+  gap: var(--sp-4);
+  padding: 8px var(--sp-4);
+  border-top: 1px solid var(--gn-border-subtle);
+  background: var(--gn-surface-container);
+  font-size: 11px;
+  color: var(--gn-on-surface-muted);
+}
+.gn-palette__foot-shortcut {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.gn-palette__foot kbd {
+  display: inline-block;
+  padding: 1px 5px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  background: var(--gn-surface);
+  border: 1px solid var(--gn-border-subtle);
+  border-radius: 3px;
+  color: var(--gn-on-surface);
+}

@@ -37,16 +37,25 @@ function App() {
     setRoute('editor');
   }, []);
 
-  // Phase 2B-5b-2: Sidebar 메인 nav 클릭 wrapper.
-  //   - '노트 편집' 메인 nav 클릭은 특정 노트 컨텍스트가 없는 진입.
-  //     stale currentJobId (이전 세션 / 이전 클릭의 잔재) 가 그대로 남아 깨진
-  //     노트를 다시 fetch 하는 경우가 있음 → 명시적으로 null 로 reset 해서
-  //     EditorScreen 의 empty state 분기로 안전하게 진입.
-  //   - 카드 [편집] 액션의 navigateToEditor 는 이 핸들러를 거치지 않으므로
-  //     명시적 jobId 흐름은 무손상.
+  // Phase 2B-6d: 히스토리 sub-context — '라이브러리' 아래의 어느 진입점인지 추적.
+  //   null      = 메인 nav 직접 진입 (default 'history')
+  //   'recent'  = 사이드바 '최근 7일' 진입
+  //   'tags'    = 사이드바 '태그' 진입
+  //   handleLibraryNav 가 set, handleSidebarNavigate('history') 가 clear.
+  //   TopBar 의 title 동적 변경에 사용 (breadcrumbs ['라이브러리'] + h2 '최근 7일' 등).
+  const [historyContext, setHistoryContext] = useState(null);
+
+  // Phase 2B-5b-2 + 2B-6d: Sidebar 메인 nav 클릭 wrapper.
+  //   - '노트 편집' → currentJobId reset (stale fetch 회피, Step 2B-5b-2)
+  //   - '히스토리'  → historyContext clear (라이브러리 sub-context 잔재 회피)
+  //   - 카드 [편집] 액션의 navigateToEditor 는 이 핸들러를 거치지 않으므로 명시적
+  //     jobId 흐름은 무손상.
   const handleSidebarNavigate = useCallback((target) => {
     if (target === 'editor') {
       setCurrentJobId(null);
+    }
+    if (target === 'history') {
+      setHistoryContext(null);
     }
     setRoute(target);
   }, []);
@@ -72,13 +81,39 @@ function App() {
     if (libType === 'recent') {
       setHistoryFilter({ initialTimeWindow: 7 });
       setHistoryFilterKey((k) => k + 1);
+      setHistoryContext('recent');
       setRoute('history');
     } else if (libType === 'tags') {
       setHistoryFilter({ initialExpandedGroup: 'tag' });
       setHistoryFilterKey((k) => k + 1);
+      setHistoryContext('tags');
       setRoute('history');
     }
     // 'favorites' is disabled; no handler invocation.
+  }, []);
+
+  // Phase 2B-6d: SearchPalette (⌘K) state.
+  //   open=true 시 SearchPalette 마운트, false 시 언마운트.
+  //   Trigger: ⌘K 글로벌 keydown / TopBar gn-search onClick / Esc 로 close.
+  const [searchPaletteOpen, setSearchPaletteOpen] = useState(false);
+  const openSearchPalette = useCallback(() => setSearchPaletteOpen(true), []);
+  const closeSearchPalette = useCallback(() => setSearchPaletteOpen(false), []);
+  const handlePaletteSelect = useCallback((item) => {
+    setSearchPaletteOpen(false);
+    if (item?.job_id) {
+      setCurrentJobId(item.job_id);
+      setRoute('editor');
+    }
+  }, []);
+
+  // Phase 2B-6d: 새 노트 만들기 CTA (⌘N) — counter pattern (historyFilterKey 와 동일).
+  //   Sidebar CTA 클릭 또는 ⌘N keydown 시 increment + setRoute('main').
+  //   MainScreen 이 prop 으로 받아 useEffect 로 form reset (url + selectedFile).
+  //   진행 중 (running) 가드는 MainScreen 내부에서 처리.
+  const [newNoteRequestKey, setNewNoteRequestKey] = useState(0);
+  const handleNewNote = useCallback(() => {
+    setNewNoteRequestKey((k) => k + 1);
+    setRoute('main');
   }, []);
 
   const loadHistory = useCallback(async () => {
@@ -121,6 +156,25 @@ function App() {
     return () => { cancelled = true; };
   }, [loadHistory]);
 
+  // Phase 2B-6d: 글로벌 keydown — ⌘K (SearchPalette open) + ⌘N (새 노트).
+  //   ⌘S 는 EditorScreen 내부 listener 가 담당 (충돌 없음 — 다른 키).
+  //   SearchPalette 의 자체 Esc 처리는 SearchPalette 내부에서 (open 시만 등록).
+  useEffect(() => {
+    const onKey = (e) => {
+      if (!(e.metaKey || e.ctrlKey)) return;
+      const k = e.key.toLowerCase();
+      if (k === 'k') {
+        e.preventDefault();
+        setSearchPaletteOpen(true);
+      } else if (k === 'n') {
+        e.preventDefault();
+        handleNewNote();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [handleNewNote]);
+
   return (
     <>
       <div className="gn-window">
@@ -132,11 +186,16 @@ function App() {
             historyItems={historyItems}
             historyTotal={historyTotal}
             onLibraryNav={handleLibraryNav}
+            onNewNote={handleNewNote}
           />
           <main className="gn-main">
-            <TopBar route={route} />
+            <TopBar
+              route={route}
+              historyContext={historyContext}
+              onSearchOpen={openSearchPalette}
+            />
             <div className="gn-content">{
-            route === 'main'    ? <MainScreen /> :
+            route === 'main'    ? <MainScreen newNoteRequestKey={newNoteRequestKey} /> :
             route === 'history' ? (
               <HistoryScreen
                 key={`history-${historyFilterKey}`}
@@ -175,6 +234,12 @@ function App() {
           </main>
         </div>
       </div>
+      <SearchPalette
+        open={searchPaletteOpen}
+        items={historyItems}
+        onClose={closeSearchPalette}
+        onSelect={handlePaletteSelect}
+      />
       <div id="toast-container" className="toast-container" />
     </>
   );

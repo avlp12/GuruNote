@@ -188,7 +188,7 @@ function ResultPanel({ result, log }) {
 }
 
 /* === MainScreen === */
-function MainScreen() {
+function MainScreen({ newNoteRequestKey }) {
   // 입력 상태
   const [url, setUrl] = useState('');
   const [selectedFile, setSelectedFile] = useState(null); // { path, size } or null
@@ -205,6 +205,22 @@ function MainScreen() {
   const [startedAt, setStartedAt] = useState(null);
   const [now, setNow] = useState(Date.now());
   const jobIdRef = useRef(null);
+
+  // Phase 2B-6d: 새 노트 만들기 (CTA / ⌘N) — counter prop 변경 시 form reset.
+  //   사용자 결정 (C-1 가): url + selectedFile 만 clear, STT/LLM 보존.
+  //   진행 중 (running) 가드 — 처리 중에는 reset 막고 toast.
+  //   처음 mount 시 (newNoteRequestKey === 0) 는 skip — 초기 mount 가 reset 트리거 안 됨.
+  useEffect(() => {
+    if (!newNoteRequestKey) return;
+    if (running) {
+      if (window.showToast) window.showToast('처리 중입니다. 완료 후 새로 시작하세요.', 'warning');
+      return;
+    }
+    setUrl('');
+    setSelectedFile(null);
+    if (window.showToast) window.showToast('새 노트 — URL 또는 파일을 입력하세요.', 'info');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [newNoteRequestKey]);
 
   // bridge probe — 기본 STT/LLM 설정
   useEffect(() => {

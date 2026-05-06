@@ -278,15 +278,23 @@ class PipelineWorker:
             )
             self._set_progress(0.55)
 
-            # Step 3
-            self._log("[Step 3] LLM 한국어 번역 중...")
+            # Step 3 — 한국어 detected 시 번역 단계 skip (Phase 2B-3-backend 3b-1).
+            # transcript.language 가 'ko' 면 STT 결과가 이미 한국어 → 별도 LLM 번역
+            # 호출 불필요. to_plaintext 가 speaker + timestamp 보존 형식 그대로 반환.
             llm_cfg = LLMConfig.from_env(provider=self.provider)
-            translated = translate_transcript(
-                transcript, config=llm_cfg, progress=self._log,
-                video_context=video_ctx,
-                stop_event=self._stop_event,
-            )
-            self._log(f"[Step 3] OK: 번역 완료 ({len(translated):,} chars)")
+            detected_lang = (transcript.language or "").lower()
+            if detected_lang == "ko":
+                self._log("[Step 3] 한국어 detected — 번역 단계 skip.")
+                translated = transcript.to_plaintext()
+                self._log(f"[Step 3] OK: 한국어 원본 사용 ({len(translated):,} chars)")
+            else:
+                self._log("[Step 3] LLM 한국어 번역 중...")
+                translated = translate_transcript(
+                    transcript, config=llm_cfg, progress=self._log,
+                    video_context=video_ctx,
+                    stop_event=self._stop_event,
+                )
+                self._log(f"[Step 3] OK: 번역 완료 ({len(translated):,} chars)")
             self._set_progress(0.78)
 
             # Step 4
@@ -336,6 +344,8 @@ class PipelineWorker:
                 organized_title=metadata.get("organized_title", ""),
                 field=metadata.get("field", ""),
                 tags=metadata.get("tags", []),
+                # Phase 2B-3-backend 3b-1: 한국어 분기 + 동적 원문 섹션 헤더에 사용.
+                detected_language=transcript.language or None,
             )
             self._log("[Done] GuruNote 생성 완료")
             self._set_progress(1.0)
@@ -356,6 +366,8 @@ class PipelineWorker:
                 tags=metadata.get("tags", []),
                 uploader=audio.uploader or "",
                 upload_date=audio.upload_date or "",
+                # Phase 2B-3-backend 3b-1: STT detected language → metadata.json + frontend.
+                detected_language=transcript.language or None,
             )
             self._log("[Save] 히스토리에 저장됨")
 

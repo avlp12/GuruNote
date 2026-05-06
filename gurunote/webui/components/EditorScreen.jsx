@@ -8,8 +8,7 @@
  *
  * 사용자 결정 (Step 6b):
  *   - C1-라: tab 시스템 통째 제거 (요약/번역/원문). 단일 markdown (요약) 만.
- *            번역/원문 placeholder 도 같이 제거 — Phase 2B-3-backend 에서 transcript
- *            필드 추가 시 정식 UI 결정.
+ *            번역/원문 placeholder 도 같이 제거.
  *   - C2-라: 우측 액션 sidebar 부분 통합:
  *            * 메타정보 + 태그 → Preview 영역 위 inline md-meta-strip (chip)
  *            * 마크다운 다운로드 → editor-head 액션 바
@@ -26,6 +25,11 @@
  *   - save_result_as({markdown, default_filename}) → {path, cancelled}
  *
  * Babel standalone global scope 회피: 모든 top-level const 는 EDITOR_ 접두사.
+ *
+ * Phase 2B-3-backend Step 3b-1: detected_language 를 md-meta-strip 의 language chip
+ *   (🇰🇷 한국어 (원본) / 🇺🇸 English (번역됨) / 🇯🇵 Japanese / 🇨🇳 Chinese / 🌐 fallback)
+ *   으로 채움. EDITOR_LANGUAGE_FLAG / LABEL 매핑은 exporter.py 의 LANGUAGE_FLAG /
+ *   LABEL 과 의도적 복제 (frontend ↔ backend 의존성 회피, future shared util 시 추출).
  */
 
 const { useState, useEffect, useRef } = React;
@@ -44,6 +48,30 @@ function fmtDuration(sec) {
   const s = Math.floor(sec % 60);
   if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+/* Phase 2B-3-backend Step 3b-1: detected_language → flag + label badge.
+ * exporter.py 의 LANGUAGE_FLAG / LANGUAGE_LABEL 과 의도적 복제 (frontend ↔ backend
+ * 의존성 회피). Suffix '(원본)' / '(번역됨)' 은 frontend 만의 표시 의도. */
+const EDITOR_LANGUAGE_FLAG = {
+  en: '🇺🇸',
+  ja: '🇯🇵',
+  zh: '🇨🇳',
+  ko: '🇰🇷',
+};
+const EDITOR_LANGUAGE_LABEL = {
+  en: 'English',
+  ja: 'Japanese',
+  zh: 'Chinese',
+  ko: '한국어',
+};
+function editorLanguageBadge(code) {
+  if (!code) return null;
+  const c = String(code).toLowerCase();
+  const flag = EDITOR_LANGUAGE_FLAG[c] || '🌐';
+  const label = EDITOR_LANGUAGE_LABEL[c] || c;
+  const suffix = c === 'ko' ? '(원본)' : '(번역됨)';
+  return `${flag} ${label} ${suffix}`;
 }
 
 /* === EditorScreen === */
@@ -322,6 +350,12 @@ function EditorScreen({ jobId, onBackToLibrary }) {
                 <span className="md-meta-chip">
                   <span className="msi">label</span>
                   {item.field}
+                </span>
+              )}
+              {editorLanguageBadge(item?.detected_language) && (
+                <span className="md-meta-chip">
+                  <span className="msi">translate</span>
+                  {editorLanguageBadge(item.detected_language)}
                 </span>
               )}
               {item?.duration_sec > 0 && (

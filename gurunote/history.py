@@ -83,6 +83,11 @@ def save_job(
     tags: Optional[List[str]] = None,
     uploader: str = "",
     upload_date: str = "",
+    # Phase 2B-3-backend Step 3b-1 — STT detected language (ko / en / ja / zh / ...).
+    # 기존 노트에는 부재 → frontend 가 graceful (None / 'unknown' 처리).
+    # 타입은 Optional[str] = None — exporter.py 와 통일. metadata.json 에 null 로
+    # 명시 저장되어 'detect 못 함 또는 부재' 의미가 빈 문자열보다 명확.
+    detected_language: Optional[str] = None,
 ) -> Path:
     """
     작업 결과를 디스크에 저장하고 인덱스를 갱신한다.
@@ -117,6 +122,10 @@ def save_job(
         "duration_sec": duration_sec,
         "num_speakers": num_speakers,
         "error_message": error_message,
+        # Phase 2B-3-backend Step 3b-1: None graceful (JSON null 직렬화 — 기존 노트와
+        # schema 호환). bridge.list_history → frontend 로 자동 전달, EditorScreen 의
+        # editorLanguageBadge() 가 falsy → chip 부재로 처리.
+        "detected_language": detected_language,
     }
 
     # 메타데이터

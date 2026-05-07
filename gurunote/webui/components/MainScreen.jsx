@@ -1,23 +1,34 @@
 /* SPDX-License-Identifier: Elastic-2.0
  * Copyright (c) 2026 GuruNote contributors.
  *
- * Phase 2B-2: MainScreen — 생성 화면 (URL/파일 입력 + 처리 + 결과).
+ * Phase 2B-2 → Phase 2B-3-backend Step 3b-prep: presentational refactor.
+ *   12 useStates + jobIdRef + bus listener + ticker + settings probe 모두 App.jsx
+ *   로 lifted. MainScreen 은 form 입력 + 결과 표시만 담당. route 전환 시 unmount
+ *   되어도 App.jsx 의 mainSession 이 보존되므로 form / log / result 모두 유지,
+ *   bus listener detach 0 → mid-pipeline 이벤트 lost 0.
  *
  * 디자인 spec (docs/design/v2-reference.html 시각 참고):
- *   - 토픽바 (breadcrumb + title)
  *   - 입력 카드 (URL + 파일 선택 XOR + 생성/중지)
  *   - STT 엔진 + LLM Provider segment
  *   - 파이프라인 카드 (5-step indicator + progress + meta)
  *   - 결과 카드 (4탭: 요약/한국어/영어/Log)
  *
- * Bridge wiring:
+ * Props (Step 3b-prep):
+ *   - mainSession: { url, selectedFile, stt, llm, dragOver, running, pct, stage,
+ *     log, result, startedAt, now } — App level lifted state.
+ *   - updateMainSession(patch): App level partial update helper (object 또는
+ *     prev => patch function form).
+ *   - onPipelineStart(source): App level pipeline 시작 (start_pipeline + jobIdRef).
+ *   - onPipelineStop(): App level pipeline 중지 (stop_pipeline).
+ *   - newNoteRequestKey: historic — 사용 안 함, App.jsx 가 직접 mainSession reset.
+ *     Future Step 3b-2/3/4 단축키 디버그/추적 용도로 prop 시그니처 유지.
+ *
+ * Bridge wiring (MainScreen 직접 호출):
  *   - pick_file → {path, size}
- *   - start_pipeline / stop_pipeline → 파이프라인 제어
- *   - get_settings → STT/LLM 기본값
- *   - window.__emit 으로 들어오는 progress / log / log_batch / result 구독
+ *   (start_pipeline / stop_pipeline / get_settings / window.__emit 은 App.jsx)
  */
 
-const { useState, useEffect, useRef, useCallback } = React;
+const { useState, useCallback } = React;
 
 const SUPPORTED_AUDIO = ['.mp3', '.wav', '.flac', '.m4a', '.aac', '.ogg', '.wma', '.opus'];
 const SUPPORTED_VIDEO = ['.mp4', '.mkv', '.avi', '.mov', '.webm', '.wmv', '.flv', '.ts', '.m4v'];
@@ -63,19 +74,6 @@ function formatTime(sec) {
   const m = Math.floor(sec / 60);
   const s = Math.floor(sec % 60);
   return `${m}:${String(s).padStart(2, '0')}`;
-}
-function humanizeError(err) {
-  const msg = (err && err.message) || String(err);
-  const m = msg.match(/^([A-Z_]+):(.*)$/);
-  if (!m) return msg;
-  const [, code, detail] = m;
-  switch (code) {
-    case 'INVALID_URL': return '유튜브 URL 형식이 아닙니다.';
-    case 'INVALID_LOCAL_FILE': return `지원되지 않는 파일입니다: ${detail}`;
-    case 'API_KEY_MISSING': return `API 키가 설정되지 않았습니다: ${detail}`;
-    case 'NO_ACTIVE_SESSION': return '실행 중인 작업이 없습니다.';
-    default: return msg;
-  }
 }
 
 /* === Toast (전역 helper, App 에서 mount 한 toast container 사용) === */
@@ -188,130 +186,37 @@ function ResultPanel({ result, log }) {
 }
 
 /* === MainScreen === */
-function MainScreen({ newNoteRequestKey }) {
-  // 입력 상태
-  const [url, setUrl] = useState('');
-  const [selectedFile, setSelectedFile] = useState(null); // { path, size } or null
-  const [stt, setStt] = useState('auto');
-  const [llm, setLlm] = useState('openai');
-  const [dragOver, setDragOver] = useState(false);
-
-  // 파이프라인 상태
-  const [running, setRunning] = useState(false);
-  const [pct, setPct] = useState(0);
-  const [stage, setStage] = useState(null);
-  const [log, setLog] = useState([]);
-  const [result, setResult] = useState(null);
-  const [startedAt, setStartedAt] = useState(null);
-  const [now, setNow] = useState(Date.now());
-  const jobIdRef = useRef(null);
-
-  // Phase 2B-6d: 새 노트 만들기 (CTA / ⌘N) — counter prop 변경 시 form reset.
-  //   사용자 결정 (C-1 가): url + selectedFile 만 clear, STT/LLM 보존.
-  //   진행 중 (running) 가드 — 처리 중에는 reset 막고 toast.
-  //   처음 mount 시 (newNoteRequestKey === 0) 는 skip — 초기 mount 가 reset 트리거 안 됨.
-  useEffect(() => {
-    if (!newNoteRequestKey) return;
-    if (running) {
-      if (window.showToast) window.showToast('처리 중입니다. 완료 후 새로 시작하세요.', 'warning');
-      return;
-    }
-    setUrl('');
-    setSelectedFile(null);
-    if (window.showToast) window.showToast('새 노트 — URL 또는 파일을 입력하세요.', 'info');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [newNoteRequestKey]);
-
-  // bridge probe — 기본 STT/LLM 설정
-  useEffect(() => {
-    let cancelled = false;
-    const probe = async () => {
-      while (!window.pywebview?.api && !cancelled) {
-        await new Promise(r => setTimeout(r, 50));
-      }
-      if (cancelled) return;
-      try {
-        const settings = await window.pywebview.api.get_settings();
-        if (cancelled) return;
-        if (settings?.values?.LLM_PROVIDER) {
-          setLlm(settings.values.LLM_PROVIDER);
-        }
-      } catch (e) {
-        console.warn('[MainScreen] get_settings failed:', e);
-      }
-    };
-    probe();
-    return () => { cancelled = true; };
-  }, []);
-
-  // 경과 시간 ticker (running 시만)
-  useEffect(() => {
-    if (!running) return;
-    const id = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(id);
-  }, [running]);
-
-  // bridge event bus 구독 — session.py 가 evaluate_js("window.__emit(...)") 로 push
-  useEffect(() => {
-    if (!window.bus) {
-      window.bus = new EventTarget();
-      window.__emit = (name, payload) =>
-        window.bus.dispatchEvent(new CustomEvent(name, { detail: payload }));
-    }
-
-    const onProgress = (e) => {
-      if (typeof e.detail?.pct === 'number') setPct(e.detail.pct);
-    };
-    const onLog = (e) => {
-      if (e.detail?.line) setLog(prev => [...prev, e.detail.line]);
-    };
-    const onLogBatch = (e) => {
-      if (Array.isArray(e.detail?.lines)) setLog(prev => [...prev, ...e.detail.lines]);
-    };
-    const onStageChange = (e) => {
-      if (e.detail?.stage) setStage(e.detail.stage);
-    };
-    const onResult = (e) => {
-      const payload = e.detail || {};
-      setRunning(false);
-      jobIdRef.current = null;
-      if (!payload.ok) {
-        showToast(`파이프라인 실패: ${payload.error || '알 수 없는 오류'}`, 'error');
-        setResult(null);
-        return;
-      }
-      setPct(1.0);
-      setResult(payload);
-    };
-
-    window.bus.addEventListener('progress', onProgress);
-    window.bus.addEventListener('log', onLog);
-    window.bus.addEventListener('log_batch', onLogBatch);
-    window.bus.addEventListener('stage_change', onStageChange);
-    window.bus.addEventListener('result', onResult);
-
-    return () => {
-      window.bus.removeEventListener('progress', onProgress);
-      window.bus.removeEventListener('log', onLog);
-      window.bus.removeEventListener('log_batch', onLogBatch);
-      window.bus.removeEventListener('stage_change', onStageChange);
-      window.bus.removeEventListener('result', onResult);
-    };
-  }, []);
+function MainScreen({
+  // eslint-disable-next-line no-unused-vars
+  newNoteRequestKey,
+  mainSession,
+  updateMainSession,
+  onPipelineStart,
+  onPipelineStop,
+}) {
+  // Step 3b-prep: 모든 state 는 props 의 mainSession 에서 destructure.
+  // route 전환 시 MainScreen 이 unmount 되어도 App.jsx 의 mainSession 이 보존됨.
+  const {
+    url, selectedFile, stt, llm, dragOver,
+    running, pct, stage, log, result, startedAt, now,
+  } = mainSession;
 
   // XOR 토글: URL 입력 시 파일 비움 (값이 실제 입력된 경우만)
   const handleUrlChange = (e) => {
     const v = e.target.value;
-    setUrl(v);
-    if (v && selectedFile) setSelectedFile(null);
+    if (v && selectedFile) {
+      updateMainSession({ url: v, selectedFile: null });
+    } else {
+      updateMainSession({ url: v });
+    }
   };
 
   // XOR 토글: 파일 선택 성공 시 URL 비움
   const handlePickFile = useCallback(async () => {
     try {
-      const result = await window.pywebview.api.pick_file();
-      if (!result?.path) return; // cancelled — preserve URL
-      const ext = getExt(result.path);
+      const pickResult = await window.pywebview.api.pick_file();
+      if (!pickResult?.path) return; // cancelled — preserve URL
+      const ext = getExt(pickResult.path);
       if (!SUPPORTED_EXTS.has(ext)) {
         showToast(
           `지원하지 않는 형식입니다: ${ext}\n지원: ${[...SUPPORTED_AUDIO, ...SUPPORTED_VIDEO].join(' ')}`,
@@ -319,20 +224,22 @@ function MainScreen({ newNoteRequestKey }) {
         );
         return;
       }
-      setSelectedFile({ path: result.path, size: result.size });
-      if (url) setUrl('');
+      updateMainSession({
+        selectedFile: { path: pickResult.path, size: pickResult.size },
+        url: '',
+      });
     } catch (e) {
       console.error('[pick_file]', e);
       showToast(`파일 선택 오류: ${e.message || e}`, 'error');
     }
-  }, [url]);
+  }, [updateMainSession]);
 
-  const handleRemoveFile = () => setSelectedFile(null);
+  const handleRemoveFile = () => updateMainSession({ selectedFile: null });
 
   const handleDrop = (e) => {
     e.preventDefault();
     e.stopPropagation();
-    setDragOver(false);
+    updateMainSession({ dragOver: false });
     const files = e.dataTransfer?.files;
     if (!files || files.length === 0) return;
     if (files.length > 1) {
@@ -345,12 +252,14 @@ function MainScreen({ newNoteRequestKey }) {
       showToast(`지원하지 않는 형식입니다: ${getExt(fullPath)}`, 'warning');
       return;
     }
-    setSelectedFile({ path: fullPath, size: typeof f.size === 'number' ? f.size : null });
-    if (url) setUrl('');
+    updateMainSession({
+      selectedFile: { path: fullPath, size: typeof f.size === 'number' ? f.size : null },
+      url: '',
+    });
   };
 
-  // 생성하기
-  const handleRun = async () => {
+  // 생성하기 — 폼 검증 후 onPipelineStart(source) 호출 (App.jsx 가 start_pipeline + jobIdRef 처리)
+  const handleRun = () => {
     let source;
     if (selectedFile) {
       source = { kind: 'local', value: selectedFile.path, engine: stt, provider: llm };
@@ -360,35 +269,11 @@ function MainScreen({ newNoteRequestKey }) {
       showToast('URL 또는 파일을 먼저 선택하세요.', 'warning');
       return;
     }
-
-    setRunning(true);
-    setPct(0);
-    setStage(null);
-    setLog([]);
-    setResult(null);
-    setStartedAt(Date.now());
-    setNow(Date.now());
-
-    try {
-      const r = await window.pywebview.api.start_pipeline(source);
-      jobIdRef.current = r.job_id;
-    } catch (e) {
-      console.error('[start_pipeline]', e);
-      showToast(humanizeError(e), 'error');
-      setRunning(false);
-    }
+    onPipelineStart(source);
   };
 
-  // 중지
-  const handleStop = async () => {
-    if (!jobIdRef.current) return;
-    try {
-      await window.pywebview.api.stop_pipeline(jobIdRef.current);
-      showToast('중지 요청을 보냈습니다. 현재 단계가 끝나면 중지됩니다.');
-    } catch (e) {
-      showToast(humanizeError(e), 'error');
-    }
-  };
+  // 중지 — App.jsx 의 onPipelineStop 호출 (jobIdRef 기반 stop_pipeline)
+  const handleStop = () => onPipelineStop();
 
   const canRun = !running && (selectedFile || url.trim());
   const elapsed = startedAt ? Math.floor((now - startedAt) / 1000) : 0;
@@ -416,9 +301,9 @@ function MainScreen({ newNoteRequestKey }) {
             value={url}
             onChange={handleUrlChange}
             disabled={running}
-            onDragEnter={(e) => { e.preventDefault(); setDragOver(true); }}
+            onDragEnter={(e) => { e.preventDefault(); updateMainSession({ dragOver: true }); }}
             onDragOver={(e) => e.preventDefault()}
-            onDragLeave={() => setDragOver(false)}
+            onDragLeave={() => updateMainSession({ dragOver: false })}
             onDrop={handleDrop}
             autoComplete="off"
           />
@@ -464,7 +349,7 @@ function MainScreen({ newNoteRequestKey }) {
                   key={opt}
                   type="button"
                   className={'seg-opt' + (stt === opt ? ' seg-opt--active' : '')}
-                  onClick={() => setStt(opt)}
+                  onClick={() => updateMainSession({ stt: opt })}
                   disabled={running}
                 >{opt}</button>
               ))}
@@ -479,7 +364,7 @@ function MainScreen({ newNoteRequestKey }) {
                   key={opt.value}
                   type="button"
                   className={'seg-opt' + (llm === opt.value ? ' seg-opt--active' : '')}
-                  onClick={() => setLlm(opt.value)}
+                  onClick={() => updateMainSession({ llm: opt.value })}
                   disabled={running}
                 >{opt.label}</button>
               ))}

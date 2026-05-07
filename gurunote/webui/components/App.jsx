@@ -6,7 +6,7 @@
  * 와 HistoryScreen 의 카드 그리드가 같은 데이터를 공유.
  */
 
-const { useState, useEffect, useCallback } = React;
+const { useState, useEffect, useCallback, useRef } = React;
 
 const ROUTE_LABELS = {
   main:      { title: '생성',      phase: '2B-2' },
@@ -14,6 +14,25 @@ const ROUTE_LABELS = {
   editor:    { title: '노트 편집', phase: '2B-4' },
   dashboard: { title: '대시보드',  phase: '2B-4' },
   settings:  { title: '설정',      phase: '2B-4' },
+};
+
+/* Phase 2B-3-backend Step 3b-prep: MainScreen 의 모든 session state 가 App level
+ * 로 lifted. route 전환 시 MainScreen 이 unmount 되어도 form / log / result 보존,
+ * bus listener detach 0, mid-pipeline 이벤트 lost 0. handleNewNote / ⌘N 시 이
+ * default 로 reset. probe 가 settings.values.LLM_PROVIDER 로 llm 덮어씀. */
+const APP_DEFAULT_MAIN_SESSION = {
+  url: '',
+  selectedFile: null,
+  stt: 'auto',
+  llm: 'openai',
+  dragOver: false,
+  running: false,
+  pct: 0,
+  stage: null,
+  log: [],
+  result: null,
+  startedAt: null,
+  now: 0,
 };
 
 function ScreenPlaceholder({ route }) {
@@ -106,14 +125,73 @@ function App() {
     }
   }, []);
 
-  // Phase 2B-6d: 새 노트 만들기 CTA (⌘N) — counter pattern (historyFilterKey 와 동일).
-  //   Sidebar CTA 클릭 또는 ⌘N keydown 시 increment + setRoute('main').
-  //   MainScreen 이 prop 으로 받아 useEffect 로 form reset (url + selectedFile).
-  //   진행 중 (running) 가드는 MainScreen 내부에서 처리.
+  // Phase 2B-3-backend Step 3b-prep: lifted MainScreen session state.
+  //   12 fields (url, selectedFile, stt, llm, dragOver, running, pct, stage, log,
+  //   result, startedAt, now). updateMainSession 은 object 또는 function form 의
+  //   partial update helper. jobIdRef 는 App lifecycle 의 ref (handleRun write,
+  //   handleStop read). historyRefreshKey 는 counter (onResult 시 ++ → loadHistory
+  //   재호출, Sidebar / HistoryScreen / DashboardScreen 자동 update).
+  const [mainSession, setMainSession] = useState(APP_DEFAULT_MAIN_SESSION);
+  const updateMainSession = useCallback((patch) => {
+    setMainSession((prev) => (
+      typeof patch === 'function'
+        ? { ...prev, ...patch(prev) }
+        : { ...prev, ...patch }
+    ));
+  }, []);
+  const jobIdRef = useRef(null);
+  const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
+
+  // Phase 2B-6d + Step 3b-prep: 새 노트 만들기 CTA (⌘N) — counter pattern.
+  //   Sidebar CTA 또는 ⌘N keydown 시 mainSession reset (모두 default) + counter
+  //   increment + setRoute('main'). 진행 중 (running) 가드는 여기서 처리.
+  //   newNoteRequestKey 는 historic — MainScreen 의 reset useEffect 가 사용했으나
+  //   App.jsx 가 직접 setMainSession 으로 reset 하므로 사실상 deprecated.
+  //   Future Step 3b-2/3/4 의 단축키 디버그/추적 용도로 유지.
   const [newNoteRequestKey, setNewNoteRequestKey] = useState(0);
   const handleNewNote = useCallback(() => {
+    if (mainSession.running) {
+      if (window.showToast) window.showToast('처리 중입니다. 완료 후 새로 시작하세요.', 'warning');
+      return;
+    }
+    setMainSession({ ...APP_DEFAULT_MAIN_SESSION });
     setNewNoteRequestKey((k) => k + 1);
     setRoute('main');
+  }, [mainSession.running]);
+
+  // Pipeline 시작 / 중지 (MainScreen 의 handleRun / handleStop 이동).
+  //   start_pipeline 이 r.job_id 반환 → jobIdRef.current 저장 (handleStop 사용).
+  //   onResult 시점에 jobIdRef.current = null 로 clear (bus listener 안에서).
+  const handlePipelineStart = useCallback(async (source) => {
+    updateMainSession({
+      running: true,
+      pct: 0,
+      stage: null,
+      log: [],
+      result: null,
+      startedAt: Date.now(),
+      now: Date.now(),
+    });
+    try {
+      const r = await window.pywebview.api.start_pipeline(source);
+      jobIdRef.current = r.job_id;
+    } catch (e) {
+      console.error('[start_pipeline]', e);
+      const msg = (e && e.message) || String(e);
+      if (window.showToast) window.showToast(`파이프라인 시작 실패: ${msg}`, 'error');
+      updateMainSession({ running: false });
+    }
+  }, [updateMainSession]);
+
+  const handlePipelineStop = useCallback(async () => {
+    if (!jobIdRef.current) return;
+    try {
+      await window.pywebview.api.stop_pipeline(jobIdRef.current);
+      if (window.showToast) window.showToast('중지 요청을 보냈습니다. 현재 단계가 끝나면 중지됩니다.');
+    } catch (e) {
+      const msg = (e && e.message) || String(e);
+      if (window.showToast) window.showToast(`중지 실패: ${msg}`, 'error');
+    }
   }, []);
 
   const loadHistory = useCallback(async () => {
@@ -137,6 +215,7 @@ function App() {
     }
   }, []);
 
+  // App 버전 probe — mount 시 한 번.
   useEffect(() => {
     let cancelled = false;
     const probe = async () => {
@@ -152,9 +231,100 @@ function App() {
       }
     };
     probe();
-    loadHistory();
     return () => { cancelled = true; };
-  }, [loadHistory]);
+  }, []);
+
+  // Phase 2B-3-backend Step 3b-prep: history refresh trigger.
+  //   loadHistory 가 [historyRefreshKey, loadHistory] dependency 로 재호출됨.
+  //   Mount 시 (key=0) 도 호출되어 초기 list_history 트리거.
+  //   Bus listener 의 onResult 시점에 setHistoryRefreshKey(k => k + 1) → re-fetch.
+  useEffect(() => {
+    loadHistory();
+  }, [historyRefreshKey, loadHistory]);
+
+  // Phase 2B-3-backend Step 3b-prep: settings probe — App mount 시 한 번.
+  //   기존 MainScreen 의 probe useEffect 이동. settings.values.LLM_PROVIDER 가
+  //   있으면 mainSession.llm 덮어씀 (default 'openai' → 사용자 환경 값).
+  useEffect(() => {
+    let cancelled = false;
+    const probe = async () => {
+      while (!window.pywebview?.api && !cancelled) {
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      if (cancelled) return;
+      try {
+        const settings = await window.pywebview.api.get_settings();
+        if (cancelled) return;
+        if (settings?.values?.LLM_PROVIDER) {
+          updateMainSession({ llm: settings.values.LLM_PROVIDER });
+        }
+      } catch (e) {
+        console.warn('[App] get_settings failed:', e);
+      }
+    };
+    probe();
+    return () => { cancelled = true; };
+  }, [updateMainSession]);
+
+  // Phase 2B-3-backend Step 3b-prep: bus listener — App level mount, listener
+  //   detach 0. window.bus 는 idempotent 초기화. window.__emit 은 bridge.py 의
+  //   evaluate_js("window.__emit(...)") push 의 entry point. onResult 시점에
+  //   historyRefreshKey++ → 사이드바 카운터 + 히스토리 / 대시보드 자동 update.
+  useEffect(() => {
+    if (!window.bus) {
+      window.bus = new EventTarget();
+      window.__emit = (name, payload) =>
+        window.bus.dispatchEvent(new CustomEvent(name, { detail: payload }));
+    }
+
+    const onProgress = (e) => {
+      if (typeof e.detail?.pct === 'number') updateMainSession({ pct: e.detail.pct });
+    };
+    const onLog = (e) => {
+      if (e.detail?.line) updateMainSession((prev) => ({ log: [...prev.log, e.detail.line] }));
+    };
+    const onLogBatch = (e) => {
+      if (Array.isArray(e.detail?.lines)) updateMainSession((prev) => ({ log: [...prev.log, ...e.detail.lines] }));
+    };
+    const onStageChange = (e) => {
+      if (e.detail?.stage) updateMainSession({ stage: e.detail.stage });
+    };
+    const onResult = (e) => {
+      const payload = e.detail || {};
+      jobIdRef.current = null;
+      if (!payload.ok) {
+        if (window.showToast) {
+          window.showToast(`파이프라인 실패: ${payload.error || '알 수 없는 오류'}`, 'error');
+        }
+        updateMainSession({ running: false, result: null });
+        return;
+      }
+      updateMainSession({ running: false, pct: 1.0, result: payload });
+      // History refresh trigger — Sidebar / HistoryScreen / DashboardScreen 자동.
+      setHistoryRefreshKey((k) => k + 1);
+    };
+
+    window.bus.addEventListener('progress', onProgress);
+    window.bus.addEventListener('log', onLog);
+    window.bus.addEventListener('log_batch', onLogBatch);
+    window.bus.addEventListener('stage_change', onStageChange);
+    window.bus.addEventListener('result', onResult);
+
+    return () => {
+      window.bus.removeEventListener('progress', onProgress);
+      window.bus.removeEventListener('log', onLog);
+      window.bus.removeEventListener('log_batch', onLogBatch);
+      window.bus.removeEventListener('stage_change', onStageChange);
+      window.bus.removeEventListener('result', onResult);
+    };
+  }, [updateMainSession]);
+
+  // Elapsed-time ticker — running 시만, mainSession.now 1초 간격 update.
+  useEffect(() => {
+    if (!mainSession.running) return undefined;
+    const id = setInterval(() => updateMainSession({ now: Date.now() }), 1000);
+    return () => clearInterval(id);
+  }, [mainSession.running, updateMainSession]);
 
   // Phase 2B-6d: 글로벌 keydown — ⌘K (SearchPalette open) + ⌘N (새 노트).
   //   ⌘S 는 EditorScreen 내부 listener 가 담당 (충돌 없음 — 다른 키).
@@ -195,7 +365,15 @@ function App() {
               onSearchOpen={openSearchPalette}
             />
             <div className="gn-content">{
-            route === 'main'    ? <MainScreen newNoteRequestKey={newNoteRequestKey} /> :
+            route === 'main'    ? (
+              <MainScreen
+                newNoteRequestKey={newNoteRequestKey}
+                mainSession={mainSession}
+                updateMainSession={updateMainSession}
+                onPipelineStart={handlePipelineStart}
+                onPipelineStop={handlePipelineStop}
+              />
+            ) :
             route === 'history' ? (
               <HistoryScreen
                 key={`history-${historyFilterKey}`}

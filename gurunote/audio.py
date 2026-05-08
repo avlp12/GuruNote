@@ -1,9 +1,13 @@
 """
-Step 1: 오디오 소스 → 로컬 mp3 오디오 파일.
+Step 1: 오디오 소스 → 로컬 16kHz mono wav 파일.
 
 소스 종류:
   - 유튜브 URL → `download_audio()` (yt-dlp)
   - 로컬 동영상/오디오 파일 → `extract_audio_from_file()` (ffmpeg subprocess)
+
+출력 포맷 (화자 분리 정합):
+  - wav 16kHz mono — pyannote.audio 4.0+ 의 strict ±1 sample tolerance 정합.
+    mp3 lossy frame structure 와 chunk boundary align 불일치 회피.
 """
 
 from __future__ import annotations
@@ -175,10 +179,15 @@ def download_audio(url: str, out_dir: str) -> AudioDownloadResult:
         "postprocessors": [
             {
                 "key": "FFmpegExtractAudio",
-                "preferredcodec": "mp3",
-                "preferredquality": "192",
+                "preferredcodec": "wav",
             }
         ],
+        # 화자 분리 (pyannote.audio 4.0+) 의 strict ±1 sample tolerance 정합 —
+        # 16kHz mono wav 로 source 부터 정렬. mp3 의 1152-sample frame structure 와
+        # pyannote 의 480000-sample chunk boundary align 불일치 시
+        # pyannote/audio/core/io.py:441-445 가 ValueError 로 raise → 단일 화자 fallback.
+        # postprocessor_args 는 yt-dlp 가 모든 ffmpeg postprocessor 호출에 전달.
+        "postprocessor_args": ["-ar", "16000", "-ac", "1"],
         "quiet": True,
         "noprogress": True,
         "no_warnings": True,
@@ -208,7 +217,7 @@ def download_audio(url: str, out_dir: str) -> AudioDownloadResult:
     # 자막: 우선순위대로 파일을 찾아 평문 변환
     subtitles_text, subtitles_source = _load_best_subtitle(out_dir, video_id)
 
-    audio_path = os.path.join(out_dir, f"{video_id}.mp3")
+    audio_path = os.path.join(out_dir, f"{video_id}.wav")
     if not os.path.exists(audio_path):
         candidates = sorted(
             p for p in Path(out_dir).glob(f"{video_id}.*")
@@ -454,10 +463,12 @@ def is_supported_local_file(path: str) -> bool:
 
 def extract_audio_from_file(file_path: str, out_dir: str) -> AudioDownloadResult:
     """
-    로컬 동영상/오디오 파일에서 mp3 를 추출한다.
+    로컬 동영상/오디오 파일에서 16kHz mono wav 를 추출한다.
 
-    - 이미 mp3 인 경우 → 복사만 수행
-    - 그 외 오디오/동영상 → ffmpeg 로 mp3 192kbps 변환
+    화자 분리 (pyannote.audio 4.0+) 의 strict ±1 sample tolerance 정합 —
+    모든 source 를 16kHz mono wav 로 transcode (이미 mp3 인 경우의 fast-path
+    copy 도 제거. mp3 의 1152-sample frame 과 pyannote 의 480000-sample chunk
+    boundary align 불일치 → ValueError 로 화자 분리 실패 회피).
 
     Args:
         file_path: 원본 미디어 파일의 절대/상대 경로
@@ -485,43 +496,37 @@ def extract_audio_from_file(file_path: str, out_dir: str) -> AudioDownloadResult
 
     os.makedirs(out_dir, exist_ok=True)
     title = src.stem
-    out_mp3 = os.path.join(out_dir, f"{title}.mp3")
+    out_wav = os.path.join(out_dir, f"{title}.wav")
 
-    if ext == ".mp3":
-        # 이미 mp3 → 복사
-        shutil.copy2(str(src), out_mp3)
-    else:
-        # ffmpeg 로 mp3 변환
-        cmd = [
-            "ffmpeg", "-y", "-i", str(src),
-            "-vn",                         # 비디오 스트림 제거
-            "-acodec", "libmp3lame",
-            "-ab", "192k",
-            "-ar", "44100",
-            "-ac", "2",
-            out_mp3,
-        ]
-        result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=600,
+    # ffmpeg 로 wav 16kHz mono 변환 (확장자 / 코덱 무관 일관 처리)
+    cmd = [
+        "ffmpeg", "-y", "-i", str(src),
+        "-vn",                         # 비디오 스트림 제거
+        "-ac", "1",                    # mono
+        "-ar", "16000",                # 16kHz (pyannote 내부 표준)
+        out_wav,
+    ]
+    result = subprocess.run(
+        cmd, capture_output=True, text=True, timeout=600,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"ffmpeg 오디오 추출 실패 (exit {result.returncode}):\n"
+            f"{result.stderr[:500]}"
         )
-        if result.returncode != 0:
-            raise RuntimeError(
-                f"ffmpeg 오디오 추출 실패 (exit {result.returncode}):\n"
-                f"{result.stderr[:500]}"
-            )
 
-    if not os.path.exists(out_mp3):
-        raise FileNotFoundError(f"변환된 오디오 파일을 찾을 수 없습니다: {out_mp3}")
+    if not os.path.exists(out_wav):
+        raise FileNotFoundError(f"변환된 오디오 파일을 찾을 수 없습니다: {out_wav}")
 
-    # 파일 크기로 대략적인 길이 추정 (mp3 192kbps ≈ 24KB/s)
-    size_bytes = os.path.getsize(out_mp3)
-    duration_estimate = size_bytes / (192 * 1000 / 8)
+    # 파일 크기로 대략적인 길이 추정 (wav 16kHz mono 16-bit ≈ 32 KB/s)
+    size_bytes = os.path.getsize(out_wav)
+    duration_estimate = size_bytes / 32000.0
 
     # ffprobe 가 있으면 정확한 길이 사용
-    duration_sec = _get_duration_ffprobe(out_mp3) or duration_estimate
+    duration_sec = _get_duration_ffprobe(out_wav) or duration_estimate
 
     return AudioDownloadResult(
-        audio_path=out_mp3,
+        audio_path=out_wav,
         video_id=title,
         video_title=title,
         duration_sec=duration_sec,

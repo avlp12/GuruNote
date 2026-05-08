@@ -251,10 +251,23 @@ def _diarize_with_pyannote(
         except Exception as exc:  # noqa: BLE001
             log(f"  MPS 디바이스 이동 실패 ({exc}) — CPU 로 진행")
 
-    diarization = pipeline(audio_path)
+    result = pipeline(audio_path)
+
+    # pyannote.audio 4.0+ 는 pipeline() 결과가 DiarizeOutput dataclass
+    # (speaker_diarization / exclusive_speaker_diarization / speaker_embeddings).
+    # 3.x 는 Annotation 직접 반환. defensive getattr 으로 두 API 모두 graceful.
+    #
+    # exclusive_speaker_diarization 이 pyannote 의 명시적 권장:
+    # overlapping speech turns 제거 → Whisper STT segment 1:1 매칭 본질 정합.
+    # 부재 시 speaker_diarization (overlapping 포함) → 마지막에 result 자체 (3.x).
+    annotation = (
+        getattr(result, "exclusive_speaker_diarization", None)
+        or getattr(result, "speaker_diarization", None)
+        or result
+    )
 
     turns: List[Tuple[float, float, str]] = []
-    for turn, _, speaker in diarization.itertracks(yield_label=True):
+    for turn, _, speaker in annotation.itertracks(yield_label=True):
         turns.append((float(turn.start), float(turn.end), str(speaker)))
 
     log(f"화자 분리 완료 — {len(turns)} 발화 구간")

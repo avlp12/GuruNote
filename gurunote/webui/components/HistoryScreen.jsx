@@ -426,7 +426,47 @@ function formatDuration(sec) {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
-function JobCard({ item, onClick, onEdit }) {
+/* === DeleteConfirmDialog (Phase 2B-3-backend Step 3b-2) ===
+ * Material-style modal — 노트 정보 표시 (제목 / 생성일 / 화자수 / 분야) + Esc /
+ * backdrop 클릭 close + loading state. Autosave 영역 보존을 사용자 안내하지는
+ * 않음 (CSS 단계에서 부수 메시지 추가 가능). item null 시 렌더 부재. */
+function DeleteConfirmDialog({ item, onCancel, onConfirm, loading }) {
+  useEffect(() => {
+    if (!item) return undefined;
+    const onKey = (e) => { if (e.key === 'Escape' && !loading) onCancel(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [item, onCancel, loading]);
+
+  if (!item) return null;
+  const title = item.title || '(제목 없음)';
+  const createdAt = item.created_at || '(생성일 부재)';
+  const numSpeakers = item.num_speakers ?? '?';
+  const field = item.field || '미분류';
+  return (
+    <div className="gn-confirm-overlay" onClick={() => !loading && onCancel()}>
+      <div className="gn-confirm-card" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+        <h3>노트를 삭제하시겠습니까?</h3>
+        <div className="gn-confirm-info">
+          <div><strong>제목</strong><span>{title}</span></div>
+          <div><strong>생성일</strong><span>{createdAt}</span></div>
+          <div><strong>화자 수</strong><span>{numSpeakers}</span></div>
+          <div><strong>분야</strong><span>{field}</span></div>
+        </div>
+        <div className="gn-confirm-actions">
+          <button type="button" className="btn btn--ghost" onClick={onCancel} disabled={loading}>
+            취소
+          </button>
+          <button type="button" className="btn btn--danger" onClick={onConfirm} disabled={loading}>
+            {loading ? '삭제 중…' : '삭제'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function JobCard({ item, onClick, onEdit, onDelete }) {
   const [imgError, setImgError] = useState(false);
   const status = STATUS_BADGE[item.status] || { label: item.status || '?', cls: '' };
   const title = item.organized_title || item.title || '제목 없음';
@@ -504,10 +544,10 @@ function JobCard({ item, onClick, onEdit }) {
         <button
           type="button"
           className="job-action job-action--more"
-          title="더 보기"
-          onClick={() => window.showToast?.('Phase 2B-3-backend 에서 활성화')}
+          title="삭제"
+          onClick={() => onDelete && onDelete(item)}
         >
-          <span className="msi">more_horiz</span>
+          <span className="msi">delete</span>
         </button>
       </div>
     </article>
@@ -525,6 +565,8 @@ function HistoryScreen({
   initialTimeWindow,       // null | number (days) | undefined
   initialExpandedGroup,    // 'tag' | 'field' | ... | undefined — auto-expand + scrollIntoView
   onFilterApplied,         // () => void — called once on mount so App.jsx can clear historyFilter
+  // Phase 2B-3-backend Step 3b-2: delete 후 historyRefreshKey++ (App.jsx)
+  onHistoryRefresh,        // () => void — bridge.delete_history 성공 시 호출
 }) {
   // Phase 2B-3b: 검색 + chips state
   const [searchInput, setSearchInput] = useState('');
@@ -610,6 +652,33 @@ function HistoryScreen({
 
   // Phase 2B-3d: detail view state
   const [detailItem, setDetailItem] = useState(null);
+
+  // Phase 2B-3-backend Step 3b-2: delete confirm dialog state
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
+  const handleDeleteRequest = (item) => setDeleteTarget(item);
+  const handleDeleteCancel = () => { if (!deleteLoading) setDeleteTarget(null); };
+  const handleDeleteConfirm = async () => {
+    if (!deleteTarget) return;
+    setDeleteLoading(true);
+    try {
+      const result = await window.pywebview.api.delete_history(deleteTarget.job_id);
+      if (result?.ok) {
+        const label = deleteTarget.title || deleteTarget.job_id;
+        if (window.showToast) window.showToast(`삭제됨: ${label}`);
+        setDeleteTarget(null);
+        if (onHistoryRefresh) onHistoryRefresh();
+      } else {
+        const msg = result?.error || '알 수 없는 오류';
+        if (window.showToast) window.showToast(`삭제 실패: ${msg}`, 'error');
+      }
+    } catch (e) {
+      if (window.showToast) window.showToast(`삭제 오류: ${e?.message || e}`, 'error');
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
 
   const handleChipClick = (chip) => {
     if (window.showToast) {
@@ -739,6 +808,7 @@ function HistoryScreen({
                   item={item}
                   onClick={handleCardClick}
                   onEdit={(it) => onEditNote && onEditNote(it.job_id)}
+                  onDelete={handleDeleteRequest}
                 />
               ))}
             </div>
@@ -764,6 +834,13 @@ function HistoryScreen({
           onEdit={(it) => onEditNote && onEditNote(it.job_id)}
         />
       )}
+
+      <DeleteConfirmDialog
+        item={deleteTarget}
+        onCancel={handleDeleteCancel}
+        onConfirm={handleDeleteConfirm}
+        loading={deleteLoading}
+      />
     </div>
   );
 }

@@ -345,6 +345,21 @@ function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, [handleNewNote]);
 
+  // Phase 2B-3-backend Step 3b-2: EditorScreen 진입 중 노트 삭제 시 redirect.
+  //   historyItems 변화 감지 — currentJobId 가 list 에서 사라지면 history 로 이동.
+  //   초기 로드 중 (items 비어있을 때) 는 skip — false redirect 회피.
+  //   반응적 패턴: bulk delete / 외부 sync 등 다른 trigger 에서도 동일 작동.
+  useEffect(() => {
+    if (route !== 'editor' || !currentJobId) return undefined;
+    if (historyItems.length === 0) return undefined;
+    const exists = historyItems.some((item) => item.job_id === currentJobId);
+    if (!exists) {
+      setRoute('history');
+      if (window.showToast) window.showToast('노트가 삭제되었습니다');
+    }
+    return undefined;
+  }, [route, currentJobId, historyItems]);
+
   return (
     <>
       <div className="gn-window">
@@ -387,6 +402,7 @@ function App() {
                 initialTimeWindow={historyFilter?.initialTimeWindow}
                 initialExpandedGroup={historyFilter?.initialExpandedGroup}
                 onFilterApplied={() => setHistoryFilter(null)}
+                onHistoryRefresh={() => setHistoryRefreshKey((k) => k + 1)}
               />
             ) :
             route === 'editor' ? (

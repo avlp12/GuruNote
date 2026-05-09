@@ -924,7 +924,22 @@ class Api:
             return self._err("LOG_READ_FAILED", f"{type(exc).__name__}: {exc}")
 
     def delete_history(self, job_id: str) -> dict:
-        raise NotImplementedError("delete_history: wired in Phase 2")
+        """Delete a single note — Phase 2B-3-backend Step 3b-2 wiring.
+
+        ``gurunote.history.delete_job`` 호출 — ``~/.gurunote/jobs/<job_id>/`` 디렉토리
+        통째 삭제 + ``history.json`` 의 entry 제거 (원자적 write). Autosave
+        (``~/GuruNote/autosave/``) 의 markdown 은 의도적 보존 (backup 영역).
+        """
+        if not isinstance(job_id, str) or not job_id:
+            return self._err("INVALID_ID", "job_id must be a non-empty string")
+        if "/" in job_id or "\\" in job_id or ".." in job_id:
+            return self._err("INVALID_ID", "job_id contains path separators")
+        try:
+            from gurunote.history import delete_job  # noqa: PLC0415
+            delete_job(job_id)
+            return {"ok": True, "job_id": job_id}
+        except Exception as exc:  # noqa: BLE001
+            return self._err("DELETE_FAILED", f"{type(exc).__name__}: {exc}")
 
     def rebuild_index(self) -> dict:
         """Rebuild the semantic index. Long-running → returns job_id."""

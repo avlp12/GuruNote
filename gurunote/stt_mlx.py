@@ -189,18 +189,43 @@ def transcribe_mlx(
         )
 
     # 3. Segment 정규화 (화자 할당)
+    # Layer 6 fix: Whisper hallucination 영역 (빈 text + noise placeholder + 중복) 필터링.
+    # 본인 daily 사용 catch (5/9): NVIDIA GTC 영상의 같은 timestamp + 같은 화자의 빈
+    # segment 904회 반복 → markdown 본문 904 줄 leak. STT 단계에서 사전 차단해야
+    # downstream (LLM translate / exporter markdown / 화자 분리) 모두 자동 graceful.
+    _NOISE_PLACEHOLDERS = {"", ".", "-", "—", "...", "…"}
     segments: List[Segment] = []
+    _seen_keys: set = set()
+    _filtered_empty = 0
+    _filtered_duplicate = 0
     for seg in raw_segments:
         start = float(seg.get("start", 0.0))
         end = float(seg.get("end", 0.0))
         text = (seg.get("text") or "").strip()
+
+        if text in _NOISE_PLACEHOLDERS:
+            _filtered_empty += 1
+            continue
 
         if diarization_turns:
             speaker = _assign_speaker_by_overlap(start, end, diarization_turns)
         else:
             speaker = "A"
 
+        # 동일 (start, speaker, text) 중복 차단 — Whisper hallucination loop 방어.
+        dedup_key = (round(start, 2), speaker, text)
+        if dedup_key in _seen_keys:
+            _filtered_duplicate += 1
+            continue
+        _seen_keys.add(dedup_key)
+
         segments.append(Segment(speaker=speaker, start=start, end=end, text=text))
+
+    if _filtered_empty or _filtered_duplicate:
+        log(
+            f"세그먼트 필터링 — empty/noise {_filtered_empty}, duplicate {_filtered_duplicate} "
+            f"제거 ({len(raw_segments)} → {len(segments)})"
+        )
 
     speaker_count = len({s.speaker for s in segments})
     log(f"MLX 전사 완료 — {len(segments)} 세그먼트, {speaker_count} 화자")

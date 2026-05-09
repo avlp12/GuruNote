@@ -302,6 +302,21 @@
   border: 1px dashed var(--gn-border-subtle);
   border-radius: var(--r-md);
 }
+/* Layer 9: transcript content (korean/english tab) — left-align, line-break 보존, 가독성 line-height. */
+.result-transcript {
+  text-align: left;
+  padding: var(--sp-4);
+  padding-left: var(--sp-5);
+  font-size: 14px;
+  line-height: 1.75;
+  white-space: pre-wrap;
+  word-break: keep-all;
+  overflow-wrap: break-word;
+  color: var(--gn-on-surface);
+}
+.result-transcript strong {
+  font-weight: 600;
+}
 .result-rendered {
   font-size: 14px;
   line-height: 1.65;

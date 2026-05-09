@@ -40,6 +40,24 @@ function ResultPanel({ result, log }) {
     ? log
     : (typeof log === 'string' && log ? log.split('\n') : []);
 
+  // Layer 9: transcript 렌더링. Korean → text 그대로. English **...** → <strong>.
+  // 오류 시 fallback: ** 단순 제거.
+  const renderTranscript = (text, hasStrong) => {
+    if (!text) return null;
+    if (!hasStrong) return text;
+    try {
+      const parts = text.split(/(\*\*[^*]+\*\*)/g);
+      return parts.map((part, idx) =>
+        part.startsWith('**') && part.endsWith('**')
+          ? React.createElement('strong', { key: idx }, part.slice(2, -2))
+          : part
+      );
+    } catch (err) {
+      console.warn('[ResultPanel] strong render fallback:', err);
+      return text.replace(/\*\*/g, '');
+    }
+  };
+
   if (!result && logLines.length === 0) {
     return (
       <div className="result-empty">
@@ -78,17 +96,17 @@ function ResultPanel({ result, log }) {
       )}
 
       {activeTab === 'korean' && (
-        <div className="result-empty">
-          {result?.korean_transcript || '처리 완료 후 표시됩니다.'}
-        </div>
+        result?.korean_transcript
+          ? <div className="result-transcript">{renderTranscript(result.korean_transcript, false)}</div>
+          : <div className="result-empty">처리 완료 후 표시됩니다.</div>
       )}
 
       {activeTab === 'english' && (
-        <div className="result-empty">
-          {result?.english_transcript === ''
-            ? '이 노트는 한국어 원본 콘텐츠입니다 — 원문 스크립트 섹션 부재.'
-            : (result?.english_transcript || '처리 완료 후 표시됩니다.')}
-        </div>
+        result?.english_transcript === ''
+          ? <div className="result-empty">이 노트는 한국어 원본 콘텐츠입니다 — 원문 스크립트 섹션 부재.</div>
+          : result?.english_transcript
+            ? <div className="result-transcript">{renderTranscript(result.english_transcript, true)}</div>
+            : <div className="result-empty">처리 완료 후 표시됩니다.</div>
       )}
 
       {activeTab === 'log' && (

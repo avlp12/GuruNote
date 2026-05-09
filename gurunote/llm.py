@@ -53,6 +53,62 @@ TRANSLATION_SYSTEM_PROMPT = """\
    - 화자 매핑은 규칙 2 처럼 라벨 옆 괄호 실명만 (`[00:01:23] Speaker A (Lex Fridman): ...`)
 9. **빈 content 영역의 timestamp + Speaker line 은 출력하지 마.**
    같은 timestamp + 같은 Speaker 가 연속 반복되면 1회만.
+10. **고유명사(인명/지명/회사명/상품명) 한국어 표기 일관성:**
+
+    [핵심 원칙 — 국립국어원 외래어 표기법 정합]
+    - 자음: [k] → ㅋ(어두), ㄱ(받침) / [t] → ㅌ(어두), ㅅ(받침) /
+      [tʃ] → 치(어두), ㅊ(어말) / [ʃ](sh) → 슈(모음 앞), 시(어말) /
+      [n](어말) → ㄴ
+    - 모음: [æ] → 애, [ʌ] → 어, [ə] → 어/이; 장모음은 한국어 정합.
+    - [r]: 어두 → ㄹ, 어말 → 생략 또는 ㅡ
+
+    [자주 등장 통용 표기 — 필수 정합]
+
+    회사 (글로벌):
+      NVIDIA→엔비디아, OpenAI→OpenAI, Anthropic→앤트로픽,
+      Microsoft→마이크로소프트, Google→구글, Meta→메타, Apple→애플,
+      Schneider Electric→슈나이더 일렉트릭, Samsung→삼성, AMD→AMD,
+      Intel→인텔, Qualcomm→퀄컴, TSMC→TSMC, Tesla→테슬라, Amazon→아마존,
+      Motivair→모티브에어, IBM→IBM, Oracle→오라클, Salesforce→세일즈포스,
+      Adobe→어도비, Netflix→넷플릭스, ByteDance→바이트댄스, Alibaba→알리바바,
+      Tencent→텐센트, SoftBank→소프트뱅크, Foxconn→폭스콘, Cisco→시스코,
+      Dell→델, HP→HP, Sony→소니, LG→LG, NASA→미국 항공 우주국,
+      Stripe→스트라이프, Rocket Lab→로켓랩, 1X→1X
+
+    회사 (한국):
+      Hyundai→현대, Kia→기아, POSCO→포스코, Hanwha→한화,
+      SK Hynix→SK 하이닉스, Naver→네이버, Kakao→카카오,
+      Innospace→이노스페이스, Lotte Chemical→롯데케미칼,
+      ROBOTIS→로보티즈, SPHERE→스피어, Maeil Dairy→매일유업
+
+    인명:
+      Jensen Huang→젠슨 황, Sam Altman→샘 올트먼, Elon Musk→일론 머스크,
+      Mark Zuckerberg→마크 저커버그, Satya Nadella→사티아 나델라,
+      Sundar Pichai→순다르 피차이, Tim Cook→팀 쿡, Dario Amodei→다리오 아모데이,
+      Lex Fridman→렉스 프리드먼, Andrej Karpathy→안드레 카파시,
+      Yann LeCun→얀 르쿤, Geoffrey Hinton→제프리 힌턴,
+      Demis Hassabis→데미스 허사비스, Ilya Sutskever→일리야 수츠케버,
+      Greg Brockman→그렉 브록먼, Bill Gates→빌 게이츠,
+      Pankaj Sharma→판카즈 샤르마, Tiffany Janzen→티파니 잰슨,
+      Andrew Ross Sorkin→앤드루 로스 소킨, Jamie Dimon→제이미 다이먼,
+      Lisa Su→리사 수, Pat Gelsinger→팻 겔싱어,
+      Cristiano Amon→크리스티아노 아몬
+
+    AI 제품/모델:
+      Claude→클로드, Gemini→제미나이, ChatGPT→챗GPT, Copilot→코파일럿,
+      DALL-E→달리; GPT/Llama/Mistral 등 모델명은 영문 그대로.
+
+    기술 용어:
+      HBM→HBM, DRAM→DRAM, NAND→NAND, HVAC→HVAC,
+      Brownfield→브라운필드, Liquid Cooling→액체 냉각,
+      Digital Twin→디지털 트윈, SimReady→심레디, Foundry→파운드리
+
+    [영문 병기 + 일관성 룰]
+    - 첫 등장 시 영문 병기: "슈나이더 일렉트릭(Schneider Electric)" — 이후 한국어만.
+    - 영문 유지 entity (예: OpenAI) 는 첫 등장 시 "OpenAI(오픈AI)" 병기 후
+      이후 영문만 — 한국어 표기를 다시 본문에 노출하지 마.
+    - 같은 영상 내 같은 entity = 같은 표기 (chunk 별 변동 절대 금지).
+    - dict 부재 entity + unsure → 음운 정합 한국어 또는 영문 그대로.
 """
 
 

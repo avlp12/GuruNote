@@ -89,7 +89,7 @@ TRANSLATION_SYSTEM_PROMPT = """\
       Yann LeCun→얀 르쿤, Geoffrey Hinton→제프리 힌턴,
       Demis Hassabis→데미스 허사비스, Ilya Sutskever→일리야 수츠케버,
       Greg Brockman→그렉 브록먼, Bill Gates→빌 게이츠,
-      Pankaj Sharma→판카즈 샤르마, Tiffany Janzen→티파니 잰슨,
+      Pankaj Sharma→판카즈 샤르마, Tiffany Janzen→티파니 잔젠,
       Andrew Ross Sorkin→앤드루 로스 소킨, Jamie Dimon→제이미 다이먼,
       Lisa Su→리사 수, Pat Gelsinger→팻 겔싱어,
       Cristiano Amon→크리스티아노 아몬

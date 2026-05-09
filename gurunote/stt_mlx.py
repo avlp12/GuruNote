@@ -216,6 +216,63 @@ def transcribe_mlx(
 # =============================================================================
 # pyannote diarization (MPS 가속)
 # =============================================================================
+def _merge_drifted_speakers(result: object, similarity_threshold: float, log: ProgressFn) -> object:
+    """Long-form embedding drift 의 cluster 자동 합산 (Layer 1 fix).
+
+    pyannote.audio 4.0+ 의 DiarizeOutput.speaker_embeddings (shape (N, D), labels()
+    순서 정합) 를 활용 — 같은 화자가 chunk 마다 다른 cluster 인 경우 (긴 영상의
+    embedding drift) cosine similarity ≥ threshold 시 라벨 합산.
+
+    embeddings 부재 (3.x Annotation 직접 반환 / None) 또는 shape mismatch 시
+    graceful skip (원본 result 그대로 반환).
+
+    Greedy 합산: 정렬된 라벨 i < j 에 대해 sim[i][j] ≥ threshold 이면 j → i 매핑.
+    이미 다른 라벨로 매핑된 라벨은 새 매핑 차단 (chain merge 회피).
+    """
+    embeddings = getattr(result, "speaker_embeddings", None)
+    annotation = getattr(result, "speaker_diarization", None)
+    if embeddings is None or annotation is None:
+        return result
+    try:
+        import numpy as np  # noqa: PLC0415
+    except ImportError:
+        return result
+    labels = list(annotation.labels())
+    n = len(labels)
+    if n != len(embeddings) or n < 2:
+        return result
+
+    norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
+    norms = np.where(norms == 0, 1.0, norms)
+    normed = embeddings / norms
+    sim = normed @ normed.T
+
+    merge_map: Dict[str, str] = {}
+    for i in range(n):
+        if labels[i] in merge_map:
+            continue
+        for j in range(i + 1, n):
+            if labels[j] in merge_map:
+                continue
+            if float(sim[i][j]) >= similarity_threshold:
+                merge_map[labels[j]] = labels[i]
+
+    if not merge_map:
+        return result
+
+    log(
+        f"화자 합산 — {len(merge_map)} cluster 합산 "
+        f"({n} → {n - len(merge_map)} speakers, threshold {similarity_threshold:.2f})"
+    )
+    if hasattr(result, "speaker_diarization"):
+        result.speaker_diarization = result.speaker_diarization.rename_labels(merge_map)
+    if hasattr(result, "exclusive_speaker_diarization"):
+        result.exclusive_speaker_diarization = (
+            result.exclusive_speaker_diarization.rename_labels(merge_map)
+        )
+    return result
+
+
 def _diarize_with_pyannote(
     audio_path: str,
     hf_token: str,
@@ -251,7 +308,17 @@ def _diarize_with_pyannote(
         except Exception as exc:  # noqa: BLE001
             log(f"  MPS 디바이스 이동 실패 ({exc}) — CPU 로 진행")
 
-    result = pipeline(audio_path)
+    # Layer 1 fix: pyannote 의 max_speakers cap (long-form 의 over-segmentation 방어).
+    # 단일 화자 컨텐츠 영향 부재 (cap 은 상한, num_speakers=1 정합).
+    # default 10 — daily 사용 max 안전 영역. envvar 으로 컨텐츠 별 조절 가능.
+    max_speakers_env = int(os.getenv("PYANNOTE_MAX_SPEAKERS", "10"))
+    result = pipeline(audio_path, max_speakers=max_speakers_env)
+
+    # Layer 1 fix: long-form embedding drift 의 cluster 자동 합산.
+    # 100분 영상에서 같은 화자가 chunk 마다 다른 cluster 가 되는 영역 → cosine
+    # similarity ≥ threshold (default 0.75) 시 합산. embeddings 부재 시 graceful skip.
+    merge_threshold = float(os.getenv("PYANNOTE_MERGE_THRESHOLD", "0.75"))
+    result = _merge_drifted_speakers(result, merge_threshold, log)
 
     # pyannote.audio 4.0+ 는 pipeline() 결과가 DiarizeOutput dataclass
     # (speaker_diarization / exclusive_speaker_diarization / speaker_embeddings).

@@ -28,10 +28,36 @@ TRANSLATION_SYSTEM_PROMPT = """\
 다음 규칙을 반드시 지켜:
 1. 입력은 영어 인터뷰/팟캐스트 스크립트이며 화자 라벨(Speaker A, Speaker B …)
    과 타임스탬프가 포함돼 있어. 화자 라벨과 타임스탬프 형식은 그대로 보존해.
-2. 문맥을 파악해 Speaker A, B 가 진행자(Host)와 게스트(Guest) 중 누구인지
-   추론하고, 등장 인물의 실명(예: Lex Fridman, Sam Altman, Dario Amodei 등)이
-   명확하면 화자 라벨 옆에 실명을 함께 표기해.
-   예) [00:01:23] Speaker A (Lex Fridman): ...
+2. **화자 표기 — 한국어 스크립트 vs 영어 원문 분리:**
+
+   [한국어 스크립트 영역]
+   - 첫 등장: `[HH:MM] 한국어 화자명(English Name): 본문`
+     예) `[00:10] 티파니 잔젠(Tiffany Janzen): 안녕하세요...`
+   - 이후 등장: `[HH:MM] 한국어 화자명: 본문`
+     예) `[00:13] 티파니 잔젠: 그 다음에...`
+   - **"Speaker A/B/C" 메타 라벨은 한국어 스크립트에 출력 부재** —
+     영상 컨텍스트(채널명/제목/챕터/자막)에서 화자 실명을 추론할 수
+     있으면 한국어 화자명을 직접 사용.
+   - 한국어 화자명은 Rule 10 통용 표기 dict 정합
+     (예: Tiffany Janzen → 티파니 잔젠, Pankaj Sharma → 판카즈 샤르마,
+     Jensen Huang → 젠슨 황).
+   - 화자 실명 추론 부재 시 "화자 1", "화자 2" 등 한국어 라벨 또는
+     Speaker A/B/C 그대로 사용.
+   - **금지 사례 — 화자 라벨의 한국어 중복 출력 절대 부재:**
+     * `[HH:MM] 판카즈 샤르마(판카즈 샤르마): ...` ✗ (한국어를 영문 자리에 중복)
+     * `[HH:MM] 판카즈 샤르마(Pankaj Sharma): ...` ✓ (영문 원본만 병기)
+     * 영문 원본 부재 entity → 영문 병기 부재 → `[HH:MM] 화자 1: ...`
+
+   [영어 원문 스크립트 영역]
+   - 형식: `**[HH:MM] Speaker A:** 본문` (Speaker A/B/C 라벨 그대로 보존).
+   - 영문 화자 실명 부재 — Speaker A/B/C 라벨만 사용.
+
+   [본문 영역 — 화자/entity 인용 처리]
+   - 본문에서 화자 이름 또는 entity 인용 시 Rule 10 영문 병기 룰 정합:
+     * 첫 등장: `한국어 이름(English Name)` 형식
+       예) "...담당 상무이사 판카즈 샤르마(Pankaj Sharma)께서 함께해 주셨습니다."
+     * 이후 등장: 한국어 이름만 (영문 병기 부재)
+   - 본문에 영문 그대로만 출력 부재 — 한국어 표기 누락 절대 금지.
 3. **메시지 앞에 "### 영상 컨텍스트" 섹션이 있으면** 거기 실린 업로드 날짜,
    채널명, 영상 제목/설명, 챕터 목록, 기존 자막 발췌를 **화자 이름 추론과
    챕터 경계 유지의 근거로 적극 활용**해. 설명에 진행자/게스트 이름이 있으면
@@ -50,7 +76,7 @@ TRANSLATION_SYSTEM_PROMPT = """\
    - "**참고 화자 매핑**:", "**추론된 화자 매핑**:", "**화자 매핑 근거**:",
      "**번역 노트**:", "**번역 의도**:", "**※ 분석**", "**※ 주의**" 등
      reasoning / commentary 섹션
-   - 화자 매핑은 규칙 2 처럼 라벨 옆 괄호 실명만 (`[00:01:23] Speaker A (Lex Fridman): ...`)
+   - 화자 매핑 결과는 규칙 2 형식으로만 표기 (한국어=한국어 실명, 영어=Speaker A/B/C).
 9. **빈 content 영역의 timestamp + Speaker line 은 출력하지 마.**
    같은 timestamp + 같은 Speaker 가 연속 반복되면 1회만.
 10. **고유명사(인명/지명/회사명/상품명) 한국어 표기 일관성:**
@@ -101,7 +127,11 @@ TRANSLATION_SYSTEM_PROMPT = """\
     기술 용어:
       HBM→HBM, DRAM→DRAM, NAND→NAND, HVAC→HVAC,
       Brownfield→브라운필드, Liquid Cooling→액체 냉각,
-      Digital Twin→디지털 트윈, SimReady→심레디, Foundry→파운드리
+      Digital Twin→디지털 트윈, SimReady→심레디, Foundry→파운드리,
+      AI Native→AI 네이티브, AI Factory→AI 팩토리,
+      AI for Energy→AI for Energy (영문 유지),
+      Energy for AI→Energy for AI (영문 유지),
+      Energy Intelligence→에너지 인텔리전스
 
     [영문 병기 + 일관성 룰]
     - 첫 등장 시 영문 병기: "슈나이더 일렉트릭(Schneider Electric)" — 이후 한국어만.
@@ -109,6 +139,10 @@ TRANSLATION_SYSTEM_PROMPT = """\
       이후 영문만 — 한국어 표기를 다시 본문에 노출하지 마.
     - 같은 영상 내 같은 entity = 같은 표기 (chunk 별 변동 절대 금지).
     - dict 부재 entity + unsure → 음운 정합 한국어 또는 영문 그대로.
+    - **한국어 중복 출력 절대 금지 (괄호 안은 영문 원본 전용):**
+      * 정합: 슈나이더 일렉트릭(Schneider Electric) ✓ / 판카즈 샤르마(Pankaj Sharma) ✓
+      * 부정합: 슈나이더 일렉트릭(슈나이더 일렉트릭) ✗ / 판카즈 샤르마(판카즈 샤르마) ✗
+      * 영문 원본 미상 entity → 영문 병기 부재 (한국어만).
 """
 
 

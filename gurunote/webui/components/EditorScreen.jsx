@@ -30,6 +30,12 @@
  *   (🇰🇷 한국어 (원본) / 🇺🇸 English (번역됨) / 🇯🇵 Japanese / 🇨🇳 Chinese / 🌐 fallback)
  *   으로 채움. EDITOR_LANGUAGE_FLAG / LABEL 매핑은 exporter.py 의 LANGUAGE_FLAG /
  *   LABEL 과 의도적 복제 (frontend ↔ backend 의존성 회피, future shared util 시 추출).
+ *
+ * Phase 2B-3-backend Layer 7: Step 6b 의 "C1-라: tab 시스템 통째 제거" decision 정정.
+ *   Preview pane 의 단일 dangerouslySetInnerHTML(full_html) → ResultPanel 4 tabs
+ *   (요약/한국어/영어/Log) 마운트. Daily 사용 패턴 정합 — DetailPanel + EditorScreen
+ *   + MainScreen 세 영역 동일 UX (DRY). Backend get_history_log 으로 pipeline.log
+ *   별도 fetch + ResultPanel log tab.
  */
 
 const { useState, useEffect, useRef } = React;
@@ -82,14 +88,22 @@ function EditorScreen({ jobId, onBackToLibrary }) {
   const [editedContent, setEditedContent] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  // Phase 2B-3-backend Layer 7: ResultPanel 의 'korean'/'english'/'summary' tab
+  // 데이터 source. detail = get_history_detail 의 full payload (markdown 외에
+  // korean_transcript / english_transcript / summary_html / full_html 영역 포함).
+  const [detail, setDetail] = useState(null);
+  // Layer 7: log tab 데이터 source — bridge.get_history_log → pipeline.log content.
+  const [logText, setLogText] = useState('');
 
-  // jobId 가 바뀌면 get_history_detail 호출
+  // jobId 가 바뀌면 get_history_detail + get_history_log 동시 호출
   useEffect(() => {
     if (!jobId) {
       setItem(null);
       setMarkdown('');
       setFullHtml('');
       setEditedContent('');
+      setDetail(null);
+      setLogText('');
       return undefined;
     }
     let cancelled = false;
@@ -101,7 +115,10 @@ function EditorScreen({ jobId, onBackToLibrary }) {
           await new Promise((r) => setTimeout(r, 50));
         }
         if (cancelled) return;
-        const result = await window.pywebview.api.get_history_detail({ job_id: jobId });
+        const [result, logResult] = await Promise.all([
+          window.pywebview.api.get_history_detail({ job_id: jobId }),
+          window.pywebview.api.get_history_log({ job_id: jobId }),
+        ]);
         if (cancelled) return;
         if (!result?.ok) {
           const friendly = EDITOR_ERROR_MESSAGES[result?.code]
@@ -113,6 +130,8 @@ function EditorScreen({ jobId, onBackToLibrary }) {
         setMarkdown(result.markdown || '');
         setFullHtml(result.full_html || '');
         setEditedContent(result.markdown || '');
+        setDetail(result);
+        setLogText(logResult?.ok ? (logResult.log || '') : '');
       } catch (e) {
         console.error('[EditorScreen] load:', e);
         if (!cancelled) setError(e.message || String(e));
@@ -375,10 +394,10 @@ function EditorScreen({ jobId, onBackToLibrary }) {
               ))}
             </div>
 
-            <div
-              className="editor-preview__body"
-              dangerouslySetInnerHTML={{ __html: fullHtml }}
-            />
+            {/* Phase 2B-3-backend Layer 7: ResultPanel (4 tabs: 요약/한국어/영어/Log) */}
+            <div className="editor-preview__body">
+              <ResultPanel result={detail} log={logText} />
+            </div>
           </div>
         </div>
       </div>

@@ -281,6 +281,43 @@ function DetailPanel({ item, onClose, onEdit }) {
     return () => document.removeEventListener('keydown', onEsc);
   }, [onClose]);
 
+  // Phase 2B-3-backend Layer 7: 카드 클릭 시 본문 + 로그 fetch → ResultPanel 마운트.
+  //   bridge.get_history_detail → korean_transcript / english_transcript / summary_html
+  //   bridge.get_history_log → pipeline.log content (string)
+  //   item 변경 시 다시 fetch (cancelled flag 으로 race 방어).
+  const [detail, setDetail] = useState(null);
+  const [logText, setLogText] = useState('');
+  const [detailLoading, setDetailLoading] = useState(false);
+  useEffect(() => {
+    if (!item?.job_id) {
+      setDetail(null);
+      setLogText('');
+      return undefined;
+    }
+    let cancelled = false;
+    setDetailLoading(true);
+    (async () => {
+      try {
+        while (!window.pywebview?.api && !cancelled) {
+          await new Promise((r) => setTimeout(r, 50));
+        }
+        if (cancelled) return;
+        const [d, l] = await Promise.all([
+          window.pywebview.api.get_history_detail({ job_id: item.job_id }),
+          window.pywebview.api.get_history_log({ job_id: item.job_id }),
+        ]);
+        if (cancelled) return;
+        if (d?.ok) setDetail(d);
+        if (l?.ok) setLogText(l.log || '');
+      } catch (e) {
+        console.warn('[DetailPanel] fetch failed:', e);
+      } finally {
+        if (!cancelled) setDetailLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [item?.job_id]);
+
   if (!item) return null;
 
   const title = item.organized_title || item.title || '제목 없음';
@@ -337,11 +374,19 @@ function DetailPanel({ item, onClose, onEdit }) {
           )}
 
           <div className="detail-section-title">본문</div>
-          <div style={{ color: 'var(--gn-on-surface-muted)', fontSize: 13 }}>
-            {item.has_markdown
-              ? '본문 미리보기는 Phase 2B-4 (노트 편집 화면) 에서 표시됩니다.'
-              : '본문 데이터가 없습니다.'}
-          </div>
+          {detailLoading && !detail && (
+            <div style={{ color: 'var(--gn-on-surface-muted)', fontSize: 13 }}>
+              불러오는 중…
+            </div>
+          )}
+          {!detailLoading && !detail && (
+            <div style={{ color: 'var(--gn-on-surface-muted)', fontSize: 13 }}>
+              본문 데이터가 없습니다.
+            </div>
+          )}
+          {detail && (
+            <ResultPanel result={detail} log={logText} />
+          )}
         </div>
 
         <div className="detail-actions-bar">

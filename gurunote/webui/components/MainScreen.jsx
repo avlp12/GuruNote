@@ -46,12 +46,9 @@ const LLM_OPTIONS = [
 const STEP_THRESHOLDS = [0.18, 0.55, 0.78, 0.90, 1.0];
 const STEP_LABELS = ['오디오', 'STT', '번역', '요약', '조립'];
 
-const RESULT_TABS = [
-  { id: 'summary', label: '요약',     icon: 'auto_awesome' },
-  { id: 'korean',  label: '한국어',   icon: 'translate' },
-  { id: 'english', label: '영어 원문', icon: 'description' },
-  { id: 'log',     label: 'Log',      icon: 'terminal' },
-];
+// Phase 2B-3-backend Layer 7: ResultPanel 외부 분리 (gurunote/webui/components/ResultPanel.jsx).
+// MainScreen + HistoryScreen DetailPanel + EditorScreen Preview 영역에서 동일 사용.
+// RESULT_TABS 상수와 ResultPanel 함수는 ResultPanel.jsx 로 이동.
 
 /* === Helpers === */
 function getExt(path) {
@@ -126,64 +123,7 @@ function StepIndicator({ pct }) {
   );
 }
 
-/* === ResultPanel — 4탭 === */
-function ResultPanel({ result, log }) {
-  const [activeTab, setActiveTab] = useState('summary');
-
-  if (!result && !log.length) {
-    return (
-      <div className="result-empty">
-        파이프라인을 실행하면 여기에 결과가 표시됩니다.
-      </div>
-    );
-  }
-
-  return (
-    <>
-      <div className="result-tabs">
-        {RESULT_TABS.map(tab => (
-          <button
-            key={tab.id}
-            type="button"
-            className={'result-tab' + (activeTab === tab.id ? ' result-tab--active' : '')}
-            onClick={() => setActiveTab(tab.id)}
-          >
-            <span className="msi" style={{ fontSize: 16, marginRight: 6 }}>{tab.icon}</span>
-            {tab.label}
-            {tab.id === 'log' && log.length > 0 && (
-              <span className="result-tab__count">{log.length}</span>
-            )}
-          </button>
-        ))}
-      </div>
-
-      {activeTab === 'summary' && result?.full_html && (
-        <div className="result-rendered" dangerouslySetInnerHTML={{ __html: result.full_html }} />
-      )}
-      {activeTab === 'summary' && !result?.full_html && (
-        <div className="result-empty">처리 완료 후 요약이 표시됩니다.</div>
-      )}
-
-      {activeTab === 'korean' && (
-        <div className="result-empty">
-          {result?.korean_transcript || '처리 완료 후 표시됩니다.'}
-        </div>
-      )}
-
-      {activeTab === 'english' && (
-        <div className="result-empty">
-          {result?.english_transcript || '처리 완료 후 표시됩니다.'}
-        </div>
-      )}
-
-      {activeTab === 'log' && (
-        <div className="log-pane">
-          {log.length === 0 ? '대기 중...' : log.join('\n')}
-        </div>
-      )}
-    </>
-  );
-}
+/* ResultPanel 은 외부 component (ResultPanel.jsx, window.ResultPanel) — Layer 7. */
 
 /* === MainScreen === */
 function MainScreen({

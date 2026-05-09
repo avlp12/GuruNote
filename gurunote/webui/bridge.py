@@ -101,6 +101,57 @@ def _resolve_thumbnail_url(video_id: Optional[str]) -> Optional[str]:
     return f"https://img.youtube.com/vi/{video_id}/hqdefault.jpg"
 
 
+# === Phase 2B-3-backend Layer 7: result.md 의 한국어/영어 섹션 parse ===
+# MainScreen.jsx ResultPanel 의 'korean' / 'english' tab 이 두 키 기대 (L167-177).
+# 이전: payload 부재 → 항상 fallback "처리 완료 후 표시됩니다." 표시.
+# 헤더 영역:
+#   - 한국어:  "# 📝 전체 스크립트 번역본"  또는  "# 📝 전체 스크립트 (한국어 원본)"
+#              (Step 3b-1 의 ko 분기 시 후자, exporter.py:59-69)
+#   - 원문:    "# 🇺🇸 원문 스크립트 (English)"  / 🇯🇵 / 🇨🇳 / 🌐 / etc.
+#              (legacy: "# 🇺🇸 영어 원문 스크립트")
+#   - 한국어 원본 노트 (Step 3b-1) → 원문 섹션 통째 생략 → english_transcript = ""
+_KOREAN_SECTION_RE = re.compile(
+    r"^# 📝 전체 스크립트[^\n]*\n(.*?)(?=^# |^---|\Z)",
+    re.MULTILINE | re.DOTALL,
+)
+_ORIGINAL_SECTION_RE = re.compile(
+    r"^# .+ 원문 스크립트[^\n]*\n(.*?)(?=^# |^---|\Z)",
+    re.MULTILINE | re.DOTALL,
+)
+
+
+def _parse_transcripts(markdown: str) -> tuple[str, str]:
+    """result.md → (korean_transcript, english_transcript).
+
+    - 다국어 노트: 두 섹션 모두 정합
+    - 한국어 원본 노트 (Step 3b-1): english_transcript = ""
+    - Legacy 노트 (섹션 부재): 둘 다 ""
+    """
+    korean_match = _KOREAN_SECTION_RE.search(markdown)
+    english_match = _ORIGINAL_SECTION_RE.search(markdown)
+    korean = korean_match.group(1).strip() if korean_match else ""
+    english = english_match.group(1).strip() if english_match else ""
+    return korean, english
+
+
+# Phase 2B-3-backend Layer 7: 요약 영역 (📌 + 💡 + ⏱️ 3 섹션) parse.
+# build_gurunote_markdown (exporter.py) 의 출력 영역 정합 — 헤더 3개 연속 + script
+# 섹션 직전 (# 📝 전체 스크립트). ResultPanel 의 'summary' tab 데이터 source.
+_SUMMARY_SECTION_RE = re.compile(
+    r"^# 📌 영상 제목.*?(?=^# 📝 전체 스크립트|\Z)",
+    re.MULTILINE | re.DOTALL,
+)
+
+
+def _parse_summary(markdown: str) -> str:
+    """result.md → 요약 영역 (📌 핵심 주제 + 💡 Insights + ⏱️ 타임라인) markdown text.
+
+    헤더 영역 부재 시 "" 반환 (legacy 노트 또는 비정상 노트).
+    """
+    match = _SUMMARY_SECTION_RE.search(markdown)
+    return match.group(0).strip() if match else ""
+
+
 class Api:
     """JavaScript-facing bridge.
 
@@ -828,6 +879,12 @@ class Api:
             full_html = _markdown.markdown(
                 md, extensions=["fenced_code", "tables", "toc"]
             )
+            # Phase 2B-3-backend Layer 7: 한국어/원문/요약 섹션 parse → ResultPanel tab.
+            korean_transcript, english_transcript = _parse_transcripts(md)
+            summary_text = _parse_summary(md)
+            summary_html = _markdown.markdown(
+                summary_text, extensions=["fenced_code", "tables"]
+            ) if summary_text else ""
             return {
                 "ok": True,
                 "job_id": job_id,
@@ -835,9 +892,36 @@ class Api:
                 "full_html": full_html,
                 "meta": meta,
                 "filename": "result.md",
+                "korean_transcript": korean_transcript,
+                "english_transcript": english_transcript,
+                "summary_html": summary_html,
             }
         except Exception as exc:  # noqa: BLE001
             return self._err("READ_FAILED", f"{type(exc).__name__}: {exc}")
+
+    def get_history_log(self, payload: Any = None, *, job_id: Optional[str] = None) -> dict:
+        """Return ``pipeline.log`` content for a saved job — Phase 2B-3-backend Layer 7.
+
+        Backend ``gurunote.history.get_job_log`` wrap. ResultPanel 의 'log' tab
+        에서 사용 (DetailPanel + EditorScreen 영역). 노트가 cleanup 됐거나 log 가
+        없는 경우 (legacy / 실패 노트) ``{ok: True, log: ""}`` graceful 반환.
+        """
+        # Normalize payload (dict / str positional / kwarg).
+        if isinstance(payload, dict):
+            job_id = payload.get("job_id", job_id)
+        elif isinstance(payload, str):
+            job_id = payload
+
+        if not isinstance(job_id, str) or not job_id:
+            return self._err("INVALID_ID", "job_id must be a non-empty string")
+        if "/" in job_id or "\\" in job_id or ".." in job_id:
+            return self._err("INVALID_ID", "job_id contains path separators")
+        try:
+            from gurunote.history import get_job_log  # noqa: PLC0415
+            log_content = get_job_log(job_id) or ""
+            return {"ok": True, "job_id": job_id, "log": log_content}
+        except Exception as exc:  # noqa: BLE001
+            return self._err("LOG_READ_FAILED", f"{type(exc).__name__}: {exc}")
 
     def delete_history(self, job_id: str) -> dict:
         raise NotImplementedError("delete_history: wired in Phase 2")

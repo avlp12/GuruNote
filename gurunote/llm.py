@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import time
 from dataclasses import dataclass
 from typing import Callable, List, Optional
@@ -606,7 +607,14 @@ def translate_transcript(
         translated_parts.append(translated)
 
     log("✅ 번역 완료")
-    return "\n\n".join(translated_parts).strip()
+    # Phase 2B-3-backend Layer 14 Bug #2: chunk 별 LLM 출력 의 line break 변동 정규화.
+    # LLM 이 chunk 마다 [HH:MM] line 사이를 '\n' 또는 '\n\n' 로 mix 출력 → 가독성 변동.
+    # 본문 표준 = '\n\n' (Q3 결정, late chunk 패턴 / 본인 daily UX 정합).
+    # Pattern: [MM:SS] 또는 [HH:MM:SS] 다음 line 이 [ts] 시작 시 사이를 \n\n 으로.
+    # Lookahead (?=...) 사용 — 다음 [ts] 를 consume 하지 않아 연속 boundary 모두 매치.
+    _TS_BOUNDARY_RE = re.compile(r"(\[\d{1,2}(?::\d{2}){1,2}\][^\n]*)\n(?=\[\d{1,2}(?::\d{2}){1,2}\])")
+    normalized_parts = [_TS_BOUNDARY_RE.sub(r"\1\n\n", part) for part in translated_parts]
+    return "\n\n".join(normalized_parts).strip()
 
 
 # =============================================================================

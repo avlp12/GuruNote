@@ -12,8 +12,11 @@ Event shapes
 - ``progress``  : ``{"job_id": str, "pct": float}``           — 0.0 – 1.0
 - ``result``    : ``{"job_id": str, "ok": bool, "full_md": str,
                      "full_html": str, "summary_md": str,
-                     "video_title": str,
+                     "korean_transcript": str, "english_transcript": str,
+                     "summary_html": str, "video_title": str,
                      "autosave_path": str | None}``  (ok=False → also ``"error": str``)
+                  (Layer 14: korean/english_transcript + summary_html 추가 — ResultPanel 의
+                  'korean'/'english'/'summary' tab 데이터 source.)
 
 ``autosave_path`` is sniffed from the ``[Autosave] <path>`` log line that
 ``gui.PipelineWorker`` emits after ``autosave_result(...)`` writes. It is
@@ -151,6 +154,15 @@ class PipelineSession:
         audio = result.get("audio")
         video_title = getattr(audio, "video_title", "") if audio is not None else ""
 
+        # Phase 2B-3-backend Layer 14 Bug #1: ResultPanel 의 'korean' / 'english' /
+        # 'summary' tab 데이터 source. 기존 payload 부재 → live CreateScreen 의 두
+        # tab 이 항상 placeholder 표시. bridge.py 의 _parse_transcripts /
+        # _parse_summary 와 동일 logic 재사용 (lazy import — 순환 회피).
+        from gurunote.webui.bridge import _parse_transcripts, _parse_summary  # noqa: PLC0415
+        korean_transcript, english_transcript = _parse_transcripts(full_md)
+        summary_text = _parse_summary(full_md)
+        summary_html = _md_to_html(summary_text) if summary_text else ""
+
         return {
             "job_id": self.job_id,
             "ok": True,
@@ -158,6 +170,9 @@ class PipelineSession:
             "full_md": full_md,
             "full_html": _md_to_html(full_md),
             "summary_md": result.get("summary_md", ""),
+            "korean_transcript": korean_transcript,
+            "english_transcript": english_transcript,
+            "summary_html": summary_html,
             "autosave_path": self._autosave_path,
         }
 

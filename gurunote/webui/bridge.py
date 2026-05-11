@@ -152,6 +152,57 @@ def _parse_summary(markdown: str) -> str:
     return match.group(0).strip() if match else ""
 
 
+# Phase 2B-3-backend Step 3b-3: result.md 의 YAML frontmatter parse (regex 기반).
+# PyYAML 의존성 회피 — exporter.py 가 build 하는 알려진 구조만 지원.
+# 지원 type: str (quoted/unquoted), int, list ([a, b] 또는 ["a", "b"]).
+_FRONTMATTER_BLOCK_RE = re.compile(r"^---\n(.*?)\n---\n", re.DOTALL)
+_FM_LINE_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$")
+
+
+def _strip_yaml_value(raw: str) -> object:
+    """YAML 값 영역 unquote + type infer (str/int/list)."""
+    s = raw.strip()
+    if not s:
+        return ""
+    # List: [a, b] or ["a", "b"]
+    if s.startswith("[") and s.endswith("]"):
+        inner = s[1:-1].strip()
+        if not inner:
+            return []
+        items = [_strip_yaml_value(p) for p in inner.split(",")]
+        return [it for it in items if it != ""]
+    # Quoted string
+    if (s[0] == '"' and s[-1] == '"') or (s[0] == "'" and s[-1] == "'"):
+        return s[1:-1]
+    # Int
+    if s.lstrip("-").isdigit():
+        try:
+            return int(s)
+        except ValueError:
+            pass
+    return s
+
+
+def _parse_frontmatter(markdown: str) -> dict:
+    """result.md → frontmatter dict (YAML 영역 parse).
+
+    frontmatter 부재 (--- 영역 없음) → {} 반환. 알려진 구조 (exporter.py 가 build)
+    만 지원 — list / quoted str / int / 평문 str 영역.
+    """
+    match = _FRONTMATTER_BLOCK_RE.match(markdown)
+    if not match:
+        return {}
+    block = match.group(1)
+    out: dict = {}
+    for line in block.splitlines():
+        m = _FM_LINE_RE.match(line)
+        if not m:
+            continue
+        key, raw_val = m.group(1), m.group(2)
+        out[key] = _strip_yaml_value(raw_val)
+    return out
+
+
 class Api:
     """JavaScript-facing bridge.
 
@@ -973,12 +1024,35 @@ class Api:
             return self._err("INVALID_MARKDOWN", "markdown must be a string")
 
         try:
-            from gurunote.history import JOBS_DIR  # noqa: PLC0415
+            from gurunote.history import JOBS_DIR, update_meta  # noqa: PLC0415
             job_dir = JOBS_DIR / job_id
             if not job_dir.exists():
                 return self._err("HISTORY_NOT_FOUND", f"no job dir for {job_id}")
             result_path = job_dir / "result.md"
             result_path.write_text(markdown, encoding="utf-8")
+            # Phase 2B-3-backend Step 3b-3: frontmatter SSOT — result.md 저장 후
+            # YAML frontmatter 영역 parse → history.json 의 entry 영역 sync.
+            # 사용자가 frontmatter title: 수정 + ⌘S 시 라이브러리 카드 + EditorScreen
+            # 헤더 영역 자동 갱신 (옛 title 잔재 부재).
+            #
+            # Mapping (frontmatter 의 키 ↔ history.json 의 키):
+            #   - frontmatter "title"          → history "organized_title" (display)
+            #   - frontmatter "original_title" → history "title" (yt-dlp raw)
+            #   - frontmatter "field"          → history "field" (직접)
+            #   - frontmatter "tags"           → history "tags" (직접)
+            #   - frontmatter "uploader"       → history "uploader" (직접)
+            #   - 기타 (source_url, upload_date, duration_sec 등) — 사용자 변경 영역 부재 → skip
+            fm = _parse_frontmatter(markdown)
+            patch: dict = {}
+            if "title" in fm:
+                patch["organized_title"] = fm["title"]
+            if "original_title" in fm:
+                patch["title"] = fm["original_title"]
+            for key in ("field", "tags", "uploader"):
+                if key in fm:
+                    patch[key] = fm[key]
+            if patch:
+                update_meta(job_id, patch)
             return {"ok": True, "path": str(result_path)}
         except OSError as exc:
             return self._err("WRITE_FAILED", f"{type(exc).__name__}: {exc}")

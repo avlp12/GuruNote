@@ -409,6 +409,7 @@ function App() {
               <EditorScreen
                 jobId={currentJobId}
                 onBackToLibrary={() => setRoute('history')}
+                onHistoryRefresh={() => setHistoryRefreshKey((k) => k + 1)}
               />
             ) :
             route === 'dashboard' ? (

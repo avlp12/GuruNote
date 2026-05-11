@@ -81,7 +81,7 @@ function editorLanguageBadge(code) {
 }
 
 /* === EditorScreen === */
-function EditorScreen({ jobId, onBackToLibrary }) {
+function EditorScreen({ jobId, onBackToLibrary, onHistoryRefresh }) {
   const [item, setItem] = useState(null);
   const [markdown, setMarkdown] = useState('');
   const [fullHtml, setFullHtml] = useState('');
@@ -154,8 +154,22 @@ function EditorScreen({ jobId, onBackToLibrary }) {
       });
       if (result?.ok) {
         setMarkdown(editedContent);
-        // full_html 은 backend 서버사이드 렌더 — 다음 read_job 시 자동 갱신.
         if (window.showToast) window.showToast('저장되었습니다.', 'success');
+        // Phase 2B-3-backend Step 3b-3: frontmatter SSOT — 저장 후 즉시 detail
+        // 재조회 → editor-head 의 title (item.organized_title) 영역 자동 갱신.
+        // bridge.update_note 내부에서 history.json sync 완료된 후 재조회 정합.
+        try {
+          const fresh = await window.pywebview.api.get_history_detail({ job_id: jobId });
+          if (fresh?.ok) {
+            setItem(fresh.meta || null);
+            setFullHtml(fresh.full_html || '');
+            setDetail(fresh);
+          }
+        } catch (refetchErr) {
+          console.warn('[EditorScreen] post-save refetch failed:', refetchErr);
+        }
+        // HistoryScreen / Sidebar / DashboardScreen 자동 갱신 (Step 3b-prep base 활용).
+        if (onHistoryRefresh) onHistoryRefresh();
       } else {
         if (window.showToast) window.showToast(`저장 실패: ${result?.error || '알 수 없는 오류'}`, 'error');
       }

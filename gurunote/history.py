@@ -154,6 +154,25 @@ def _update_index(job_id: str, meta: dict) -> None:
     _write_index_atomic(index)
 
 
+def update_meta(job_id: str, patch: dict) -> Optional[dict]:
+    """Phase 2B-3-backend Step 3b-3: 단일 job 의 meta entry 영역에 patch 적용.
+
+    update_note 의 result.md 저장 후 frontmatter 변경분 (title / tags / field 등) 을
+    history.json 에 sync 하기 위한 atomic helper. 위치 보존 (insert(0) 부재).
+    job_id 부재 시 None 반환 (no-op + caller 가 graceful 처리).
+    """
+    index = load_index()
+    found_idx = next(
+        (i for i, j in enumerate(index) if j.get("job_id") == job_id), -1
+    )
+    if found_idx < 0:
+        return None
+    merged = {**index[found_idx], **patch}
+    index[found_idx] = merged
+    _write_index_atomic(index)
+    return merged
+
+
 def _write_index_atomic(index: List[dict]) -> None:
     """
     `history.json` 을 원자적으로 쓴다.

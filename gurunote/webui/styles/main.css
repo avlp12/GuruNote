@@ -359,6 +359,10 @@
   overflow-y: auto;
   white-space: pre-wrap;
   word-break: break-all;
+  /* Log 텍스트 선택 + 복사 영역 — webview default 영역의 selectability 명시. */
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
 }
 
 /* === Toast (Phase 2B-6d: 불투명 흰색 단색 알림) ===

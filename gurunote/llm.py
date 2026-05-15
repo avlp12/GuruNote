@@ -8,6 +8,7 @@ Step 3 & 4: LLM 기반 한국어 번역 + GuruNote 스타일 마크다운 요약
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
@@ -420,7 +421,18 @@ def _call_llm_once(config: LLMConfig, system: str, user: str, max_tokens: int) -
 # 점을 같이 고려해 청크 입력을 ~12000 chars (≈ 3000 토큰) 로 잡는다.
 # 이러면 출력은 최대 ~4000 토큰 수준에서 형성되며 TRANSLATION_MAX_TOKENS=8192
 # 안에 충분히 들어와 mid-script truncation 위험이 사라진다.
-DEFAULT_CHUNK_CHAR_LIMIT = 12_000
+DEFAULT_CHUNK_CHAR_LIMIT = 12_000  # 5/10 본인 설계 복원 (5/14 6000 가설 오류 revert)
+
+# Phase 1 Redesign Step 2 정정 (5/14): 본질 cause = segment count (chunk char
+# size 부재). 첫 시도 (12000 → 6000) 가설 catch:
+#   - 25-segment E2E verify 결과 두 chunk limit 모두 1 chunk 정합 → chunk
+#     size 변경 미작동
+#   - gibberish 패턴 동일 (후반 line [01:14] [01:15] [01:23]) → cause 부재
+# 진짜 cause: strict JSON schema 의 N 강제 + 모델 tail 위치 attention drop.
+# 모델이 K<N 만 emit → fallback padding (의미 부재 한국어) = gibberish 정체.
+# 차단: segment count cap — 모델 영역 attention 한계 직접 catch (15 = tail
+# 안전 영역). char limit = LLM 토큰 한도 보조 safety net (요약 path 보존).
+MAX_SEGMENTS_PER_CHUNK = 15
 
 # 번역/요약 호출의 응답 토큰 상한 (gpt-5.4 / claude-sonnet-4-6 둘 다
 # 수용 가능한 안전한 값).
@@ -429,9 +441,17 @@ SUMMARY_MAX_TOKENS = 4096
 
 
 def chunk_segments(
-    segments: List[Segment], char_limit: int = DEFAULT_CHUNK_CHAR_LIMIT
+    segments: List[Segment],
+    char_limit: int = DEFAULT_CHUNK_CHAR_LIMIT,
+    segment_limit: int = MAX_SEGMENTS_PER_CHUNK,
 ) -> List[List[Segment]]:
-    """세그먼트 리스트를 글자수 기준으로 그룹핑. 한 세그먼트는 분할하지 않는다."""
+    """char_limit + segment_limit 둘 중 먼저 도달 시 chunk 분할.
+
+    char_limit  — LLM 입력 토큰 한도 보조 safety net (long-seg edge case).
+    segment_limit — 모델 tail attention drop 차단 (본질 cause, 5/14 정정).
+
+    한 세그먼트는 분할하지 않는다.
+    """
     chunks: List[List[Segment]] = []
     current: List[Segment] = []
     current_size = 0
@@ -440,7 +460,10 @@ def chunk_segments(
         seg_text = seg.text or ""
         # 화자 라벨/타임스탬프 오버헤드까지 대략 30자 더해 추정
         seg_size = len(seg_text) + 30
-        if current and current_size + seg_size > char_limit:
+        if current and (
+            len(current) >= segment_limit
+            or current_size + seg_size > char_limit
+        ):
             chunks.append(current)
             current = []
             current_size = 0
@@ -458,6 +481,14 @@ def _segments_to_user_block(segments: List[Segment]) -> str:
         ts = _format_ts(seg.start)
         lines.append(f"[{ts}] Speaker {seg.speaker}: {seg.text}")
     return "\n".join(lines)
+
+
+# Phase 1 redesign — 5/12 trajectory 영역의 timestamp validation + retry helpers
+# (_TS_FIND_RE / _TS_LINE_PREFIX_RE / _TS_PARSE_RE / _MAX_TS_RETRY / _extract_timestamps
+# / _ts_to_seconds / _build_retry_block / _merge_retry_into_chunk) 모두 제거.
+# 본질 cause 차단: Index Mapping path (translate_chunk_index_mapping_v2) 의 zip
+# 결정론 매핑 + finish_reason continuation 으로 두 cause (content drift + truncation)
+# 모두 근본 차단. helpers 영역은 본 파일 끝의 Phase 1 Redesign 섹션 참고.
 
 
 # =============================================================================
@@ -548,6 +579,42 @@ def build_video_context_block(video_context: Optional[dict]) -> str:
 
 
 # =============================================================================
+# Post-process — 영문 병기 dedup (Layer 13 정합)
+# =============================================================================
+# 본질: 모델 prompt Rule 2 영역 "첫 등장만 영문 병기" 지시 — chunk 경계 영역
+# memory 부재로 chunk 마다 첫 등장 catch (영상 단위 부재). 본 post-process 영역
+# 결정론 dedup (LLM 호출 부재, RULE 5 정합).
+#
+# 정규식 영역 본질: Korean lookbehind 영역 (?<=[가-힣]) — 한국어 직후 (English)
+# 영역만 catch. dedup key = English annotation 영역만 — prefix Korean text 영역
+# 영향 본질 부재 (entity 본체 영역 prefix 영역 합쳐짐 catch 부재).
+#   "...오늘 슈나이더 일렉트릭(Schneider Electric)..." 첫 catch
+#   "...에서 슈나이더 일렉트릭(Schneider Electric)..." 두 번째 → 영문 영역 제거
+_REPEATED_ANNOTATION_RE = re.compile(r"(?<=[가-힣])\s?\(([A-Za-z][^()]*?)\)")
+
+
+def _strip_repeated_annotations(text: str) -> str:
+    """첫 등장 후 영문 병기 영역 제거 (Layer 13 정합).
+
+    "판카즈 샤르마(Pankaj Sharma)" → 첫 등장 보존.
+    "판카즈 샤르마(Pankaj Sharma)" 두 번째 이후 → "판카즈 샤르마" (괄호 영역 제거).
+
+    Lookbehind (?<=[가-힣]) — 한국어 직후 영역만 catch.
+    한국어 prefix 영역 영향 본질 부재 (English key dedup, regex prefix bug 차단).
+    """
+    seen: set[str] = set()
+
+    def _replace(match: re.Match) -> str:
+        english = match.group(1).strip()
+        if english in seen:
+            return ""  # 두 번째 이후: 괄호 영역 영역 제거
+        seen.add(english)
+        return match.group(0)  # 첫 등장: 보존
+
+    return _REPEATED_ANNOTATION_RE.sub(_replace, text)
+
+
+# =============================================================================
 # Step 3: 번역
 # =============================================================================
 def translate_transcript(
@@ -589,32 +656,24 @@ def translate_transcript(
         if i > 1:
             time.sleep(CHUNK_DELAY_SEC)
         log(f"   ↳ 청크 {i}/{len(chunks)} 번역 중…")
-        segments_block = _segments_to_user_block(chunk)
-        # 영상 컨텍스트는 첫 청크에만 붙여도 일반적으로 충분하지만, 청크 번역이
-        # 독립 실행되기 때문에 모든 청크에 동일한 컨텍스트를 동봉해야 화자 매핑이
-        # 일관되게 유지된다.
-        user_block = (
-            f"{context_block}\n### 번역 대상 스크립트\n{segments_block}"
-            if context_block
-            else segments_block
-        )
-        translated = _call_llm(
-            config,
-            system=TRANSLATION_SYSTEM_PROMPT,
-            user=user_block,
-            max_tokens=config.translation_max_tokens or TRANSLATION_MAX_TOKENS,
-        )
+
+        # Phase 1 Redesign — Structured Output Index Mapping + finish_reason Continuation.
+        # 본질 cause 차단: (1) Content drift — LLM 이 timestamp 출력 부재 → 순서만 매핑
+        # (zip 100% 결정론). (2) Truncation — finish_reason='length' 명시 catch + retry.
+        # 기존 Phase 1 retry/marker 로직 (5/12 trajectory) 영역 제거 — Index Mapping path
+        # 가 두 본질 cause 모두 근본 차단.
+        translated = translate_chunk_index_mapping_v2(chunk, context_block, config, log)
         translated_parts.append(translated)
 
     log("✅ 번역 완료")
-    # Phase 2B-3-backend Layer 14 Bug #2: chunk 별 LLM 출력 의 line break 변동 정규화.
-    # LLM 이 chunk 마다 [HH:MM] line 사이를 '\n' 또는 '\n\n' 로 mix 출력 → 가독성 변동.
-    # 본문 표준 = '\n\n' (Q3 결정, late chunk 패턴 / 본인 daily UX 정합).
-    # Pattern: [MM:SS] 또는 [HH:MM:SS] 다음 line 이 [ts] 시작 시 사이를 \n\n 으로.
-    # Lookahead (?=...) 사용 — 다음 [ts] 를 consume 하지 않아 연속 boundary 모두 매치.
-    _TS_BOUNDARY_RE = re.compile(r"(\[\d{1,2}(?::\d{2}){1,2}\][^\n]*)\n(?=\[\d{1,2}(?::\d{2}){1,2}\])")
-    normalized_parts = [_TS_BOUNDARY_RE.sub(r"\1\n\n", part) for part in translated_parts]
-    return "\n\n".join(normalized_parts).strip()
+    # Index Mapping path 의 출력은 결정론적 \n\n 정합 — Layer 14 lookahead regex
+    # 정규화 영역 부재 (chunk join 만으로 충분).
+    normalized_parts = translated_parts
+    result = "\n\n".join(normalized_parts).strip()
+    # Q2 영역 — 영상 단위 영문 병기 첫 등장 catch (Layer 13 정합).
+    # chunk 단위 영역 부재 — chunk 경계 memory 부재로 매 chunk 첫 등장 catch
+    # 영역 패턴 영역 dedup.
+    return _strip_repeated_annotations(result)
 
 
 # =============================================================================
@@ -884,3 +943,251 @@ def test_connection(config: Optional[LLMConfig] = None) -> str:
     if not text.strip():
         raise RuntimeError("LLM 응답이 비어 있습니다.")
     return text.strip()
+
+
+# =============================================================================
+# Phase 1 Redesign — Structured Output Index Mapping + finish_reason Continuation
+# =============================================================================
+# 본질 cause 차단 (체크포인트 2 — 단일 chunk 영역 verify):
+#   1. Content drift — LLM 이 timestamp 출력 부재 → 순서만 매핑 (zip 영역 100%)
+#   2. Truncation — finish_reason='length' 명시 catch + continuation 영역
+# 본 spec: docs/research/phase1_redesign_research.md
+# 5/12 endpoint verify: qwen3.6-35b-q5 — finish_reason + json_object + json_schema 모두 정합.
+# 기존 Phase 1 helpers (5/12 trajectory) 영역 보존 — 체크포인트 3 시 통합 결정.
+
+
+def _call_llm_once_with_reason(
+    config: LLMConfig,
+    messages: list,
+    max_tokens: int,
+    response_format: Optional[dict] = None,
+) -> tuple:
+    """단일 LLM 호출 — (content, finish_reason) tuple 반환.
+
+    기존 `_call_llm_once` 는 content string 만 반환 (Layer 13 / Layer 14 / Step 3b-3
+    등 다른 호출자가 finish_reason 불필요). 본 함수는 Index Mapping path 전용 —
+    truncation 명시적 catch + JSON 응답 길이 검증을 위해 finish_reason 노출.
+
+    openai / openai_compatible provider 만 지원 (anthropic / gemini 는 별도 mapping
+    필요 — 본 path 의 endpoint 가 OpenAI compat 영역).
+
+    Returns:
+        tuple[str, str]: (content, finish_reason ∈ {"stop", "length", "content_filter", ...})
+    """
+    from openai import OpenAI  # noqa: PLC0415
+
+    openai_kwargs: dict = {"api_key": (config.api_key or "local")}
+    if config.base_url:
+        openai_kwargs["base_url"] = config.base_url
+    client = OpenAI(**openai_kwargs)
+
+    kwargs: dict = {
+        "model": config.model,
+        "messages": messages,
+        "max_tokens": max_tokens,
+        "temperature": config.temperature,
+    }
+    if response_format:
+        kwargs["response_format"] = response_format
+
+    resp = client.chat.completions.create(**kwargs)
+    choice = resp.choices[0]
+    return (choice.message.content or ""), (choice.finish_reason or "unknown")
+
+
+def _build_index_mapping_prompt(inputs: list, context: str) -> str:
+    """Index Mapping 영역의 user prompt — TRANSLATION_SYSTEM_PROMPT 가 system 영역
+    이라 가정. 본 user prompt 는 출력 형식 override 만 명시 (entity / Layer 8/11/13/15
+    규칙은 system 에서 catch).
+
+    Rule 1, 2 (timestamp 보존 / [HH:MM] 형식) override:
+      - 출력 형식 = JSON {"outputs": [...]}
+      - timestamp 영역 부재 (클라이언트가 zip 으로 별도 부착)
+      - speaker label 영역 = Rule 2 의 한국어 화자명 정합 (예: "판카즈 샤르마(Pankaj Sharma): 본문")
+    """
+    return f"""[출력 형식 영역 — Rule 1, 2 의 timestamp 부분 override]
+
+이번 호출은 Index Mapping path 영역. 출력 형식을 다음과 같이 변경한다:
+
+1. 응답은 반드시 JSON 형식: {{"outputs": [str, str, ...]}}
+2. outputs 배열은 정확히 {len(inputs)}개 항목 (같은 순서)
+3. timestamp 출력 절대 부재 (클라이언트가 별도 부착)
+4. 각 output string 형식: "한국어 화자명(English Name): 본문" (첫 등장) 또는 "한국어 화자명: 본문" (이후)
+5. "Speaker A/B/C" 영문 라벨 출력 절대 부재 — Rule 2 정합 한국어 화자명
+6. 다른 모든 규칙 (Rule 3~11 + _SHARED_LANG_RULES) 정합 유지
+
+{context}
+
+Input ({len(inputs)}개 항목, 각 "Speaker X: 영어 text" 형식):
+{json.dumps({"inputs": inputs}, ensure_ascii=False, indent=2)}
+
+Output (JSON 만, 다른 텍스트 부재):"""
+
+
+def _call_llm_with_continuation(
+    config: LLMConfig,
+    messages: list,
+    max_tokens: int,
+    response_format: Optional[dict] = None,
+    max_continuations: int = 3,
+) -> tuple:
+    """finish_reason='length' 시 자동 continuation.
+
+    truncation 명시 검출 + 이어쓰기 (drift 차단). JSON mode 영역의 continuation
+    은 구조 보존 영역에서 본질 한계 영역 — 체크포인트 2 영역은 작은 chunk
+    영역 → truncation 부재 가정. 진짜 truncation 시 _call_llm_with_index_mapping
+    의 outer retry 영역에서 길이 미스매치 영역 catch + feedback retry.
+
+    Returns:
+        tuple[str, str]: (accumulated_content, last_finish_reason)
+    """
+    accumulated = ""
+    last_finish_reason = "unknown"
+    current_messages = list(messages)
+
+    for _cont in range(max_continuations + 1):
+        content, finish_reason = _call_llm_once_with_reason(
+            config, current_messages, max_tokens, response_format
+        )
+        accumulated += content
+        last_finish_reason = finish_reason
+
+        if finish_reason == "stop":
+            return accumulated, finish_reason
+        if finish_reason == "length":
+            # JSON mode 영역의 continuation 은 본질 한계 영역 — outer retry 영역에서 처리
+            if response_format and response_format.get("type", "").startswith("json"):
+                return accumulated, finish_reason
+            # Non-JSON 영역만 continuation
+            current_messages = current_messages + [
+                {"role": "assistant", "content": accumulated},
+                {"role": "user", "content": "Continue from where you stopped. Do not repeat previous content."},
+            ]
+            continue
+        # content_filter 등 — break
+        break
+
+    return accumulated, last_finish_reason
+
+
+def _call_llm_with_index_mapping(
+    config: LLMConfig,
+    prompt: str,
+    expected_count: int,
+    max_retries: int = 3,
+    log: Optional[ProgressFn] = None,
+) -> list:
+    """Index Mapping + 길이 검증 + retry feedback.
+
+    Returns:
+        List[str]: outputs 배열 (길이 = expected_count 보장, fallback 시 [번역 누락] padding)
+    """
+    log_fn = log or print
+    # System = TRANSLATION_SYSTEM_PROMPT (Layer 8/11/13/15 entity 규칙 포함).
+    # User = _build_index_mapping_prompt 의 출력 형식 override (JSON outputs 배열).
+    messages: list = [
+        {"role": "system", "content": TRANSLATION_SYSTEM_PROMPT},
+        {"role": "user", "content": prompt},
+    ]
+    # json_schema strict 모드 — minItems/maxItems 로 정확히 N개 강제.
+    # 5/13 E2E 결과의 길이 미스매치 (23/22 outputs vs 25 expected) 본질 차단.
+    # 5/12 endpoint verify: qwen3.6-35b-q5 의 json_schema strict + additionalProperties=False 정합.
+    response_format = {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "translation_outputs",
+            "strict": True,
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "outputs": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "minItems": expected_count,
+                        "maxItems": expected_count,
+                    },
+                },
+                "required": ["outputs"],
+                "additionalProperties": False,
+            },
+        },
+    }
+    max_tokens = config.translation_max_tokens or TRANSLATION_MAX_TOKENS
+    outputs: list = []
+
+    for retry in range(max_retries):
+        content, finish_reason = _call_llm_with_continuation(
+            config, messages, max_tokens, response_format=response_format
+        )
+        # JSON 파싱 영역
+        try:
+            parsed = json.loads(content)
+            outputs = parsed.get("outputs", []) or []
+        except json.JSONDecodeError as exc:
+            log_fn(f"   ⚠ JSON 파싱 부재 (retry {retry + 1}/{max_retries}): {exc}")
+            messages.append({
+                "role": "user",
+                "content": (
+                    f"Previous response was not valid JSON. Return only "
+                    f'{{"outputs": [...]}} with exactly {expected_count} items.'
+                ),
+            })
+            continue
+
+        # 길이 검증 영역 — drift 차단 본질
+        if len(outputs) == expected_count:
+            log_fn(f"   ✅ Index Mapping 정합 — {len(outputs)} outputs (finish_reason={finish_reason})")
+            return outputs
+
+        log_fn(
+            f"   ⚠ 길이 미스매치: {len(outputs)} != {expected_count} "
+            f"(retry {retry + 1}/{max_retries}, finish_reason={finish_reason})"
+        )
+        messages.append({"role": "assistant", "content": content})
+        messages.append({
+            "role": "user",
+            "content": (
+                f"Previous output had {len(outputs)} items. Need exactly "
+                f"{expected_count} items in same order. Return complete JSON: "
+                '{"outputs": [...]}.'
+            ),
+        })
+
+    # 3 retries 모두 실패 — fallback (padding 또는 truncate)
+    log_fn(
+        f"   ⚠ Index Mapping retry {max_retries}회 실패 — fallback "
+        f"({len(outputs)} → {expected_count})"
+    )
+    if len(outputs) < expected_count:
+        outputs = list(outputs) + ["[번역 누락]"] * (expected_count - len(outputs))
+    else:
+        outputs = list(outputs)[:expected_count]
+    return outputs
+
+
+def translate_chunk_index_mapping_v2(
+    chunk: List[Segment],
+    context_block: str,
+    config: LLMConfig,
+    log: Optional[ProgressFn] = None,
+) -> str:
+    """단일 chunk 영역의 Index Mapping 적용 — 체크포인트 2 verify 영역.
+
+    체크포인트 3 시 translate_transcript 영역 통합 결정.
+    """
+    inputs = [f"{s.speaker}: {s.text}" for s in chunk]
+    prompt = _build_index_mapping_prompt(inputs, context_block)
+
+    outputs = _call_llm_with_index_mapping(
+        config, prompt, expected_count=len(inputs), max_retries=3, log=log,
+    )
+
+    # 클라이언트 측 timestamp 부착 — zip 으로 결정론적 매핑 (drift 불가능).
+    # Output 의 korean 영역에 화자 라벨 (예: "판카즈 샤르마(Pankaj Sharma): 본문")
+    # 이 이미 포함되어 있어 segment.speaker prefix 영역 부재 — korean 그대로 사용.
+    # Line break = \n\n (Layer 14 정합 — Index Mapping 영역 결정론적 정합).
+    result_lines: List[str] = []
+    for segment, korean in zip(chunk, outputs):
+        ts = f"[{_format_ts(segment.start)}]"
+        result_lines.append(f"{ts} {korean}")
+    return "\n\n".join(result_lines)

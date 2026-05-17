@@ -961,6 +961,7 @@ def _call_llm_once_with_reason(
     messages: list,
     max_tokens: int,
     response_format: Optional[dict] = None,
+    timeout: Optional[float] = None,
 ) -> tuple:
     """단일 LLM 호출 — (content, finish_reason) tuple 반환.
 
@@ -970,6 +971,11 @@ def _call_llm_once_with_reason(
 
     openai / openai_compatible provider 만 지원 (anthropic / gemini 는 별도 mapping
     필요 — 본 path 의 endpoint 가 OpenAI compat 영역).
+
+    Args:
+        timeout: request-level timeout (초). None 이면 SDK 기본값 사용. Phase 4a-1
+            에서 xgrammar grammar-recovery loop 조기 차단용으로 사용 (첫 시도 strict
+            mode 에 30초 적용). timeout 초과 시 openai.APITimeoutError 발생.
 
     Returns:
         tuple[str, str]: (content, finish_reason ∈ {"stop", "length", "content_filter", ...})
@@ -989,6 +995,8 @@ def _call_llm_once_with_reason(
     }
     if response_format:
         kwargs["response_format"] = response_format
+    if timeout is not None:
+        kwargs["timeout"] = timeout
 
     resp = client.chat.completions.create(**kwargs)
     choice = resp.choices[0]
@@ -1030,6 +1038,7 @@ def _call_llm_with_continuation(
     max_tokens: int,
     response_format: Optional[dict] = None,
     max_continuations: int = 3,
+    timeout: Optional[float] = None,
 ) -> tuple:
     """finish_reason='length' 시 자동 continuation.
 
@@ -1037,6 +1046,10 @@ def _call_llm_with_continuation(
     은 구조 보존 영역에서 본질 한계 영역 — 체크포인트 2 영역은 작은 chunk
     영역 → truncation 부재 가정. 진짜 truncation 시 _call_llm_with_index_mapping
     의 outer retry 영역에서 길이 미스매치 영역 catch + feedback retry.
+
+    Args:
+        timeout: request-level timeout (초). None 이면 SDK 기본값. Phase 4a-1 의
+            xgrammar grammar-recovery loop 조기 차단용으로 inner 호출에 forward.
 
     Returns:
         tuple[str, str]: (accumulated_content, last_finish_reason)
@@ -1047,7 +1060,7 @@ def _call_llm_with_continuation(
 
     for _cont in range(max_continuations + 1):
         content, finish_reason = _call_llm_once_with_reason(
-            config, current_messages, max_tokens, response_format
+            config, current_messages, max_tokens, response_format, timeout=timeout
         )
         accumulated += content
         last_finish_reason = finish_reason
@@ -1090,9 +1103,9 @@ def _call_llm_with_index_mapping(
         {"role": "user", "content": prompt},
     ]
     # json_schema strict 모드 — minItems/maxItems 로 정확히 N개 강제.
-    # 5/13 E2E 결과의 길이 미스매치 (23/22 outputs vs 25 expected) 본질 차단.
+    # 5/13 E2E 결과의 길이 미스매치 (23/22 outputs vs 25 expected) 근본 차단.
     # 5/12 endpoint verify: qwen3.6-35b-q5 의 json_schema strict + additionalProperties=False 정합.
-    response_format = {
+    strict_response_format = {
         "type": "json_schema",
         "json_schema": {
             "name": "translation_outputs",
@@ -1112,19 +1125,40 @@ def _call_llm_with_index_mapping(
             },
         },
     }
+    # Phase 4a-1 — xgrammar grammar-recovery loop 회피용 fallback mode.
+    # 5/16 진단: xgrammar 0.2.0 + strict schema 에서 일부 입력이 grammar-recovery
+    # loop 진입 → 8192 tokens 까지 rejected token 재샘플링 (slow chunk 245~281초).
+    # 첫 시도 strict, 실패 시 json_object mode 로 전환:
+    #   - JSON parse fail 또는 finish_reason=length → loose mode 전환 후 retry
+    #   - json_object 는 JSON 구문만 강제, 스키마 길이 강제 없음 → grammar 복잡도 낮음
+    #   - 기존 length mismatch retry 가 결과 검증 담당 (양 환경 safety net)
+    #
+    # 5/17 시도 (실패, dead code 제거됨):
+    #   - A-3 (strict 첫 시도 + 30초 timeout): httpx read timeout 한계로 wall-clock
+    #     강제 불가 (chunk 9 가 281초 소비했지만 timeout 미발동). retry loop 의
+    #     try/except APITimeoutError 블록은 dead code 가 되어 제거. helper 함수
+    #     timeout 파라미터 시그니처는 future hook (wall-clock timeout 도입 시
+    #     재활용) 으로 유지.
+    loose_response_format = {"type": "json_object"}
     max_tokens = config.translation_max_tokens or TRANSLATION_MAX_TOKENS
     outputs: list = []
+    use_strict_mode = True
 
     for retry in range(max_retries):
+        active_response_format = strict_response_format if use_strict_mode else loose_response_format
         content, finish_reason = _call_llm_with_continuation(
-            config, messages, max_tokens, response_format=response_format
+            config, messages, max_tokens, response_format=active_response_format
         )
-        # JSON 파싱 영역
+        # JSON 파싱
         try:
             parsed = json.loads(content)
             outputs = parsed.get("outputs", []) or []
         except json.JSONDecodeError as exc:
             log_fn(f"   ⚠ JSON 파싱 부재 (retry {retry + 1}/{max_retries}): {exc}")
+            # 첫 실패 시 loose mode 전환 (xgrammar grammar-recovery loop 회피)
+            if use_strict_mode:
+                log_fn(f"   ↳ json_object mode 전환 (xgrammar 우회)")
+                use_strict_mode = False
             messages.append({
                 "role": "user",
                 "content": (
@@ -1134,10 +1168,15 @@ def _call_llm_with_index_mapping(
             })
             continue
 
-        # 길이 검증 영역 — drift 차단 본질
+        # 길이 검증 — drift 근본 차단
         if len(outputs) == expected_count:
             log_fn(f"   ✅ Index Mapping 정합 — {len(outputs)} outputs (finish_reason={finish_reason})")
             return outputs
+
+        # finish_reason=length + strict mode → grammar-recovery loop 가능성 → mode 전환
+        if finish_reason == "length" and use_strict_mode:
+            log_fn(f"   ↳ finish_reason=length 감지, json_object mode 전환 (xgrammar 우회)")
+            use_strict_mode = False
 
         log_fn(
             f"   ⚠ 길이 미스매치: {len(outputs)} != {expected_count} "

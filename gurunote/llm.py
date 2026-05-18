@@ -14,7 +14,10 @@ import os
 import re
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable, List, Optional
+
+import yaml
 
 from gurunote.types import Segment, Transcript, _format_ts
 
@@ -615,6 +618,190 @@ def _strip_repeated_annotations(text: str) -> str:
 
 
 # =============================================================================
+# Post-process — Phase 3 한자/일본어 잔재 제거 (Sub-path A + B + C)
+# =============================================================================
+# 원인: Qwen3.6-35B-A3B-5bit 의 decoder-level collapse 로 한국어 출력 중 한자/
+# 일본어 토큰이 간헐적 잔재. prompt rule 만으로 결정적 차단 부재.
+# omlx 가 logit_bias 미지원 (5/18 catch) — token-level 차단 path 봉쇄.
+#
+# 처리 흐름:
+#   1) 검출 (괄호 안 한자 표기 예외)
+#   2) Sub-path A: gurunote/data/cjk_lookup.yaml 사전 lookup (긴 매칭 우선)
+#   3) Sub-path B: LLM 재매핑 (chunk 단위, retry 최대 3회)
+#   4) Sub-path C: 영문 원문 fallback + inline [⚠ fallback] 태그
+
+_CJK_LOOKUP_PATH = Path(__file__).parent / "data" / "cjk_lookup.yaml"
+_CJK_LOOKUP_CACHE: Optional[dict] = None
+
+# CJK Unified Ideographs + 일본어 히라가나/가타카나
+_CJK_DETECT_RE = re.compile(r"[一-鿿぀-ヿ]")
+# 괄호 안 한자 표기 — 예외 (예: "양자역학(量子力學)")
+_BRACKETED_CJK_RE = re.compile(r"\([^)]*[一-鿿぀-ヿ][^)]*\)")
+# segment 라인 prefix: [MM:SS] Speaker label:
+_SEGMENT_PREFIX_RE = re.compile(r"^\[(\d{1,2}):(\d{2})\]\s+([^:]+):\s*(.*)$")
+
+
+def _load_cjk_lookup() -> dict:
+    """yaml 사전 로드 + 캐시. 긴 매칭 우선을 위해 multi-char 를 길이순 정렬.
+
+    Returns:
+        {'multi': [(pat, repl), ...], 'single': [(pat, repl), ...]}
+    """
+    global _CJK_LOOKUP_CACHE
+    if _CJK_LOOKUP_CACHE is not None:
+        return _CJK_LOOKUP_CACHE
+    with open(_CJK_LOOKUP_PATH, "r", encoding="utf-8") as f:
+        data = yaml.safe_load(f) or {}
+    multi: List[tuple] = []
+    for section in ("chinese", "japanese"):
+        for k, v in (data.get(section) or {}).items():
+            multi.append((str(k), str(v)))
+    multi.sort(key=lambda x: -len(x[0]))  # 긴 매칭 우선
+    single: List[tuple] = [
+        (str(k), str(v)) for k, v in (data.get("single_char") or {}).items()
+    ]
+    _CJK_LOOKUP_CACHE = {"multi": multi, "single": single}
+    return _CJK_LOOKUP_CACHE
+
+
+def _detect_cjk_outside_brackets(text: str) -> List[str]:
+    """괄호 밖 CJK 잔재 catch. 빈 리스트면 통과."""
+    masked = _BRACKETED_CJK_RE.sub("[BRACKETED]", text)
+    return _CJK_DETECT_RE.findall(masked)
+
+
+def _apply_cjk_dict_lookup(text: str, lookup: dict) -> str:
+    """Sub-path A — 사전 lookup. 괄호 안 한자 표기는 보존.
+
+    multi 사전을 긴 매칭 우선으로 적용 후 single 사전 적용.
+    """
+    # 괄호 영역 보호 — placeholder 로 치환
+    bracketed: List[str] = []
+
+    def _save(m: re.Match) -> str:
+        bracketed.append(m.group(0))
+        return f"\x00BR{len(bracketed)-1}\x00"
+
+    masked = _BRACKETED_CJK_RE.sub(_save, text)
+    for pat, repl in lookup["multi"]:
+        if pat in masked:
+            masked = masked.replace(pat, repl)
+    for pat, repl in lookup["single"]:
+        if pat in masked:
+            masked = masked.replace(pat, repl)
+    # 괄호 영역 복원
+    return re.sub(r"\x00BR(\d+)\x00", lambda m: bracketed[int(m.group(1))], masked)
+
+
+def _llm_remap_cjk(
+    text: str,
+    config: "LLMConfig",
+    max_retries: int = 3,
+) -> Optional[str]:
+    """Sub-path B — LLM 재매핑 retry max_retries회.
+
+    성공 (잔재 0건) 시 결과 반환, 모두 실패 시 None.
+    """
+    system = (
+        "다음 한국어 문장에 한자 또는 일본어 토큰이 남아있다. "
+        "본 토큰을 자연스러운 한국어로 모두 치환한 결과만 출력하라. "
+        "괄호 안 한자 표기 (예: '양자역학(量子力學)') 는 그대로 둔다. "
+        "원문의 화자 라벨과 [MM:SS] 타임스탬프는 보존한다. "
+        "설명이나 메타 텍스트 없이 치환된 본문만 한 줄로 출력하라."
+    )
+    for _ in range(max_retries):
+        try:
+            result = _call_llm(config, system, text, max_tokens=2048)
+        except Exception:
+            continue
+        if result and not _detect_cjk_outside_brackets(result):
+            return result.strip()
+    return None
+
+
+def post_process_cjk(
+    result: str,
+    segments: List[Segment],
+    config: "LLMConfig",
+    log: Optional[ProgressFn] = None,
+) -> str:
+    """Phase 3 후처리 — 한자/일본어 0건 보장 (Sub-path A → B → C).
+
+    Args:
+        result: translate_transcript 결과 본문 (segment 라인 \\n\\n join)
+        segments: 원본 영문 segments (Sub-path C fallback 시 영문 원문 lookup)
+        config: LLMConfig (Sub-path B LLM 호출용)
+        log: 진행 콜백
+
+    Returns:
+        후처리된 result. 한자/일본어 0건 (Sub-path C fallback 적용된 segment 는
+        영문 원문 + [⚠ fallback] 태그) 보장.
+    """
+    log_fn = log or (lambda _msg: None)
+    lookup = _load_cjk_lookup()
+
+    # segments 를 (mm, ss) 키로 인덱싱 — Sub-path C 의 영문 원문 lookup
+    seg_by_ts: dict = {}
+    for seg in segments:
+        mm = int(seg.start) // 60
+        ss = int(seg.start) % 60
+        seg_by_ts[(mm, ss)] = seg
+
+    sub_a_hits = 0
+    sub_b_hits = 0
+    sub_c_fallbacks: List[tuple] = []  # (mm, ss)
+
+    parts = result.split("\n\n")
+    processed: List[str] = []
+
+    for part in parts:
+        if not _detect_cjk_outside_brackets(part):
+            processed.append(part)
+            continue
+
+        # Sub-path A
+        after_a = _apply_cjk_dict_lookup(part, lookup)
+        if not _detect_cjk_outside_brackets(after_a):
+            sub_a_hits += 1
+            processed.append(after_a)
+            continue
+
+        # Sub-path B — LLM 재매핑 (Sub-path A 결과를 입력으로)
+        after_b = _llm_remap_cjk(after_a, config, max_retries=3)
+        if after_b is not None:
+            sub_b_hits += 1
+            processed.append(after_b)
+            continue
+
+        # Sub-path C — 영문 fallback
+        m = _SEGMENT_PREFIX_RE.match(part)
+        if m:
+            mm, ss = int(m.group(1)), int(m.group(2))
+            speaker = m.group(3).strip()
+            seg = seg_by_ts.get((mm, ss))
+            if seg is not None:
+                fallback_text = (
+                    f"[{mm:02d}:{ss:02d}] {speaker}: {seg.text} [⚠ fallback]"
+                )
+                sub_c_fallbacks.append((mm, ss))
+                processed.append(fallback_text)
+                continue
+
+        # segment 매핑 실패 — 잔재 그대로 (검증 단계에서 catch)
+        processed.append(part)
+
+    log_fn(
+        f"   🔧 Phase 3 후처리 — Sub-A {sub_a_hits}건, "
+        f"Sub-B {sub_b_hits}건, Sub-C fallback {len(sub_c_fallbacks)}건"
+    )
+    if sub_c_fallbacks:
+        ts_list = ", ".join(f"[{mm:02d}:{ss:02d}]" for mm, ss in sub_c_fallbacks[:10])
+        log_fn(f"   ⚠ Sub-C fallback timestamps: {ts_list}")
+
+    return "\n\n".join(processed)
+
+
+# =============================================================================
 # Step 3: 번역
 # =============================================================================
 def translate_transcript(
@@ -670,6 +857,10 @@ def translate_transcript(
     # 정규화 영역 부재 (chunk join 만으로 충분).
     normalized_parts = translated_parts
     result = "\n\n".join(normalized_parts).strip()
+    # Phase 3 — 한자/일본어 잔재 후처리 (Sub-path A → B → C).
+    # Sub-path A 사전 lookup → 미적중 시 Sub-path B LLM 재매핑 → 그래도 잔재 시
+    # Sub-path C 영문 원문 fallback. 본 단계로 한자/일본어 0건 보장.
+    result = post_process_cjk(result, transcript.segments, config, log)
     # Q2 영역 — 영상 단위 영문 병기 첫 등장 catch (Layer 13 정합).
     # chunk 단위 영역 부재 — chunk 경계 memory 부재로 매 chunk 첫 등장 catch
     # 영역 패턴 영역 dedup.

@@ -1,0 +1,63 @@
+"""pytest fixtures — Phase 3 CJK post-process 테스트.
+
+본 conftest 는:
+- mock_llm_config: 실제 호출 부재, _call_llm 패치 전제
+- real_llm_config: 실제 omlx 호출 (slow marker)
+- sample_segments: Sub-C fallback 테스트용 Segment 리스트
+"""
+from __future__ import annotations
+
+import os
+import sys
+from pathlib import Path
+
+import pytest
+
+# 프로젝트 루트를 sys.path 에 추가 (tests/ 가 패키지 안이 아니라 인접 디렉토리)
+_PROJECT_ROOT = Path(__file__).parent.parent
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+
+
+@pytest.fixture
+def mock_llm_config():
+    """Mock LLMConfig — 실제 호출 부재. _call_llm 패치 전제."""
+    from gurunote.llm import LLMConfig
+
+    return LLMConfig(
+        provider="openai_compatible",
+        model="mock-model",
+        api_key="mock-key",
+        base_url="http://mock.local/v1",
+    )
+
+
+@pytest.fixture(scope="session")
+def real_llm_config():
+    """실제 omlx 호출용 LLMConfig — .env 로딩 후 from_env. slow marker 와 결합."""
+    from gurunote.llm import LLMConfig
+
+    env_path = _PROJECT_ROOT / ".env"
+    if env_path.exists():
+        for line in env_path.read_text().splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            os.environ.setdefault(k.strip(), v.strip().strip("'\""))
+    return LLMConfig.from_env(provider="openai_compatible")
+
+
+@pytest.fixture
+def sample_segments():
+    """Sub-C fallback 테스트용 Segment 리스트.
+
+    각 segment 의 start 가 (mm, ss) 매핑 기준 — 02:15, 05:30, 10:00 catch.
+    """
+    from gurunote.types import Segment
+
+    return [
+        Segment(speaker="A", start=135.0, end=138.0, text="This is the first English segment."),
+        Segment(speaker="B", start=330.0, end=335.0, text="Second segment with longer English content."),
+        Segment(speaker="A", start=600.0, end=605.0, text="Third segment, the last one."),
+    ]

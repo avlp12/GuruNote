@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gurunote"
+version = "0.1.0"
+description = "로컬 STT + LLM 기반 영상 노트 도구"
+requires-python = ">=3.10"
+
+# 본 항목은 setup.sh / setup.bat 가 사용하는 requirements*.txt 와 별 trajectory.
+# requirements*.txt 가 플랫폼별 (gpu/mac) + 기능별 (notion/pdf/search) 분리되어
+# 있으므로 pyproject.toml 은 (1) pyyaml 같은 런타임 누락 의존성 catch (2) dev
+# 의존성 (pytest) 등록 용도만 진행.
+dependencies = [
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=9.0",
+]
+
+# pytest 설정은 pytest.ini 가 source-of-truth (중복 방지).

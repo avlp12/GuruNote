@@ -13,12 +13,16 @@
 ### B01: Phase 2 — entity cache + 화자 cache
 
 - 동작: 영상 단위 entity/speaker 정보 캐시로 외부 인물 hallucinate 차단
+- path 결정: (e) Entity Cache + (b) Two-Stage 결합 (5/19)
 - 검증:
-  - `tests/test_phase2_entity_cache.py` 통과 (작성 필요)
-  - real video verify 에서 5/18 샘 올트먼 사례 재현 부재
-- 상태: not_started
+  - `tests/test_phase2_entity_cache.py` 통과 (24/25, 1 slow integration) — 5/19 작성
+  - real video verify 에서 5/18 샘 올트먼 사례 재현 부재 (구현 후)
+- 상태: active (Step B helper 함수 완료, translate_transcript 통합은 다음 세션)
 - 우선순위: P0 (사용자 경험 가장 큰 개선)
-- spec: `docs/research/phase2_entity_cache_spec.md` (449줄, 5/14 작성)
+- spec: `docs/research/phase2_entity_cache_spec.md` (5/14 작성, 5/19 갱신)
+- 진행 catch:
+  - Step B 완료 (5/19): helper 함수 3개 (`_extract_entities`, `_build_entity_cache_block`, `_bootstrap_entity_cache_from_metadata`) + unit test 24건 통과
+  - Step C 대기: translate_transcript 통합 + Rule 12 추가 + verify 실측
 - 비용: 큼 (~2~3 세션)
 
 ### B02: slow chunk wall-clock timeout

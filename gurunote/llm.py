@@ -802,6 +802,137 @@ def post_process_cjk(
 
 
 # =============================================================================
+# Pre-process — Phase 2 entity cache + 화자 cache (chunk 간 일관성)
+# =============================================================================
+# 원인: chunk 독립 처리로 chunk 1 의 entity 표기 결정이 chunk 2+ 에 전파 부재.
+# 5/13 사례: 스키에더(chunk 1) vs 슈나이더(chunk 2+) — chunk 경계 referent 단절.
+# 5/18 사례: 샘 올트먼 5회 — 영상 부재 인물 hallucinate (chunk 1 차단 부재).
+#
+# 처리 흐름 ((e) Entity Cache + (b) Two-Stage 결합):
+#   1) Bootstrap (Two-Stage 부분): 영상 메타 + 자막에서 사전 entity 추출
+#      → entity_cache 초기 영역 채움 → chunk 1 부터 정합 dict
+#   2) chunk 별 (Entity Cache): chunk 출력 → speaker line prefix entity 추출
+#      → entity_cache 갱신 → 다음 chunk context 에 prepend
+
+# Speaker line prefix 정규식 — 본문 중간의 기술 용어 영문 병기 (예: "AI 네이티브(AI Native)")
+# false positive 차단. line 시작에서만 매칭.
+_SPEAKER_LINE_RE = re.compile(
+    r"^\[(\d{1,2}:\d{2})\]\s+([^:(]+?)\s*(?:\(([^)]+)\))?\s*:",
+    re.MULTILINE,
+)
+
+# English Name 정합 catch — 영문 + 공백/점/하이픈/어포스트로피만 (예: "Pankaj Sharma", "J.P.", "O'Brien").
+_ENGLISH_NAME_RE = re.compile(r"^[A-Za-z][A-Za-z\s\.\-']*$")
+
+
+def _extract_entities(translated_chunk: str) -> dict:
+    """chunk 출력의 speaker line prefix 에서 entity 추출.
+
+    Phase 1 redesign 출력 형식 정합:
+        첫 등장: "[MM:SS] 한국어 화자명(English Name): 본문"
+        이후:    "[MM:SS] 한국어 화자명: 본문"
+
+    Line prefix 한정 매칭으로 본문 중간의 기술 용어 (예: "AI 네이티브(AI Native)") 부재.
+
+    Returns:
+        {English Name: 한국어 표기} dict. 영문 병기 부재 line 은 skip.
+    """
+    entities: dict = {}
+    for m in _SPEAKER_LINE_RE.finditer(translated_chunk):
+        korean = m.group(2).strip()
+        english_raw = m.group(3)
+        if not english_raw:
+            continue
+        english = english_raw.strip()
+        if _ENGLISH_NAME_RE.match(english):
+            entities[english] = korean
+    return entities
+
+
+def _build_entity_cache_block(entity_cache: dict) -> str:
+    """entity_cache 를 LLM context 영역의 markdown block 으로 변환.
+
+    Args:
+        entity_cache: {English Name: 한국어 표기} dict.
+
+    Returns:
+        빈 dict 시 "".
+        그 외: "### 영상 entity 표기 일관\n- English Name → 한국어 표기\n..."
+    """
+    if not entity_cache:
+        return ""
+    lines = ["### 영상 entity 표기 일관"]
+    for english, korean in entity_cache.items():
+        lines.append(f"- {english} → {korean}")
+    return "\n".join(lines)
+
+
+def _bootstrap_entity_cache_from_metadata(
+    video_context: Optional[dict],
+    subtitles_text: Optional[str],
+    config: "LLMConfig",
+) -> dict:
+    """영상 메타 + 자막에서 사전 entity 추출 ((b) Two-Stage 부분 적용).
+
+    chunk 1 부터 정합 dict 영역 catch 위해 LLM 호출 1회 (약 5~10초 비용).
+    spec section 5.2 의 (b) Two-Stage 부분 적용.
+
+    Args:
+        video_context: AudioDownloadResult.to_context_dict() 형태. None 가능.
+        subtitles_text: 영문 자막 본문 (부재 시 None). 길이 큰 자막은 첫 3000자만 사용.
+        config: LLM 호출용.
+
+    Returns:
+        {English Name: 한국어 표기} dict. 추출 실패 시 빈 dict (fallback).
+    """
+    parts: List[str] = []
+    if video_context:
+        title = video_context.get("title", "")
+        description = video_context.get("description", "")
+        uploader = video_context.get("uploader", "")
+        if title:
+            parts.append(f"Title: {title}")
+        if uploader:
+            parts.append(f"Uploader: {uploader}")
+        if description:
+            parts.append(f"Description: {description}")
+    if subtitles_text:
+        parts.append(f"Subtitles (excerpt):\n{subtitles_text[:3000]}")
+
+    if not parts:
+        return {}
+
+    text = "\n\n".join(parts)
+    system = (
+        "다음 영문 영상 메타 + 자막에서 등장하는 고유 명사 (인명, 회사명, 제품명) 를 추출하라. "
+        "각 항목을 'English Name → 한국어 표기' 형식으로 한 줄에 하나씩 출력하라. "
+        "한국어 표기는 외래어 표기법 표준에 정합. "
+        "설명, 헤더, 메타 텍스트 없이 매핑만 출력하라. "
+        "추출할 entity 가 부재하면 빈 출력만 반환하라."
+    )
+
+    try:
+        result = _call_llm(config, system, text, max_tokens=1024)
+    except Exception:
+        return {}
+
+    if not result:
+        return {}
+
+    entities: dict = {}
+    for line in result.splitlines():
+        line = line.strip()
+        if not line or "→" not in line:
+            continue
+        left, right = line.split("→", 1)
+        english = left.strip().lstrip("-").strip()
+        korean = right.strip()
+        if english and korean and _ENGLISH_NAME_RE.match(english):
+            entities[english] = korean
+    return entities
+
+
+# =============================================================================
 # Step 3: 번역
 # =============================================================================
 def translate_transcript(

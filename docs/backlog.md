@@ -17,12 +17,13 @@
 - 검증:
   - `tests/test_phase2_entity_cache.py` 통과 (24/25, 1 slow integration) — 5/19 작성
   - real video verify 에서 5/18 샘 올트먼 사례 재현 부재 (구현 후)
-- 상태: active (Step B helper 함수 완료, translate_transcript 통합은 다음 세션)
+- 상태: **passing** (Step B + Step C 모두 완료, verify 통과)
 - 우선순위: P0 (사용자 경험 가장 큰 개선)
 - spec: `docs/research/phase2_entity_cache_spec.md` (5/14 작성, 5/19 갱신)
 - 진행 catch:
   - Step B 완료 (5/19): helper 함수 3개 (`_extract_entities`, `_build_entity_cache_block`, `_bootstrap_entity_cache_from_metadata`) + unit test 24건 통과
-  - Step C 대기: translate_transcript 통합 + Rule 12 추가 + verify 실측
+  - Step C 완료 (5/19): translate_transcript 통합 + Rule 12 추가 + verify 통과 (150.3초, 8/8, 5/13+5/18 사례 3건 모두 차단)
+- 상태 갱신: active → passing
 - 비용: 큼 (~2~3 세션)
 
 ### B02: slow chunk wall-clock timeout

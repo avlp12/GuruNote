@@ -206,6 +206,12 @@ TRANSLATION_SYSTEM_PROMPT = """\
 11. **출력 언어 — 한자/일본어/중국어 mix 절대 금지:**
     - 아래 [출력 언어 + 표기 — 양쪽 prompt 공통 룰] 섹션의 "출력 언어" 정합.
     - 본 룰 위반 시 LLM 출력 폐기 + 재생성 (daily quality bar 부정합).
+12. **Entity 표기 일관 (Phase 2):**
+    - context 영역에 "### 영상 entity 표기 일관" 블록이 있으면, 해당 dict 의
+      한국어 표기를 **반드시** 사용 (LLM 변동 절대 부재).
+    - dict 영역 entity 의 두 번째 이후 등장 시 영문 병기 부재 (이전 chunk 에서
+      이미 첫 등장 병기 완료 가정).
+    - dict 외부의 신규 entity 는 Rule 10 통용 표기 + Rule 2 첫 등장 영문 병기 정합.
 """ + _SHARED_LANG_RULES
 
 
@@ -248,6 +254,10 @@ class LLMConfig:
     temperature: float = 0.2
     translation_max_tokens: int = 8192
     summary_max_tokens: int = 4096
+    # Phase 2 (B01) — entity cache + 화자 cache toggle.
+    # True: chunk 1 차단 가능 (bootstrap LLM 호출 1회 + chunk loop 안 cache 갱신).
+    # False: 종전 path (chunk 독립 처리, hallucinate 회귀 위험).
+    enable_phase2: bool = True
 
     @classmethod
     def from_env(cls, provider: Optional[str] = None) -> "LLMConfig":
@@ -966,6 +976,17 @@ def translate_transcript(
     if context_block:
         log("📖 영상 컨텍스트(게시일/챕터/자막)를 LLM 에 주입합니다.")
 
+    # Phase 2 (B01) — entity cache + 화자 cache.
+    # (b) Two-Stage 부분 적용: 영상 메타 + 자막에서 사전 entity 추출 → chunk 1 차단 catch.
+    # (e) Entity Cache: chunk 출력 → entity 추출 → 다음 chunk context prepend.
+    entity_cache: dict = {}
+    if config.enable_phase2:
+        subtitles_text = (video_context or {}).get("subtitles_text") if video_context else None
+        bootstrap = _bootstrap_entity_cache_from_metadata(video_context, subtitles_text, config)
+        if bootstrap:
+            entity_cache.update(bootstrap)
+            log(f"   📚 entity cache bootstrap — {len(bootstrap)}건 사전 추출")
+
     translated_parts: List[str] = []
     for i, chunk in enumerate(chunks, start=1):
         if stop_event is not None and stop_event.is_set():
@@ -975,13 +996,26 @@ def translate_transcript(
             time.sleep(CHUNK_DELAY_SEC)
         log(f"   ↳ 청크 {i}/{len(chunks)} 번역 중…")
 
+        # Phase 2 — context_block 에 entity_cache 블록 prepend (chunk 간 일관성).
+        cache_block = _build_entity_cache_block(entity_cache) if config.enable_phase2 else ""
+        extended_context = f"{context_block}\n\n{cache_block}" if cache_block else context_block
+
         # Phase 1 Redesign — Structured Output Index Mapping + finish_reason Continuation.
         # 본질 cause 차단: (1) Content drift — LLM 이 timestamp 출력 부재 → 순서만 매핑
         # (zip 100% 결정론). (2) Truncation — finish_reason='length' 명시 catch + retry.
         # 기존 Phase 1 retry/marker 로직 (5/12 trajectory) 영역 제거 — Index Mapping path
         # 가 두 본질 cause 모두 근본 차단.
-        translated = translate_chunk_index_mapping_v2(chunk, context_block, config, log)
+        translated = translate_chunk_index_mapping_v2(chunk, extended_context, config, log)
         translated_parts.append(translated)
+
+        # Phase 2 — chunk 출력의 speaker line prefix entity 추출 + cache 갱신.
+        if config.enable_phase2:
+            new_entities = _extract_entities(translated)
+            if new_entities:
+                added = {k: v for k, v in new_entities.items() if k not in entity_cache}
+                if added:
+                    entity_cache.update(added)
+                    log(f"   📚 entity cache 갱신: +{len(added)}건 (누적 {len(entity_cache)}건)")
 
     log("✅ 번역 완료")
     # Index Mapping path 의 출력은 결정론적 \n\n 정합 — Layer 14 lookahead regex

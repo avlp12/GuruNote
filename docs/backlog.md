@@ -1,6 +1,6 @@
 # GuruNote Backlog
 
-마지막 갱신: 2026-05-18
+마지막 갱신: 2026-05-20
 운영 규칙: WIP=1 (동시 active 작업 1개 제한)
 상태 정의: not_started / active / blocked / passing
 
@@ -64,16 +64,40 @@
 - 우선순위: P3 (현재 qwen3.6-35b-q5 고정 사용 중)
 - 비용: 큼
 
+### B06: Phase 2B-3 — Canonical Translation (외래어 표기법 + entity_cache 디스크 저장)
+
+- 동작: 외래어 표기법 (문화체육관광부고시 제2017-14호) LLM 참조 + entity_cache 영구 저장으로 인명·지명 표기 표준 강제
+- 5/20 발견:
+  - entity_cache 가 in-memory 만 존재 — 5/14 Phase 2 spec 의 (e) Entity Cache 본질 부재
+  - 외래어 표기법 표준 적용 부재
+  - '판카지' 회귀 (3회 verify run 중 표기 결정론 부재) 가 본 두 부재의 결합 결과
+- spec: `docs/research/phase2b_canonical_translation_spec.md` (5/20 작성)
+- 자료:
+  - `gurunote/data/loanword_orthography.md` (외래어 표기법 본문, LLM 참조 정합)
+  - `docs/research/외래어표기법.html` (원본 자료 영구 보존)
+- 본인 결정 catch 영역 (다음 세션 진입 시):
+  1. cache 저장 위치 (영상별 / 통합 / 양쪽)
+  2. JSON 자료구조 (source 필드, speakers·entities 통합)
+  3. 외래어 표기법 LLM 주입 path (R1 전체 / R2 인명·지명만 / R3 bootstrap 한정 / R4 R3 + Phase 3 통합)
+  4. 통용 표기 vs 외래어 표기법 우선순위
+  5. cache invalidate 정책
+- 검증:
+  - `tests/test_phase2b_canonical_translation.py` (작성 필요)
+  - cache hit/miss test
+  - real video verify 에서 5/20 '판카지' 사례 차단
+- 상태: not_started (spec 작성 완료, 구현 다음 세션)
+- 우선순위: P0 (5/20 발견의 본질 catch + 5/14 spec 의 본질 완성)
+- 비용: 큼 (~3~4 시간)
+
 ## 별도 추적
-
-### 샘 올트먼 hallucinate stochastic
-
-- 5/18 Phase 3 verify run 1 에서 5회 발생, 다른 run 부재
-- B01 (Phase 2 entity cache) 에서 함께 해결 가능 가설
-- 별 작업 진입 부재 (B01 결과에서 catch)
 
 ### Schema description leak (xgrammar 0.2.0 한계)
 
 - xgrammar 외부 의존이라 본 저장소에서 본질 해결 부재
 - B03 (Phase 1 fix-up #3) 에서 후처리로 부분 catch
 - xgrammar 신 버전 대기 또는 omlx 측 변경 요청 별 trajectory
+
+## 정리 기록 (2026-05-20)
+
+- 샘 올트먼 hallucinate stochastic → B01 (Phase 2 entity cache) 통과로 5/17~5/20 verify run 4회 모두 0회. 별도 추적 제거.
+- 판카지 회귀 stochastic → B06 (Phase 2B-3) 로 통합. 별도 추적 부재 (B06 spec 의 D 사례).

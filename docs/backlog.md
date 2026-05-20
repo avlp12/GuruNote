@@ -29,12 +29,14 @@
 ### B02: slow chunk wall-clock timeout
 
 - 동작: chunk 당 60초 hard limit 으로 grammar-recovery loop 진입 시 즉시 종료
+- path 결정 (5/20): (f) ThreadPoolExecutor + future.result(timeout) wrap
 - 검증:
-  - `tests/test_slow_chunk_timeout.py` 통과 (작성 필요)
-  - 5/18 verify chunk 9 케이스 (250초+) 재현 시 60초 이내 종료
-- 상태: not_started
+  - `tests/test_phase2_slow_chunk_timeout.py` 9/9 통과 (5/20 작성)
+  - 실측 verify (phase2_b02_run1): 8/8 통과, slow chunk 자연 발생 부재 (timeout 미발동)
+- 상태: **passing** (코드 + unit test 정합, production slow chunk 발생 시 catch 가능 상태)
 - 우선순위: P1 (간헐적 처리 시간 폭주 차단)
 - 참고: 5/17 A-3 timeout 시도 실패 (httpx read timeout 이 wall-clock 강제 부재)
+- 한계: production 에서 slow chunk 자연 발생 시까지 wall-clock timeout 발동 검증 부재
 - 비용: 중간 (~1 세션)
 
 ### B03: Phase 1 fix-up #3 — schema text leak

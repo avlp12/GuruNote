@@ -13,6 +13,8 @@ import logging
 import os
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, List, Optional
@@ -1312,6 +1314,42 @@ def test_connection(config: Optional[LLMConfig] = None) -> str:
 # 기존 Phase 1 helpers (5/12 trajectory) 영역 보존 — 체크포인트 3 시 통합 결정.
 
 
+# B02 — wall-clock timeout 강제 (Phase 4a-1 httpx read timeout 한계 차단).
+# Phase 4a-1 의 timeout 파라미터는 httpx request-level (read/connect/write 각각).
+# streaming 응답에서 read 가 연속 발생하는 grammar-recovery loop 진입 시 wall-clock
+# 강제 부재 (chunk 9/14 케이스: 250초+ 소비, b447a11 commit 메시지 catch).
+#
+# 본 wrap 은 ThreadPoolExecutor + future.result(timeout) 으로 wall-clock 강제 catch.
+# Daemon thread 가 서버 응답까지 메모리 살짝 차지 (GC 정리) — server 측 generation
+# abort 부재이지만 client 측 abort 충분 (본인 omlx 환경 catch).
+DEFAULT_LLM_CHUNK_TIMEOUT_SEC = 60.0
+
+
+def _call_with_wall_clock_timeout(fn, timeout_sec: float, *args, **kwargs):
+    """sync 함수를 별 thread 에서 실행 + wall-clock timeout 강제 (B02).
+
+    Args:
+        fn: sync callable.
+        timeout_sec: wall-clock 한계 (초).
+        *args, **kwargs: fn 인자.
+
+    Returns:
+        fn 의 return 값.
+
+    Raises:
+        TimeoutError: timeout_sec 초과 시.
+        fn 자체 raise 시 본 exception propagate.
+    """
+    with ThreadPoolExecutor(max_workers=1) as ex:
+        future = ex.submit(fn, *args, **kwargs)
+        try:
+            return future.result(timeout=timeout_sec)
+        except FutureTimeoutError:
+            raise TimeoutError(
+                f"LLM 호출 wall-clock timeout — {timeout_sec}초 초과 (B02)"
+            )
+
+
 def _call_llm_once_with_reason(
     config: LLMConfig,
     messages: list,
@@ -1332,6 +1370,11 @@ def _call_llm_once_with_reason(
         timeout: request-level timeout (초). None 이면 SDK 기본값 사용. Phase 4a-1
             에서 xgrammar grammar-recovery loop 조기 차단용으로 사용 (첫 시도 strict
             mode 에 30초 적용). timeout 초과 시 openai.APITimeoutError 발생.
+
+    Wall-clock timeout (B02, 5/20):
+        본 함수 안의 client.chat.completions.create 호출은 ThreadPoolExecutor +
+        future.result(timeout=DEFAULT_LLM_CHUNK_TIMEOUT_SEC) wrap 으로 wall-clock
+        강제. httpx timeout 의 한계 (read streaming 시 wall-clock 부재) catch.
 
     Returns:
         tuple[str, str]: (content, finish_reason ∈ {"stop", "length", "content_filter", ...})
@@ -1354,7 +1397,12 @@ def _call_llm_once_with_reason(
     if timeout is not None:
         kwargs["timeout"] = timeout
 
-    resp = client.chat.completions.create(**kwargs)
+    # B02 — wall-clock timeout 강제 (slow chunk grammar-recovery loop 차단).
+    resp = _call_with_wall_clock_timeout(
+        client.chat.completions.create,
+        DEFAULT_LLM_CHUNK_TIMEOUT_SEC,
+        **kwargs,
+    )
     choice = resp.choices[0]
     return (choice.message.content or ""), (choice.finish_reason or "unknown")
 

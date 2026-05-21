@@ -48,6 +48,19 @@ def real_llm_config():
     return LLMConfig.from_env(provider="openai_compatible")
 
 
+@pytest.fixture(autouse=True)
+def _isolate_entity_cache(tmp_path, monkeypatch):
+    """B06 — CACHE_DIR 을 매 test 마다 tmp 로 격리.
+
+    본인 daily 환경의 `~/.gurunote/entity_cache/` 가 test 결과에 영향 주지 부재
+    catch (RULE feedback_repl_no_prod_writes 정합). monkeypatch 가 test 종료
+    시 자동 복원.
+    """
+    import gurunote.llm as _llm
+
+    monkeypatch.setattr(_llm, "CACHE_DIR", tmp_path / "entity_cache")
+
+
 @pytest.fixture
 def sample_segments():
     """Sub-C fallback 테스트용 Segment 리스트.

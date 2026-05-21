@@ -26,7 +26,13 @@ class TestExtractEntities:
     def test_first_occurrence_with_english(self):
         text = "[00:10] 티파니 잔젠(Tiffany Janzen): 안녕하세요"
         result = _extract_entities(text)
-        assert result == {"Tiffany Janzen": "티파니 잔젠"}
+        assert result == {
+            "Tiffany Janzen": {
+                "korean": "티파니 잔젠",
+                "type": "speaker",
+                "source": "chunk_extract",
+            }
+        }
 
     def test_subsequent_korean_only_returns_empty(self):
         text = "[00:13] 티파니 잔젠: 제 이름은 티파니 잔젠입니다"
@@ -40,8 +46,16 @@ class TestExtractEntities:
         )
         result = _extract_entities(text)
         assert result == {
-            "Tiffany Janzen": "티파니 잔젠",
-            "Pankaj Sharma": "판카즈 샤르마",
+            "Tiffany Janzen": {
+                "korean": "티파니 잔젠",
+                "type": "speaker",
+                "source": "chunk_extract",
+            },
+            "Pankaj Sharma": {
+                "korean": "판카즈 샤르마",
+                "type": "speaker",
+                "source": "chunk_extract",
+            },
         }
 
     def test_body_english_annotation_ignored(self):
@@ -64,7 +78,13 @@ class TestExtractEntities:
         # 점이 포함된 영문명 (예: "J.P. Morgan" 같은 케이스)
         text = "[12:34] 제이피(J.P. Morgan): 본문"
         result = _extract_entities(text)
-        assert result == {"J.P. Morgan": "제이피"}
+        assert result == {
+            "J.P. Morgan": {
+                "korean": "제이피",
+                "type": "speaker",
+                "source": "chunk_extract",
+            }
+        }
 
     def test_invalid_english_filtered(self):
         # 영문 자리에 한국어/한자 섞임 → skip
@@ -80,13 +100,25 @@ class TestExtractEntities:
             "[00:17] 티파니 잔젠: 또 다른 발화"
         )
         result = _extract_entities(text)
-        assert result == {"Tiffany Janzen": "티파니 잔젠"}
+        assert result == {
+            "Tiffany Janzen": {
+                "korean": "티파니 잔젠",
+                "type": "speaker",
+                "source": "chunk_extract",
+            }
+        }
 
     def test_two_digit_minute_timestamp(self):
         # [15:45] 같은 2자리 timestamp catch
         text = "[15:45] 판카즈 샤르마(Pankaj Sharma): 본문"
         result = _extract_entities(text)
-        assert result == {"Pankaj Sharma": "판카즈 샤르마"}
+        assert result == {
+            "Pankaj Sharma": {
+                "korean": "판카즈 샤르마",
+                "type": "speaker",
+                "source": "chunk_extract",
+            }
+        }
 
 
 # =============================================================================
@@ -97,14 +129,16 @@ class TestBuildEntityCacheBlock:
         assert _build_entity_cache_block({}) == ""
 
     def test_single_entity(self):
-        result = _build_entity_cache_block({"Pankaj Sharma": "판카즈 샤르마"})
+        result = _build_entity_cache_block(
+            {"Pankaj Sharma": {"korean": "판카즈 샤르마", "type": "person", "source": "bootstrap"}}
+        )
         expected = "### 영상 entity 표기 일관\n- Pankaj Sharma → 판카즈 샤르마"
         assert result == expected
 
     def test_multiple_entities(self):
         cache = {
-            "Tiffany Janzen": "티파니 잔젠",
-            "Pankaj Sharma": "판카즈 샤르마",
+            "Tiffany Janzen": {"korean": "티파니 잔젠", "type": "person", "source": "bootstrap"},
+            "Pankaj Sharma": {"korean": "판카즈 샤르마", "type": "person", "source": "bootstrap"},
         }
         result = _build_entity_cache_block(cache)
         assert "### 영상 entity 표기 일관" in result
@@ -116,8 +150,8 @@ class TestBuildEntityCacheBlock:
     def test_preserves_insertion_order(self):
         # Python 3.7+ dict 순서 보존 catch
         cache = {
-            "Zelda": "젤다",
-            "Adam": "아담",
+            "Zelda": {"korean": "젤다", "type": "person", "source": "bootstrap"},
+            "Adam": {"korean": "아담", "type": "person", "source": "bootstrap"},
         }
         result = _build_entity_cache_block(cache)
         lines = result.splitlines()
@@ -138,30 +172,30 @@ class TestBootstrapEntityCacheMock:
         }
         with patch("gurunote.llm._call_llm") as mock_call:
             mock_call.return_value = (
-                "Pankaj Sharma → 판카즈 샤르마\n"
-                "Schneider Electric → 슈나이더 일렉트릭\n"
-                "NVIDIA → 엔비디아"
+                "Pankaj Sharma → 판카즈 샤르마 [person]\n"
+                "Schneider Electric → 슈나이더 일렉트릭 [company]\n"
+                "NVIDIA → 엔비디아 [company]"
             )
             result = _bootstrap_entity_cache_from_metadata(ctx, None, mock_llm_config)
         assert mock_call.call_count == 1
         assert result == {
-            "Pankaj Sharma": "판카즈 샤르마",
-            "Schneider Electric": "슈나이더 일렉트릭",
-            "NVIDIA": "엔비디아",
+            "Pankaj Sharma": {"korean": "판카즈 샤르마", "type": "person", "source": "bootstrap"},
+            "Schneider Electric": {"korean": "슈나이더 일렉트릭", "type": "company", "source": "bootstrap"},
+            "NVIDIA": {"korean": "엔비디아", "type": "company", "source": "bootstrap"},
         }
 
     def test_subtitles_only(self, mock_llm_config):
         subs = "Hello, I'm Tiffany Janzen and today I'm joined by Pankaj Sharma."
         with patch("gurunote.llm._call_llm") as mock_call:
             mock_call.return_value = (
-                "Tiffany Janzen → 티파니 잔젠\n"
-                "Pankaj Sharma → 판카즈 샤르마"
+                "Tiffany Janzen → 티파니 잔젠 [person]\n"
+                "Pankaj Sharma → 판카즈 샤르마 [person]"
             )
             result = _bootstrap_entity_cache_from_metadata(None, subs, mock_llm_config)
         assert mock_call.call_count == 1
         assert result == {
-            "Tiffany Janzen": "티파니 잔젠",
-            "Pankaj Sharma": "판카즈 샤르마",
+            "Tiffany Janzen": {"korean": "티파니 잔젠", "type": "person", "source": "bootstrap"},
+            "Pankaj Sharma": {"korean": "판카즈 샤르마", "type": "person", "source": "bootstrap"},
         }
 
     def test_both_metadata_and_subtitles(self, mock_llm_config):
@@ -210,18 +244,18 @@ class TestBootstrapEntityCacheMock:
     def test_malformed_llm_response_skips_bad_lines(self, mock_llm_config):
         ctx = {"title": "Test"}
         with patch("gurunote.llm._call_llm") as mock_call:
-            # 일부 라인은 정합, 일부는 → 부재
+            # 일부 라인은 정합, 일부는 → 부재. type 부재 라인은 unknown 으로 fallback.
             mock_call.return_value = (
-                "Pankaj Sharma → 판카즈 샤르마\n"
+                "Pankaj Sharma → 판카즈 샤르마 [person]\n"
                 "잘못된 라인 (no arrow)\n"
-                "Jensen Huang → 젠슨 황\n"
+                "Jensen Huang → 젠슨 황\n"  # type 부재 → unknown
                 "\n"  # 빈 라인
             )
             result = _bootstrap_entity_cache_from_metadata(ctx, None, mock_llm_config)
         # 정합 라인 2건 catch, 부정합 라인 skip
         assert result == {
-            "Pankaj Sharma": "판카즈 샤르마",
-            "Jensen Huang": "젠슨 황",
+            "Pankaj Sharma": {"korean": "판카즈 샤르마", "type": "person", "source": "bootstrap"},
+            "Jensen Huang": {"korean": "젠슨 황", "type": "unknown", "source": "bootstrap"},
         }
 
     def test_long_subtitles_truncated_to_3000(self, mock_llm_config):
@@ -237,12 +271,14 @@ class TestBootstrapEntityCacheMock:
         assert "X" * 3001 not in user_text
 
     def test_dash_prefix_stripped(self, mock_llm_config):
-        # markdown 의 "- Name → 표기" 형식 인풋도 catch
+        # markdown 의 "- Name → 표기 [type]" 형식 인풋도 catch
         ctx = {"title": "Test"}
         with patch("gurunote.llm._call_llm") as mock_call:
-            mock_call.return_value = "- Pankaj Sharma → 판카즈 샤르마"
+            mock_call.return_value = "- Pankaj Sharma → 판카즈 샤르마 [person]"
             result = _bootstrap_entity_cache_from_metadata(ctx, None, mock_llm_config)
-        assert result == {"Pankaj Sharma": "판카즈 샤르마"}
+        assert result == {
+            "Pankaj Sharma": {"korean": "판카즈 샤르마", "type": "person", "source": "bootstrap"}
+        }
 
 
 # =============================================================================

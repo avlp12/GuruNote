@@ -8,6 +8,7 @@ Step 3 & 4: LLM 기반 한국어 번역 + GuruNote 스타일 마크다운 요약
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -16,6 +17,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Callable, List, Optional
 
@@ -813,6 +815,94 @@ def post_process_cjk(
     return "\n\n".join(processed)
 
 
+def _canonicalize_entity_names(
+    result: str,
+    entity_cache: dict,
+    config: "LLMConfig",
+    log: Optional[ProgressFn] = None,
+) -> str:
+    """B06 §4.3 — 영상 전체 결과의 entity 표기 통일.
+
+    entity_cache 의 canonical 표기 + 외래어 표기법 short version 을 LLM 참조로 주입.
+    chunk drift (예: chunk 1 의 '판카즈' vs chunk 2+ 의 '판카지') 통일.
+
+    우선순위 (§3.4):
+        1. TRANSLATION_SYSTEM_PROMPT Rule 10 통용 표기 dict
+        2. entity_cache 의 canonical 표기 (영상 단위 정답)
+        3. 외래어 표기법 short version
+        4. LLM 자유 출력
+
+    Args:
+        result: post_process_cjk 결과 본문.
+        entity_cache: B06 신 형식 `{english: {korean, type, source}}` dict.
+        config: LLM 호출용.
+        log: 진행 콜백.
+
+    Returns:
+        canonicalize 결과. cache 부재, body 크기 한계 초과, LLM 실패, 본문 길이 변동 큼
+        catch 시 원본 그대로 (safe fallback).
+    """
+    log_fn = log or (lambda _msg: None)
+    if not entity_cache:
+        return result
+    if len(result) > _CANONICALIZE_MAX_BODY_CHARS:
+        log_fn(
+            f"   ⚠ canonicalize skip — body {len(result)} chars 초과 한계 "
+            f"{_CANONICALIZE_MAX_BODY_CHARS}"
+        )
+        return result
+
+    cache_block = _build_entity_cache_block(entity_cache)
+    if not cache_block:
+        return result
+
+    loanword_block = _LOANWORD_SHORT
+    loanword_section = (
+        f"\n\n[외래어 표기법 참조 — 표 1 영어 자모 + 제4장 인명·지명]\n{loanword_block}\n"
+        if loanword_block
+        else ""
+    )
+
+    system = (
+        "다음 한국어 번역 본문에서 인명·회사명·지명 등 고유 명사의 표기를 통일하라.\n\n"
+        "통일 규칙 (우선순위 위에서 아래로):\n"
+        "1. 한국에서 이미 통용되는 표기 (예: Schneider Electric → 슈나이더 일렉트릭)\n"
+        "2. 아래 entity 표기 일관 dict 의 한국어 표기 (영상 단위 정답)\n"
+        "3. 통용 표기·entity dict 부재 시 외래어 표기법 표준 적용\n\n"
+        "[형식 보존 — 변경 금지]\n"
+        "- 줄 수 보존, timestamp `[MM:SS]` 보존, 화자 라벨 보존, 본문 의미 보존.\n"
+        "- 변경 대상은 고유 명사 표기만 — 본문 단어, 어미, 조사 변경 부재.\n"
+        "- 출력 형식 = 변경된 본문 그대로 (설명·헤더 부재).\n\n"
+        f"{cache_block}{loanword_section}"
+    )
+
+    try:
+        canonical = _call_llm(config, system, result, max_tokens=config.translation_max_tokens or TRANSLATION_MAX_TOKENS)
+    except Exception as exc:
+        log_fn(f"   ⚠ canonicalize LLM 실패 (원본 유지): {exc}")
+        return result
+
+    if not canonical or not canonical.strip():
+        log_fn("   ⚠ canonicalize 빈 응답 (원본 유지)")
+        return result
+
+    # 본문 길이 변동 큼 catch — LLM 이 본문 truncate 또는 expand 한 경우 차단.
+    # ±10% 영역 정합 (translation 결과 ±수십 글자 변동은 표기 변경에 정합).
+    orig_lines = result.count("\n")
+    new_lines = canonical.count("\n")
+    if orig_lines > 0 and abs(new_lines - orig_lines) / max(orig_lines, 1) > 0.10:
+        log_fn(
+            f"   ⚠ canonicalize 줄 수 변동 큼 (원본 {orig_lines} → {new_lines}, 원본 유지)"
+        )
+        return result
+
+    log_fn(
+        f"   🔧 entity canonicalize 적용 ({len(entity_cache)}건 cache, "
+        f"줄 수 {orig_lines} → {new_lines})"
+    )
+    return canonical.strip()
+
+
 # =============================================================================
 # Pre-process — Phase 2 entity cache + 화자 cache (chunk 간 일관성)
 # =============================================================================
@@ -846,8 +936,14 @@ def _extract_entities(translated_chunk: str) -> dict:
 
     Line prefix 한정 매칭으로 본문 중간의 기술 용어 (예: "AI 네이티브(AI Native)") 부재.
 
+    B06 신 형식 (Phase 2B-3 migration, 5/20):
+        반환 dict 의 값은 `{korean, type, source}` 신 자료구조.
+        chunk 추출은 speaker line prefix 에서 catch 한 entity 이므로 type 기본 "speaker",
+        source 자동 "chunk_extract".
+
     Returns:
-        {English Name: 한국어 표기} dict. 영문 병기 부재 line 은 skip.
+        `{English Name: {"korean": str, "type": "speaker", "source": "chunk_extract"}}` dict.
+        영문 병기 부재 line 은 skip.
     """
     entities: dict = {}
     for m in _SPEAKER_LINE_RE.finditer(translated_chunk):
@@ -857,7 +953,11 @@ def _extract_entities(translated_chunk: str) -> dict:
             continue
         english = english_raw.strip()
         if _ENGLISH_NAME_RE.match(english):
-            entities[english] = korean
+            entities[english] = {
+                "korean": korean,
+                "type": "speaker",
+                "source": "chunk_extract",
+            }
     return entities
 
 
@@ -865,7 +965,7 @@ def _build_entity_cache_block(entity_cache: dict) -> str:
     """entity_cache 를 LLM context 영역의 markdown block 으로 변환.
 
     Args:
-        entity_cache: {English Name: 한국어 표기} dict.
+        entity_cache: B06 신 형식 `{English Name: {korean, type, source}}` dict.
 
     Returns:
         빈 dict 시 "".
@@ -874,7 +974,10 @@ def _build_entity_cache_block(entity_cache: dict) -> str:
     if not entity_cache:
         return ""
     lines = ["### 영상 entity 표기 일관"]
-    for english, korean in entity_cache.items():
+    for english, meta in entity_cache.items():
+        korean = meta.get("korean", "") if isinstance(meta, dict) else ""
+        if not korean:
+            continue
         lines.append(f"- {english} → {korean}")
     return "\n".join(lines)
 
@@ -886,24 +989,38 @@ def _bootstrap_entity_cache_from_metadata(
 ) -> dict:
     """영상 메타 + 자막에서 사전 entity 추출 ((b) Two-Stage 부분 적용).
 
-    chunk 1 부터 정합 dict 영역 catch 위해 LLM 호출 1회 (약 5~10초 비용).
-    spec section 5.2 의 (b) Two-Stage 부분 적용.
+    B06 통합 (5/20):
+        - cache 조회 (`_load_entity_cache`) 우선 — cache hit 시 LLM 호출 부재.
+        - cache miss 시 LLM 호출 prompt 에 외래어 표기법 short version + 4단계 우선순위 명시.
+        - LLM 출력 형식: `English Name → 한국어 표기 [type]` (type ∈ {person, company, place, product}).
 
     Args:
-        video_context: AudioDownloadResult.to_context_dict() 형태. None 가능.
+        video_context: AudioDownloadResult.to_context_dict() 형태. None 가능. video_id 키
+            부재 path — fallback 으로 video_title hash 사용 (`_compute_cache_key_from_title`).
         subtitles_text: 영문 자막 본문 (부재 시 None). 길이 큰 자막은 첫 3000자만 사용.
         config: LLM 호출용.
 
     Returns:
-        {English Name: 한국어 표기} dict. 추출 실패 시 빈 dict (fallback).
+        B06 신 형식 `{English Name: {korean, type, source}}` dict. 추출 실패 시 빈 dict.
     """
+    video_title = (video_context or {}).get("title", "") if video_context else ""
+    cache_key = (
+        (video_context or {}).get("id")
+        or (video_context or {}).get("video_id")
+        or _compute_cache_key_from_title(video_title)
+    )
+
+    if cache_key:
+        cached = _load_entity_cache(cache_key)
+        if cached is not None:
+            return cached
+
     parts: List[str] = []
     if video_context:
-        title = video_context.get("title", "")
         description = video_context.get("description", "")
         uploader = video_context.get("uploader", "")
-        if title:
-            parts.append(f"Title: {title}")
+        if video_title:
+            parts.append(f"Title: {video_title}")
         if uploader:
             parts.append(f"Uploader: {uploader}")
         if description:
@@ -915,12 +1032,24 @@ def _bootstrap_entity_cache_from_metadata(
         return {}
 
     text = "\n\n".join(parts)
+    # B06 §3.3 R4 — 외래어 표기법 short version inline + §3.4 4단계 우선순위 명시.
+    loanword_block = _LOANWORD_SHORT
+    loanword_section = (
+        f"\n\n[외래어 표기법 참조 자료 — 표 1 영어 자모 + 제4장 인명·지명 표기 원칙]\n{loanword_block}\n"
+        if loanword_block
+        else ""
+    )
     system = (
-        "다음 영문 영상 메타 + 자막에서 등장하는 고유 명사 (인명, 회사명, 제품명) 를 추출하라. "
-        "각 항목을 'English Name → 한국어 표기' 형식으로 한 줄에 하나씩 출력하라. "
-        "한국어 표기는 외래어 표기법 표준에 정합. "
-        "설명, 헤더, 메타 텍스트 없이 매핑만 출력하라. "
-        "추출할 entity 가 부재하면 빈 출력만 반환하라."
+        "다음 영문 영상 메타 + 자막에서 등장하는 고유 명사 (인명, 회사명, 제품명, 지명) 를 추출하라. "
+        "각 항목을 'English Name → 한국어 표기 [type]' 형식으로 한 줄에 하나씩 출력하라. "
+        "type ∈ {person, company, place, product}.\n\n"
+        "한국어 표기 우선순위 (위에서 아래로):\n"
+        "1. 한국에서 이미 통용되는 표기 (예: Schneider Electric → 슈나이더 일렉트릭 [company])\n"
+        "2. 통용 표기 부재 시 아래 외래어 표기법 표준 적용 (예: Pankaj Sharma → 판카즈 샤르마 [person])\n"
+        "3. 그 외는 영어 자모 한글 대조표 정합 자유 출력"
+        f"{loanword_section}\n"
+        "설명, 헤더, 메타 텍스트 부재. 매핑만 출력. "
+        "추출할 entity 부재 시 빈 출력만 반환."
     )
 
     try:
@@ -938,10 +1067,182 @@ def _bootstrap_entity_cache_from_metadata(
             continue
         left, right = line.split("→", 1)
         english = left.strip().lstrip("-").strip()
-        korean = right.strip()
+        right_str = right.strip()
+        type_match = re.search(r"\[(person|company|place|product)\]\s*$", right_str)
+        entity_type = type_match.group(1) if type_match else "unknown"
+        korean = re.sub(r"\s*\[[^\]]+\]\s*$", "", right_str).strip()
         if english and korean and _ENGLISH_NAME_RE.match(english):
-            entities[english] = korean
+            entities[english] = {
+                "korean": korean,
+                "type": entity_type,
+                "source": "bootstrap",
+            }
     return entities
+
+
+# B06 (Phase 2B-3) — entity_cache 디스크 저장 + 재로드.
+# spec: docs/research/phase2b_canonical_translation_spec.md §3.1, §3.2, §4.1, §4.4.
+# 본인 결정 (5/20):
+#   - §3.1 cache 저장 위치: A 영상별 분리 (~/.gurunote/entity_cache/<video_id>.json)
+#   - §3.2 JSON 자료구조: entities 통합 list + type + loanword_spec_version
+#   - §3.5 invalidate: spec_version 변경 시 자동 재bootstrap
+CACHE_DIR = Path.home() / ".gurunote" / "entity_cache"
+LOANWORD_SPEC_VERSION = "2017-14"
+
+# B06 외래어 표기법 자료 file — bootstrap 용 short version + Phase 3 후처리 용 full body.
+_LOANWORD_FILE = Path(__file__).parent / "data" / "loanword_orthography.md"
+
+# B06 §4.3 — _canonicalize_entity_names LLM 호출 안전 한계 (본문 token 추정).
+# qwen3.6-35b-q5 의 max_ctx 32K 정합. 본문 + short loanword + entity_cache + system
+# prompt 합 ~24K token 정합 (영상 ~50KB 본문 = ~17K token + short loanword ~700 +
+# entity_cache prepend ~500 + system ~5K). 본 한계 초과 시 canonicalize skip.
+_CANONICALIZE_MAX_BODY_CHARS = 60000
+
+
+def _compute_cache_key_from_title(video_title: str) -> str:
+    """video_id 부재 시 video_title hash 로 cache key 생성 — spec §3.1 fallback.
+
+    AudioDownloadResult.to_context_dict() 가 video_id 를 dict 에 포함 부재 — 본 fallback 으로
+    같은 영상 재처리 시에도 cache hit 가능.
+    """
+    if not video_title:
+        return ""
+    return "title_" + hashlib.sha256(video_title.encode("utf-8")).hexdigest()[:16]
+
+
+def _load_loanword_short_version() -> str:
+    """Bootstrap LLM prompt 용 외래어 표기법 short version — spec §3.3 R4 정합.
+
+    추출 영역:
+        - 표 1 (국제 음성 기호 + 한글 대조표) — 영어 음운 매핑 catch
+        - 제4장 (인명·지명 표기의 원칙) — 본 phase 본질 자료
+
+    Returns:
+        markdown body. 자료 file 부재 시 "" (호출자가 prompt 에서 자동 skip).
+    """
+    if not _LOANWORD_FILE.exists():
+        return ""
+    text = _LOANWORD_FILE.read_text(encoding="utf-8")
+
+    table1_match = re.search(
+        r"###\s*표\s*1.*?(?=###\s*표\s*2|\Z)",
+        text,
+        flags=re.DOTALL,
+    )
+    table1 = table1_match.group(0).strip() if table1_match else ""
+
+    chapter4_match = re.search(
+        r"##\s*제4장.*?(?=##\s*제\d+장|##\s*부\s*칙|\Z)",
+        text,
+        flags=re.DOTALL,
+    )
+    chapter4 = chapter4_match.group(0).strip() if chapter4_match else ""
+
+    parts = [p for p in (table1, chapter4) if p]
+    return "\n\n".join(parts)
+
+
+def _load_loanword_full_body() -> str:
+    """Phase 3 후처리 용 외래어 표기법 전체 본문 — spec §3.3 R4 정합.
+
+    Returns:
+        markdown body. 자료 file 부재 시 "" (Sub-B 가 자동 skip).
+    """
+    if not _LOANWORD_FILE.exists():
+        return ""
+    return _LOANWORD_FILE.read_text(encoding="utf-8")
+
+
+# B06 module-level cache — bootstrap 호출 시마다 file 재읽기 부재.
+_LOANWORD_SHORT = _load_loanword_short_version()
+
+
+def _get_cache_file_path(video_id: str) -> Path:
+    """영상 ID 기반 cache file 경로 — `~/.gurunote/entity_cache/<video_id>.json`."""
+    return CACHE_DIR / f"{video_id}.json"
+
+
+def _save_entity_cache(
+    video_id: str,
+    video_title: str,
+    entities: dict,
+    spec_version: str = LOANWORD_SPEC_VERSION,
+) -> None:
+    """entity_cache 디스크 저장.
+
+    Args:
+        video_id: YouTube 영상 ID (cache key).
+        video_title: 영상 제목 (debug 용).
+        entities: in-memory dict — `{english: {korean, type, source}}`.
+        spec_version: 외래어 표기법 본문 버전 (LOANWORD_SPEC_VERSION 기본).
+
+    Side effects:
+        CACHE_DIR 부재 시 자동 생성. file 덮어쓰기.
+    """
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+    entities_list = [
+        {
+            "english": english,
+            "korean": meta.get("korean", ""),
+            "type": meta.get("type", "unknown"),
+            "source": meta.get("source", "unknown"),
+        }
+        for english, meta in entities.items()
+    ]
+
+    data = {
+        "video_id": video_id,
+        "video_title": video_title,
+        "created_at": datetime.now().astimezone().isoformat(),
+        "loanword_spec_version": spec_version,
+        "entities": entities_list,
+    }
+
+    cache_path = _get_cache_file_path(video_id)
+    with open(cache_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+def _load_entity_cache(
+    video_id: str,
+    expected_spec_version: str = LOANWORD_SPEC_VERSION,
+) -> Optional[dict]:
+    """entity_cache 디스크 로드. file 부재 / 손상 / spec_version 다름 시 None.
+
+    Args:
+        video_id: YouTube 영상 ID.
+        expected_spec_version: 현재 외래어 표기법 본문 버전.
+
+    Returns:
+        `{english: {korean, type, source}}` dict 또는 None.
+        None 시 호출자는 bootstrap 재실행 — §3.5 spec_version 자동 invalidate.
+    """
+    cache_path = _get_cache_file_path(video_id)
+    if not cache_path.exists():
+        return None
+
+    try:
+        with open(cache_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return None
+
+    if data.get("loanword_spec_version") != expected_spec_version:
+        return None
+
+    result: dict = {}
+    for item in data.get("entities", []):
+        english = item.get("english")
+        korean = item.get("korean")
+        if not english or not korean:
+            continue
+        result[english] = {
+            "korean": korean,
+            "type": item.get("type", "unknown"),
+            "source": item.get("source", "unknown"),
+        }
+    return result
 
 
 # =============================================================================
@@ -1020,6 +1321,23 @@ def translate_transcript(
                     log(f"   📚 entity cache 갱신: +{len(added)}건 (누적 {len(entity_cache)}건)")
 
     log("✅ 번역 완료")
+
+    # B06 — 영상 처리 완료 시 entity_cache 디스크 저장 (spec §4.4).
+    # cache key 는 video_id 우선, 부재 시 video_title hash fallback.
+    if config.enable_phase2 and entity_cache:
+        video_title_for_cache = (video_context or {}).get("title", "") if video_context else ""
+        cache_key = (
+            (video_context or {}).get("id")
+            or (video_context or {}).get("video_id")
+            or _compute_cache_key_from_title(video_title_for_cache)
+        )
+        if cache_key:
+            try:
+                _save_entity_cache(cache_key, video_title_for_cache, entity_cache)
+                log(f"   💾 entity cache 저장: {len(entity_cache)}건 → {cache_key}")
+            except Exception as exc:
+                log(f"   ⚠ entity cache 저장 실패 (무시): {exc}")
+
     # Index Mapping path 의 출력은 결정론적 \n\n 정합 — Layer 14 lookahead regex
     # 정규화 영역 부재 (chunk join 만으로 충분).
     normalized_parts = translated_parts
@@ -1028,6 +1346,10 @@ def translate_transcript(
     # Sub-path A 사전 lookup → 미적중 시 Sub-path B LLM 재매핑 → 그래도 잔재 시
     # Sub-path C 영문 원문 fallback. 본 단계로 한자/일본어 0건 보장.
     result = post_process_cjk(result, transcript.segments, config, log)
+    # B06 §4.3 — entity 표기 통일 (한자/일본어 0건 보장 후 한국어 본문에 적용).
+    # entity_cache 의 canonical 표기 + 외래어 표기법 short version 으로 chunk drift 통일.
+    if config.enable_phase2:
+        result = _canonicalize_entity_names(result, entity_cache, config, log)
     # Q2 영역 — 영상 단위 영문 병기 첫 등장 catch (Layer 13 정합).
     # chunk 단위 영역 부재 — chunk 경계 memory 부재로 매 chunk 첫 등장 catch
     # 영역 패턴 영역 dedup.

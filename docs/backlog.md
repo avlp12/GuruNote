@@ -1,6 +1,6 @@
 # GuruNote Backlog
 
-마지막 갱신: 2026-05-20
+마지막 갱신: 2026-05-22
 운영 규칙: WIP=1 (동시 active 작업 1개 제한)
 상태 정의: not_started / active / blocked / passing
 
@@ -67,27 +67,28 @@
 ### B06: Phase 2B-3 — Canonical Translation (외래어 표기법 + entity_cache 디스크 저장)
 
 - 동작: 외래어 표기법 (문화체육관광부고시 제2017-14호) LLM 참조 + entity_cache 영구 저장으로 인명·지명 표기 표준 강제
-- 5/20 발견:
-  - entity_cache 가 in-memory 만 존재 — 5/14 Phase 2 spec 의 (e) Entity Cache 본질 부재
-  - 외래어 표기법 표준 적용 부재
-  - '판카지' 회귀 (3회 verify run 중 표기 결정론 부재) 가 본 두 부재의 결합 결과
 - spec: `docs/research/phase2b_canonical_translation_spec.md` (5/20 작성)
 - 자료:
   - `gurunote/data/loanword_orthography.md` (외래어 표기법 본문, LLM 참조 정합)
   - `docs/research/외래어표기법.html` (원본 자료 영구 보존)
-- 본인 결정 catch 영역 (다음 세션 진입 시):
-  1. cache 저장 위치 (영상별 / 통합 / 양쪽)
-  2. JSON 자료구조 (source 필드, speakers·entities 통합)
-  3. 외래어 표기법 LLM 주입 path (R1 전체 / R2 인명·지명만 / R3 bootstrap 한정 / R4 R3 + Phase 3 통합)
-  4. 통용 표기 vs 외래어 표기법 우선순위
-  5. cache invalidate 정책
-- 검증:
-  - `tests/test_phase2b_canonical_translation.py` (작성 필요)
-  - cache hit/miss test
-  - real video verify 에서 5/20 '판카지' 사례 차단
-- 상태: not_started (spec 작성 완료, 구현 다음 세션)
+- 구현 commits:
+  - `09bc6d0` (5/20) — spec 자료
+  - `88ea485` (5/20) — 본인 결정 5가지 반영
+  - `4a8f281` (5/21) — 코드 + tests (21건 신규 + 12건 리팩토링, 84 passed)
+- 검증 결과 (5/22 real video verify 3회, NVIDIA GTC 288 segments):
+  - Run 1: rc=1, 청크 5 B02 wall-clock timeout (B06 외부 원인, LLM grammar-recovery)
+  - Run 2: 8/8 통과 (261s) — bootstrap 4건 → 5건, canonicalize 줄 수 582→582
+  - Run 3: 8/8 통과 (291s, cache hit) — canonicalize 줄 수 576→576
+  - **'판카지' count: 0건 (Run 2, Run 3 모두)** vs 5/20 baseline 191~192건 → 회귀 100% 차단
+  - 판카즈 샤르마 (정 표기): 206~207건 / Run 2, 179~181건 / Run 3
+  - cache 파일 `title_<hash>.json` 정합 (Pankaj Sharma → 판카즈 샤르마 source=bootstrap)
+- 상태: **passing** (5/22 verify 통과, '판카지' 회귀 차단 확인)
 - 우선순위: P0 (5/20 발견의 본질 catch + 5/14 spec 의 본질 완성)
-- 비용: 큼 (~3~4 시간)
+- 한계:
+  - canonicalize LLM 호출 1회 추가 — 처리 시간 +100~120s (5/20 baseline 150~174s → 5/22 261~291s)
+  - Run 1 timeout 은 B02 영역 (B06 통합 path 자체는 정합)
+  - Run 2/3 본문 미세 단어 변경 catch (예: "소프트웨어" → "소프트웤어") — canonicalize LLM 부작용 가능성, 별 trajectory
+- 비용: 실제 ~4~5 시간 (5/20 spec, 5/21 구현+tests, 5/22 verify)
 
 ## 별도 추적
 

@@ -24,6 +24,7 @@ from gurunote.llm import (
     _bootstrap_entity_cache_from_metadata,
     _canonicalize_entity_names,
     _compute_cache_key_from_title,
+    _detect_unexpected_changes,
     _get_cache_file_path,
     _load_entity_cache,
     _load_loanword_full_body,
@@ -223,6 +224,65 @@ class TestCanonicalize:
         system_arg = mock_call.call_args[0][1]
         assert "판카즈 샤르마" in system_arg
         assert "외래어 표기법" in system_arg
+
+
+# =============================================================================
+# TestDetectUnexpectedChanges — P-다 entity 외 변경 감지 (한계 2 보완)
+# =============================================================================
+class TestDetectUnexpectedChanges:
+    def test_no_changes_returns_empty(self):
+        cache = {
+            "Pankaj Sharma": {"korean": "판카즈 샤르마", "type": "person", "source": "bootstrap"}
+        }
+        text = "[00:10] 판카즈 샤르마: 본문"
+        assert _detect_unexpected_changes(text, text, cache) == []
+
+    def test_entity_only_change_returns_empty(self):
+        cache = {
+            "Pankaj Sharma": {"korean": "판카즈 샤르마", "type": "person", "source": "bootstrap"}
+        }
+        # 변형 표기 → 정 표기 — entity 통일 (cache korean 새로 등장)
+        original = "[00:10] 판카지 샤르마: 본문"
+        canonical = "[00:10] 판카즈 샤르마: 본문"
+        assert _detect_unexpected_changes(original, canonical, cache) == []
+
+    def test_word_modified_detected(self):
+        cache = {
+            "Pankaj Sharma": {"korean": "판카즈 샤르마", "type": "person", "source": "bootstrap"}
+        }
+        # 일반 단어 (소프트웨어) 변경 — entity_cache 표기 등장 부재 → 의심
+        original = "[00:10] 판카즈 샤르마: 소프트웨어 부서"
+        canonical = "[00:10] 판카즈 샤르마: 소프트웤어 부서"
+        suspects = _detect_unexpected_changes(original, canonical, cache)
+        assert len(suspects) == 1
+        assert "L0" in suspects[0]
+
+    def test_line_count_mismatch_detected(self):
+        cache = {}
+        original = "[00:10] A\n[00:20] B\n[00:30] C"
+        canonical = "[00:10] A\n[00:20] B"
+        suspects = _detect_unexpected_changes(original, canonical, cache)
+        assert len(suspects) == 1
+        assert "줄 수 불일치" in suspects[0]
+
+    def test_canonicalize_logs_suspects(self, mock_llm_config):
+        # canonical 채택 + suspect 로그 — 옵션 가 path
+        # 한계 catch: 줄 안에 entity 표기 새로 등장 시 의심 부재. 본 test 는 entity
+        # 부재 line 에서 일반 단어만 변경된 케이스 (의심 catch 가능).
+        cache = {
+            "Pankaj Sharma": {"korean": "판카즈 샤르마", "type": "person", "source": "bootstrap"}
+        }
+        result = "[00:10] 판카즈 샤르마: 첫 줄\n\n[00:20] 진행자: 소프트웨어 부서"
+        # line 0 : 변경 부재. line 2 : 화자명 외 일반 단어 변경 — 의심 1건.
+        canonical = "[00:10] 판카즈 샤르마: 첫 줄\n\n[00:20] 진행자: 소프트웤어 부서"
+        log_messages = []
+        with patch("gurunote.llm._call_llm") as mock_call:
+            mock_call.return_value = canonical
+            out = _canonicalize_entity_names(result, cache, mock_llm_config, log_messages.append)
+        # canonical 채택 catch (원본 복귀 부재)
+        assert out == canonical
+        # suspect 경고 로그 catch
+        assert any("entity 외 변경 의심" in m for m in log_messages)
 
 
 # =============================================================================

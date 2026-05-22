@@ -815,6 +815,51 @@ def post_process_cjk(
     return "\n\n".join(processed)
 
 
+def _detect_unexpected_changes(
+    original: str,
+    canonical: str,
+    entity_cache: dict,
+) -> List[str]:
+    """canonicalize 전후 비교 — entity 표기 외 변경 감지.
+
+    줄 단위 비교로, entity_cache 의 한국어 표기 등장이 부재한 줄 변경을 의심으로 기록.
+    완벽한 검증 부재 — daily 사용 빈도 데이터 수집 목적 (P-다 path).
+
+    Args:
+        original: canonicalize 전 본문.
+        canonical: LLM canonicalize 결과 본문.
+        entity_cache: B06 신 형식 `{english: {korean, type, source}}` dict.
+
+    Returns:
+        의심 변경 줄의 요약 list (로그 용). 변경 부재 시 빈 list.
+        줄 수 불일치 시 첫 entry 가 줄 수 불일치 알림.
+    """
+    orig_lines = original.split("\n")
+    canon_lines = canonical.split("\n")
+
+    if len(orig_lines) != len(canon_lines):
+        return [f"줄 수 불일치: {len(orig_lines)} → {len(canon_lines)}"]
+
+    cache_koreans = {
+        meta.get("korean", "")
+        for meta in entity_cache.values()
+        if isinstance(meta, dict) and meta.get("korean")
+    }
+
+    suspect: List[str] = []
+    for i, (o, c) in enumerate(zip(orig_lines, canon_lines)):
+        if o == c:
+            continue
+        # entity_cache 의 표기 중 하나가 canonical 줄에 새로 등장하면 정상 변경 추정.
+        is_entity_change = any(k in c and k not in o for k in cache_koreans)
+        if not is_entity_change:
+            o_short = o[:40] + ("…" if len(o) > 40 else "")
+            c_short = c[:40] + ("…" if len(c) > 40 else "")
+            suspect.append(f"  L{i}: {o_short!r} → {c_short!r}")
+
+    return suspect
+
+
 def _canonicalize_entity_names(
     result: str,
     entity_cache: dict,
@@ -872,6 +917,9 @@ def _canonicalize_entity_names(
         "[형식 보존 — 변경 금지]\n"
         "- 줄 수 보존, timestamp `[MM:SS]` 보존, 화자 라벨 보존, 본문 의미 보존.\n"
         "- 변경 대상은 고유 명사 표기만 — 본문 단어, 어미, 조사 변경 부재.\n"
+        "- **인명·회사명·지명 표기 외의 모든 글자는 원본 그대로 글자 단위 복사하라.**\n"
+        "- 일반 단어 (예: '소프트웨어', '데이터', '인프라', '클라우드') 의 철자를 절대 바꾸지 말라.\n"
+        "- 아래 entity dict 에 부재한 표기는 원본 그대로 유지하라.\n"
         "- 출력 형식 = 변경된 본문 그대로 (설명·헤더 부재).\n\n"
         f"{cache_block}{loanword_section}"
     )
@@ -895,6 +943,17 @@ def _canonicalize_entity_names(
             f"   ⚠ canonicalize 줄 수 변동 큼 (원본 {orig_lines} → {new_lines}, 원본 유지)"
         )
         return result
+
+    # P-다 — entity 외 본문 변경 감지 로그 (canonical 그대로 반환, daily 빈도 수집).
+    suspects = _detect_unexpected_changes(result, canonical, entity_cache)
+    if suspects:
+        log_fn(
+            f"   ⚠ canonicalize entity 외 변경 의심 {len(suspects)}건 (canonical 채택, 로그만):"
+        )
+        for s in suspects[:5]:
+            log_fn(s)
+        if len(suspects) > 5:
+            log_fn(f"   ⚠ … 외 {len(suspects) - 5}건")
 
     log_fn(
         f"   🔧 entity canonicalize 적용 ({len(entity_cache)}건 cache, "

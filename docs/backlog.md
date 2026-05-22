@@ -1,6 +1,6 @@
 # GuruNote Backlog
 
-마지막 갱신: 2026-05-22
+마지막 갱신: 2026-05-22 (보완 verify)
 운영 규칙: WIP=1 (동시 active 작업 1개 제한)
 상태 정의: not_started / active / blocked / passing
 
@@ -82,13 +82,21 @@
   - **'판카지' count: 0건 (Run 2, Run 3 모두)** vs 5/20 baseline 191~192건 → 회귀 100% 차단
   - 판카즈 샤르마 (정 표기): 206~207건 / Run 2, 179~181건 / Run 3
   - cache 파일 `title_<hash>.json` 정합 (Pankaj Sharma → 판카즈 샤르마 source=bootstrap)
-- 상태: **passing** (5/22 verify 통과, '판카지' 회귀 차단 확인)
+- 상태: **passing** (5/22 verify 통과, '판카지' 회귀 차단 확인 + 보완 verify 통과)
 - 우선순위: P0 (5/20 발견의 본질 catch + 5/14 spec 의 본질 완성)
-- 한계:
-  - canonicalize LLM 호출 1회 추가 — 처리 시간 +100~120s (5/20 baseline 150~174s → 5/22 261~291s)
-  - Run 1 timeout 은 B02 영역 (B06 통합 path 자체는 정합)
-  - Run 2/3 본문 미세 단어 변경 catch (예: "소프트웨어" → "소프트웤어") — canonicalize LLM 부작용 가능성, 별 trajectory
-- 비용: 실제 ~4~5 시간 (5/20 spec, 5/21 구현+tests, 5/22 verify)
+- 보완 commits (5/22):
+  - `9afcc93` — 한계 2: canonicalize prompt 강화 + `_detect_unexpected_changes` (P-다 — 의심 변경 로그, canonical 채택)
+  - `988b4c1` — B02 한계 1: `TIMEOUT_PADDING_MARKER = "[⚠ timeout]"` + retry loop R1 padding fallback
+- 보완 verify 결과 (5/22 20:39~20:55, 3회):
+  - Run 1: rc=0 / 280s / 8/8 / 판카지 0건 / 판카즈 샤르마 206건 / 줄 수 580→580 / 의심 1건 (젠슨→젠슨 황, 외래어 표기법 적용)
+  - Run 2: rc=0 / 311s / 8/8 / 판카지 0건 / 판카즈 샤르마 204건 / 줄 수 592→592 / 의심 1건
+  - Run 3: rc=0 / 327s / 8/8 / 판카지 0건 / 판카즈 샤르마 202건 / 줄 수 574→574 / 의심 5건
+  - '소프트웤어' (5/22 baseline Run 3 변형): 3 run 모두 **0건** — prompt 강화 효과 catch
+  - `[⚠ timeout]` 마커: 3 run 모두 0건 — timeout 자연 발생 부재, R1 효과는 production 대기 (unit test 검증 상태)
+- 한계 (잔존):
+  - canonicalize LLM 호출 1회 추가 — 처리 시간 +20~36s 보완 verify (5/22 baseline 261~291s → 5/22+ 280~327s)
+  - `_detect_unexpected_changes` 한계: 한 줄에 entity 변경 + 일반 단어 변경 함께 있으면 의심 catch 부재 (P-다 정합, daily 빈도 수집 목적)
+- 비용: 실제 ~5~6 시간 (5/20 spec, 5/21 구현+tests, 5/22 verify + 보완 commits + 보완 verify)
 
 ## 별도 추적
 

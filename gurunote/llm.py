@@ -1705,6 +1705,13 @@ def test_connection(config: Optional[LLMConfig] = None) -> str:
 # abort 부재이지만 client 측 abort 충분 (본인 omlx 환경 catch).
 DEFAULT_LLM_CHUNK_TIMEOUT_SEC = 60.0
 
+# B02 한계 1 — wall-clock timeout 발생 시 padding 표기 (5/22 보완).
+# 일반 길이 미스매치 fallback 의 "[번역 누락]" 과 구분 — Obsidian 노트 timeout 빈도 catch.
+# R1 path: timeout 발생 시 retry 부재로 즉시 expected_count 만큼 본 marker 로 padding,
+# 영상 전체 rc=0 보장. timeout chunk 는 LLM grammar-recovery loop 상태로 retry 효과
+# 불확실 (5/22 Run 1 청크 5 사례) — 본인 daily 영상 완성 우선 결정 정합.
+TIMEOUT_PADDING_MARKER = "[⚠ timeout]"
+
 
 def _call_with_wall_clock_timeout(fn, timeout_sec: float, *args, **kwargs):
     """sync 함수를 별 thread 에서 실행 + wall-clock timeout 강제 (B02).
@@ -1931,9 +1938,18 @@ def _call_llm_with_index_mapping(
 
     for retry in range(max_retries):
         active_response_format = strict_response_format if use_strict_mode else loose_response_format
-        content, finish_reason = _call_llm_with_continuation(
-            config, messages, max_tokens, response_format=active_response_format
-        )
+        try:
+            content, finish_reason = _call_llm_with_continuation(
+                config, messages, max_tokens, response_format=active_response_format
+            )
+        except TimeoutError as exc:
+            # B02 한계 1 (R1) — wall-clock timeout 즉시 padding, retry 부재.
+            # grammar-recovery loop 진입 chunk 는 retry 효과 불확실 + 영상 전체 rc=0 보장 우선.
+            log_fn(
+                f"   ⚠ chunk wall-clock timeout — R1 padding 적용 "
+                f"({expected_count} segments, retry {retry + 1}/{max_retries} 부재): {exc}"
+            )
+            return [TIMEOUT_PADDING_MARKER] * expected_count
         # JSON 파싱
         try:
             parsed = json.loads(content)

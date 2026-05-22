@@ -2,15 +2,19 @@
 
 Phase 4a-1 httpx read timeout 의 한계 (streaming read 시 wall-clock 부재) 차단.
 ThreadPoolExecutor + future.result(timeout) 으로 sync 함수의 wall-clock 강제 catch.
+B02 한계 1 보완 (5/22): timeout 후 R1 padding fallback — TIMEOUT_PADDING_MARKER.
 """
 from __future__ import annotations
 
 import time
+from unittest.mock import patch
 
 import pytest
 
 from gurunote.llm import (
     DEFAULT_LLM_CHUNK_TIMEOUT_SEC,
+    TIMEOUT_PADDING_MARKER,
+    _call_llm_with_index_mapping,
     _call_with_wall_clock_timeout,
 )
 
@@ -78,3 +82,54 @@ class TestWallClockTimeout:
         elapsed = time.time() - start
         assert result == "done"
         assert elapsed < 1.0  # 5초 기다리지 않음
+
+
+# =============================================================================
+# B02 한계 1 보완 (5/22) — R1 padding fallback (TimeoutError 시 즉시 padding)
+# =============================================================================
+class TestTimeoutPaddingFallback:
+    def _mock_cfg(self):
+        from gurunote.llm import LLMConfig
+        return LLMConfig(
+            provider="openai_compatible",
+            model="mock-model",
+            api_key="mock-key",
+            base_url="http://mock.local/v1",
+        )
+
+    def test_timeout_triggers_padding(self):
+        # _call_llm_with_continuation 이 TimeoutError raise → padding 반환
+        cfg = self._mock_cfg()
+        with patch("gurunote.llm._call_llm_with_continuation") as mock_call:
+            mock_call.side_effect = TimeoutError("LLM 호출 wall-clock timeout — 60.0초 초과 (B02)")
+            outputs = _call_llm_with_index_mapping(
+                cfg, "prompt", expected_count=15, max_retries=3
+            )
+        # 모두 TIMEOUT_PADDING_MARKER 로 padding
+        assert all(o == TIMEOUT_PADDING_MARKER for o in outputs)
+
+    def test_timeout_padding_segment_count(self):
+        # padding 수 = expected_count 정합
+        cfg = self._mock_cfg()
+        with patch("gurunote.llm._call_llm_with_continuation") as mock_call:
+            mock_call.side_effect = TimeoutError("timeout")
+            outputs = _call_llm_with_index_mapping(
+                cfg, "prompt", expected_count=7, max_retries=3
+            )
+        assert len(outputs) == 7
+
+    def test_timeout_no_retry(self):
+        # R1 — timeout 후 retry 부재 (mock 호출 1회만)
+        cfg = self._mock_cfg()
+        with patch("gurunote.llm._call_llm_with_continuation") as mock_call:
+            mock_call.side_effect = TimeoutError("timeout")
+            _call_llm_with_index_mapping(
+                cfg, "prompt", expected_count=10, max_retries=3
+            )
+        # max_retries=3 이지만 timeout 즉시 padding 으로 1회 호출만
+        assert mock_call.call_count == 1
+
+    def test_timeout_marker_distinct_from_translation_missing(self):
+        # TIMEOUT_PADDING_MARKER 가 일반 "[번역 누락]" 과 구분
+        assert TIMEOUT_PADDING_MARKER != "[번역 누락]"
+        assert TIMEOUT_PADDING_MARKER == "[⚠ timeout]"

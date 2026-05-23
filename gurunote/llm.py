@@ -1952,6 +1952,71 @@ def _call_llm_once_with_reason(
     return (choice.message.content or ""), (choice.finish_reason or "unknown")
 
 
+def _build_freeform_translation_prompt(inputs: list, context: str) -> str:
+    """(가) 옵션 A prototype 1단계 — schema 부재 자유 번역 prompt.
+
+    DCCD 패턴: 1단계 자유 추론 (schema 부담 부재) → 2단계 정렬 (schema strict).
+    작은 모델에서 json_schema 강제가 추론 품질 저하시키는 issue 회피.
+
+    Args:
+        inputs: ["Speaker A: text", ...] N개.
+        context: 영상 컨텍스트 + entity_cache markdown block (B06 §4.1 정합).
+
+    Returns:
+        user prompt 문자열. system = TRANSLATION_SYSTEM_PROMPT 재사용 (Rule 1~15 보존).
+    """
+    return f"""[자유 번역 영역 — (가) 옵션 A 1단계, schema 부재]
+
+다음 {len(inputs)}개 segment 를 한국어로 번역하라:
+
+1. 형식 제약 부재 — 자유롭게 자연스러운 한국어로 번역.
+2. **각 segment 를 빈 줄 (`\\n\\n`) 로 구분하여 정확히 {len(inputs)} 개 출력**.
+3. 각 segment 형식: "한국어 화자명(English Name): 본문" (첫 등장) 또는 "한국어 화자명: 본문" (이후).
+4. timestamp 출력 절대 부재 (클라이언트가 별도 부착).
+5. "Speaker A/B/C" 영문 라벨 출력 절대 부재 — Rule 2 정합 한국어 화자명.
+6. 다른 모든 규칙 (Rule 3~11 + _SHARED_LANG_RULES) 정합 유지.
+7. segment 를 합치거나 나누지 말 것 — 입력 {len(inputs)} 개 ↔ 출력 {len(inputs)} 개.
+
+{context}
+
+Input ({len(inputs)}개 segment, 각 "Speaker X: 영어 text" 형식):
+{json.dumps({"inputs": inputs}, ensure_ascii=False, indent=2)}
+
+Output (정확히 {len(inputs)}개 한국어 segment, `\\n\\n` 구분, 다른 텍스트 부재):"""
+
+
+def _build_alignment_prompt(inputs: list, freeform_translation: str) -> str:
+    """(가) 옵션 A prototype 2단계 — 자유 번역 정렬 prompt (schema strict 강제).
+
+    1단계 자유 번역을 입력 N개에 1:1 매핑하는 N개 outputs 배열로 정렬.
+    번역 내용 변경 부재 — 재정렬·재조립만.
+
+    Args:
+        inputs: 원본 ["Speaker A: text", ...] N개.
+        freeform_translation: 1단계 자유 번역 결과 (line break 구분 추정).
+
+    Returns:
+        user prompt 문자열. system = TRANSLATION_SYSTEM_PROMPT 재사용.
+    """
+    return f"""[정렬 영역 — (가) 옵션 A 2단계, schema strict]
+
+다음 자유 번역을 입력 {len(inputs)}개 segment 에 1:1 대응하는 {len(inputs)}개 outputs 배열로 정렬하라:
+
+1. **번역 내용 변경 절대 부재** — 자유 번역 글자 그대로, 재정렬·재조립만.
+2. **outputs 배열은 정확히 {len(inputs)} 개 항목, 입력 순서 유지**.
+3. 자유 번역이 segment 합치기·나누기 했으면 입력 N 개에 맞춰 재정렬 (split·merge).
+4. JSON 형식: {{"outputs": [str, str, ...]}}
+5. timestamp 출력 절대 부재.
+
+Input ({len(inputs)}개 원본 segment):
+{json.dumps({"inputs": inputs}, ensure_ascii=False, indent=2)}
+
+자유 번역 결과 (1단계 출력):
+{freeform_translation}
+
+Output (JSON 만, 다른 텍스트 부재):"""
+
+
 def _build_index_mapping_prompt(inputs: list, context: str) -> str:
     """Index Mapping 영역의 user prompt — TRANSLATION_SYSTEM_PROMPT 가 system 영역
     이라 가정. 본 user prompt 는 출력 형식 override 만 명시 (entity / Layer 8/11/13/15
@@ -2038,8 +2103,13 @@ def _call_llm_with_index_mapping(
     expected_count: int,
     max_retries: int = 3,
     log: Optional[ProgressFn] = None,
+    enable_loose_on_timeout: bool = False,
 ) -> list:
     """Index Mapping + 길이 검증 + retry feedback.
+
+    Args:
+        enable_loose_on_timeout: True 시 timeout 발생 → strict→loose 전환 (R3-수정,
+            (가) 옵션 A 2단계 전용). 기본 False — 1-pass 동작 보존.
 
     Returns:
         List[str]: outputs 배열 (길이 = expected_count 보장, fallback 시 [번역 누락] padding)
@@ -2104,12 +2174,15 @@ def _call_llm_with_index_mapping(
             last_error_was_timeout = False
         except TimeoutError as exc:
             # R2 (5/23) — wall-clock timeout 시 strict mode 유지 retry. 90초 차단(f314d6e)
-            # 후 간헐적 폭주 chunk 가 다음 시도에서 풀릴 가능성 catch. 3회 모두 timeout
-            # 시에만 fallback (loose mode 전환 부재 — R3-수정은 (가) 추론/구조화 분리에서
-            # 통합 예정).
+            # 후 간헐적 폭주 chunk 가 다음 시도에서 풀릴 가능성 catch.
+            # R3-수정 (5/23, (가) 옵션 A 2단계 전용): enable_loose_on_timeout=True 시
+            # strict → loose 전환. 1-pass 동작 보존을 위해 기본 False.
             log_fn(
                 f"   ⚠ chunk wall-clock timeout — retry {retry + 1}/{max_retries}: {exc}"
             )
+            if enable_loose_on_timeout and use_strict_mode:
+                log_fn(f"   ↳ R3-수정: timeout 시 json_object mode 전환 (strict 부담 회피)")
+                use_strict_mode = False
             last_error_was_timeout = True
             continue
         # JSON 파싱
@@ -2169,6 +2242,66 @@ def _call_llm_with_index_mapping(
     return outputs
 
 
+def _translate_chunk_two_pass(
+    chunk: List[Segment],
+    context_block: str,
+    config: LLMConfig,
+    log: Optional[ProgressFn] = None,
+) -> List[str]:
+    """(가) 옵션 A prototype — 2-pass 자유 번역 + 정렬.
+
+    1단계: schema 부재 자유 번역 (`_build_freeform_translation_prompt`).
+        - `_call_llm` 경유 (f314d6e wall-clock + HTTP timeout 안전망 적용).
+        - response_format 부재 — 모델이 추론 부담 부재로 자연 한국어 catch.
+    2단계: 자유 번역 결과를 N개 outputs 로 정렬 (`_build_alignment_prompt`).
+        - `_call_llm_with_index_mapping` 재사용 + enable_loose_on_timeout=True (R3-수정).
+        - schema strict (minItems/maxItems=N) 으로 N개 정합 보장.
+
+    Args:
+        chunk: 입력 segment N개.
+        context_block: 영상 컨텍스트 + entity_cache (B06 §4.1).
+        config: LLM 호출용.
+        log: 진행 콜백.
+
+    Returns:
+        List[str]: 정렬된 outputs N개. fallback 시 padding 적용.
+    """
+    log_fn = log or (lambda _m: None)
+    inputs = [f"{s.speaker}: {s.text}" for s in chunk]
+
+    # 1단계 — 자유 번역.
+    log_fn(f"   ↳ 2-pass 1단계: 자유 번역 ({len(inputs)} segments)")
+    freeform_prompt = _build_freeform_translation_prompt(inputs, context_block)
+    try:
+        freeform = _call_llm(
+            config,
+            system=TRANSLATION_SYSTEM_PROMPT,
+            user=freeform_prompt,
+            max_tokens=config.translation_max_tokens or TRANSLATION_MAX_TOKENS,
+        )
+    except TimeoutError as exc:
+        # 1단계 timeout — 2단계 정렬 input 부재 → 즉시 fallback padding.
+        log_fn(f"   ⚠ 2-pass 1단계 timeout — 전체 fallback ({len(inputs)} segments): {exc}")
+        return [TIMEOUT_PADDING_MARKER] * len(inputs)
+
+    if not freeform or not freeform.strip():
+        log_fn(f"   ⚠ 2-pass 1단계 빈 응답 — 전체 fallback ({len(inputs)} segments)")
+        return ["[번역 누락]"] * len(inputs)
+
+    # 2단계 — 정렬 (schema strict + R3-수정 loose 전환).
+    log_fn(f"   ↳ 2-pass 2단계: 정렬 ({len(inputs)} outputs schema strict)")
+    alignment_prompt = _build_alignment_prompt(inputs, freeform)
+    outputs = _call_llm_with_index_mapping(
+        config,
+        alignment_prompt,
+        expected_count=len(inputs),
+        max_retries=3,
+        log=log,
+        enable_loose_on_timeout=True,
+    )
+    return outputs
+
+
 def translate_chunk_index_mapping_v2(
     chunk: List[Segment],
     context_block: str,
@@ -2178,13 +2311,21 @@ def translate_chunk_index_mapping_v2(
     """단일 chunk 영역의 Index Mapping 적용 — 체크포인트 2 verify 영역.
 
     체크포인트 3 시 translate_transcript 영역 통합 결정.
+
+    (가) 옵션 A prototype 토글 (5/23):
+        GURUNOTE_TWO_PASS=1 환경변수 시 2-pass 분리 (자유 번역 → 정렬).
+        기본 (off) 시 기존 1-pass 보존 — daily 환경 영향 부재.
     """
     inputs = [f"{s.speaker}: {s.text}" for s in chunk]
-    prompt = _build_index_mapping_prompt(inputs, context_block)
 
-    outputs = _call_llm_with_index_mapping(
-        config, prompt, expected_count=len(inputs), max_retries=3, log=log,
-    )
+    # (가) 토글 — 환경변수 기반, 기본 off (1-pass 보존).
+    if os.environ.get("GURUNOTE_TWO_PASS", "0") == "1":
+        outputs = _translate_chunk_two_pass(chunk, context_block, config, log)
+    else:
+        prompt = _build_index_mapping_prompt(inputs, context_block)
+        outputs = _call_llm_with_index_mapping(
+            config, prompt, expected_count=len(inputs), max_retries=3, log=log,
+        )
 
     # 클라이언트 측 timestamp 부착 — zip 으로 결정론적 매핑 (drift 불가능).
     # Output 의 korean 영역에 화자 라벨 (예: "판카즈 샤르마(Pankaj Sharma): 본문")

@@ -416,6 +416,8 @@ def _call_llm_once(config: LLMConfig, system: str, user: str, max_tokens: int) -
     if config.base_url:
         openai_kwargs["base_url"] = config.base_url
     client = OpenAI(**openai_kwargs)
+    # thinking_budget=0 — omlx 정식 thinking 강제 (omlx 설정 무관 일관성, 5/23 진단).
+    # OpenAI 호환 API 관례상 모르는 파라미터는 무시 — 다른 provider 호환 영향 부재.
     resp = client.chat.completions.create(
         model=config.model,
         max_tokens=max_tokens,
@@ -424,6 +426,7 @@ def _call_llm_once(config: LLMConfig, system: str, user: str, max_tokens: int) -
             {"role": "system", "content": system},
             {"role": "user", "content": user},
         ],
+        extra_body={"thinking_budget": 0},
     )
     return (resp.choices[0].message.content or "").strip()
 
@@ -1305,6 +1308,119 @@ def _load_entity_cache(
 
 
 # =============================================================================
+# Health check — omlx xgrammar 사전 점검 (5/23)
+# =============================================================================
+# 배경: omlx 0.3.8→0.3.9 업그레이드가 xgrammar 모듈 제거 → structured output 강제 부재
+# → 전체 chunk timeout 다발 (5/22~5/23 4개 모델 비교에서 27b 모델 두 개 case catch).
+# 본인 결정 (5/23): GuruNote 가 사전 점검하여 부재 시 RuntimeError + 복구 안내.
+# 캐싱: omlx `/v1/models` 응답의 `created` 필드 (서버 시작 시점 단일값) 를 signature 로
+# 사용 → omlx 재시작 정확 감지. 6시간 TTL fallback.
+
+_XGRAMMAR_CHECK_CACHE: dict = {
+    "checked_at": 0.0,
+    "omlx_signature": None,
+    "result": None,
+}
+_XGRAMMAR_CHECK_TTL_SEC = 21600  # 6시간 fallback
+
+
+def _get_omlx_signature(config: "LLMConfig") -> Optional[str]:
+    """omlx 서버 재시작 감지용 signature — `/v1/models` 응답의 `created` 첫 timestamp.
+
+    omlx 의 모든 model `created` 필드는 서버 시작 시점 단일값 (5/23 실측 catch).
+    재시작 시 변경 → cache invalidate.
+
+    Returns:
+        signature str, omlx 접근 실패 시 None (TTL fallback 사용).
+    """
+    if not config.base_url:
+        return None
+    try:
+        import httpx  # noqa: PLC0415
+        headers = {}
+        if config.api_key:
+            headers["Authorization"] = f"Bearer {config.api_key}"
+        resp = httpx.get(
+            f"{config.base_url.rstrip('/')}/models",
+            headers=headers,
+            timeout=5.0,
+        )
+        if resp.status_code != 200:
+            return None
+        data = resp.json()
+        models = data.get("data", [])
+        if not models:
+            return None
+        return str(models[0].get("created", ""))
+    except Exception:
+        return None
+
+
+def _check_xgrammar_available(
+    config: "LLMConfig",
+    log: Optional[ProgressFn] = None,
+) -> bool:
+    """omlx xgrammar 작동 사전 점검 — 최소 json_schema 요청 1회. 캐싱 적용.
+
+    omlx 0.3.9 의 xgrammar 모듈이 부재 시 schema strict 가 무시되어 구조 강제 부재
+    → grammar-recovery loop → wall-clock timeout 다발 (5/22 catch).
+
+    Args:
+        config: LLM 호출용. provider 가 openai_compatible 부재 시 skip (True).
+        log: 진행 콜백.
+
+    Returns:
+        True: xgrammar 정상 (또는 점검 대상 부재). False: 부재 — 호출자가 차단.
+    """
+    log_fn = log or (lambda _m: None)
+    # openai_compatible 외 provider 는 본 점검 부재 (anthropic / gemini 등은 schema path 다름).
+    if config.provider != "openai_compatible":
+        return True
+
+    now = time.time()
+    sig = _get_omlx_signature(config)
+    cache = _XGRAMMAR_CHECK_CACHE
+    if (
+        cache["result"] is not None
+        and cache["omlx_signature"] == sig
+        and sig is not None
+        and (now - cache["checked_at"]) < _XGRAMMAR_CHECK_TTL_SEC
+    ):
+        return cache["result"]
+
+    test_schema = {
+        "type": "object",
+        "properties": {"ok": {"type": "string"}},
+        "required": ["ok"],
+        "additionalProperties": False,
+    }
+    try:
+        content, _fr = _call_llm_with_continuation(
+            config,
+            [{"role": "user", "content": 'Return JSON: {"ok": "yes"}'}],
+            max_tokens=32,
+            response_format={
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "xgrammar_healthcheck",
+                    "schema": test_schema,
+                    "strict": True,
+                },
+            },
+        )
+        parsed = json.loads(content)
+        result = isinstance(parsed, dict) and "ok" in parsed
+    except Exception as exc:
+        log_fn(f"   ⚠ xgrammar 점검 실패: {exc}")
+        result = False
+
+    cache["checked_at"] = now
+    cache["omlx_signature"] = sig
+    cache["result"] = result
+    return result
+
+
+# =============================================================================
 # Step 3: 번역
 # =============================================================================
 def translate_transcript(
@@ -1330,6 +1446,15 @@ def translate_transcript(
     """
     log = progress or (lambda _msg: None)
     config = config or LLMConfig.from_env()
+
+    # 5/23 — omlx xgrammar 사전 점검 (structured output 강제 부재 시 timeout 다발 catch).
+    if not _check_xgrammar_available(config, log):
+        raise RuntimeError(
+            "omlx xgrammar 미작동 — structured output 강제 부재 → 처리 시 timeout 다발 + "
+            "품질 저하 위험. Episilon 서버에서 복구 필요:\n"
+            "  brew reinstall omlx --with-grammar\n"
+            "  brew services restart jundot/omlx/omlx"
+        )
 
     chunks = chunk_segments(transcript.segments)
     log(f"🌐 LLM 번역 시작 — {len(chunks)} 청크 ({config.provider}/{config.model})")
@@ -1779,6 +1904,9 @@ def _call_llm_once_with_reason(
         "messages": messages,
         "max_tokens": max_tokens,
         "temperature": config.temperature,
+        # thinking_budget=0 — omlx 정식 thinking 강제 (5/23 진단). openai SDK extra_body
+        # 경유로 알려지지 않은 파라미터 호환성 catch.
+        "extra_body": {"thinking_budget": 0},
     }
     if response_format:
         kwargs["response_format"] = response_format

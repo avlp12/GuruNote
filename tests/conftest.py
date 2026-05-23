@@ -61,6 +61,20 @@ def _isolate_entity_cache(tmp_path, monkeypatch):
     monkeypatch.setattr(_llm, "CACHE_DIR", tmp_path / "entity_cache")
 
 
+@pytest.fixture(autouse=True)
+def _reset_xgrammar_check_cache():
+    """5/23 — `_XGRAMMAR_CHECK_CACHE` 를 매 test 시작 시 초기화.
+
+    test 간 cache 오염 차단 — 한 test 의 결과가 다음 test 에 영향 부재.
+    """
+    import gurunote.llm as _llm
+
+    _llm._XGRAMMAR_CHECK_CACHE["checked_at"] = 0.0
+    _llm._XGRAMMAR_CHECK_CACHE["omlx_signature"] = None
+    _llm._XGRAMMAR_CHECK_CACHE["result"] = None
+    yield
+
+
 @pytest.fixture
 def sample_segments():
     """Sub-C fallback 테스트용 Segment 리스트.

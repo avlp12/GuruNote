@@ -133,3 +133,38 @@ class TestTimeoutPaddingFallback:
         # TIMEOUT_PADDING_MARKER 가 일반 "[번역 누락]" 과 구분
         assert TIMEOUT_PADDING_MARKER != "[번역 누락]"
         assert TIMEOUT_PADDING_MARKER == "[⚠ timeout]"
+
+
+# =============================================================================
+# B02 한계 1 수정 (5/23) — manual shutdown(wait=False) 즉시 raise 검증
+# =============================================================================
+class TestImmediateRaiseOnTimeout:
+    """5/23 수정: `with ThreadPoolExecutor` 의 shutdown(wait=True) 결함 catch.
+
+    수정 전: timeout 후 thread 완료까지 대기 → 실질 wall-clock 부재 (964초 폭주).
+    수정 후: manual shutdown(wait=False) → caller 즉시 raise.
+
+    본 test 는 wall-clock 측정으로 결함 catch — 매우 긴 sleep 의 fn 을 짧은 timeout 으로
+    호출 시 caller 가 timeout 직후 즉시 진입하는지 검증.
+    """
+
+    def test_caller_returns_immediately_on_timeout(self):
+        # 매우 긴 sleep (10초) + 짧은 timeout (0.5초) → caller 가 ~0.5초 안에 raise 받음
+        start = time.time()
+        with pytest.raises(TimeoutError):
+            _call_with_wall_clock_timeout(time.sleep, 0.5, 10.0)
+        elapsed = time.time() - start
+        # 수정 전: ~10초 대기 (with 블록 shutdown wait=True 결함)
+        # 수정 후: ~0.5초에 즉시 raise (manual shutdown wait=False)
+        assert elapsed < 2.0, (
+            f"caller 가 timeout 후 즉시 진입 부재 — elapsed={elapsed:.2f}s "
+            f"(with 블록 shutdown(wait=True) 결함 의심)"
+        )
+
+    def test_very_long_blocking_fn_does_not_block_caller(self):
+        # 30초 sleep + 0.3초 timeout — 수정 전이면 30초 대기, 수정 후 ~0.3초.
+        start = time.time()
+        with pytest.raises(TimeoutError):
+            _call_with_wall_clock_timeout(time.sleep, 0.3, 30.0)
+        elapsed = time.time() - start
+        assert elapsed < 2.0, f"30초 blocking fn 이 caller 차단 — elapsed={elapsed:.2f}s"

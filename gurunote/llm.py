@@ -418,16 +418,21 @@ def _call_llm_once(config: LLMConfig, system: str, user: str, max_tokens: int) -
     client = OpenAI(**openai_kwargs)
     # thinking_budget=0 — omlx 정식 thinking 강제 (omlx 설정 무관 일관성, 5/23 진단).
     # OpenAI 호환 API 관례상 모르는 파라미터는 무시 — 다른 provider 호환 영향 부재.
-    resp = client.chat.completions.create(
-        model=config.model,
-        max_tokens=max_tokens,
-        temperature=config.temperature,
-        messages=[
-            {"role": "system", "content": system},
-            {"role": "user", "content": user},
-        ],
-        extra_body={"thinking_budget": 0},
-    )
+    # timeout — HTTP-level read timeout (batch 응답 정확 작동, 5/23 진단 stream=False catch).
+    # ThreadPoolExecutor wrap (Step 3 통합)이 manual shutdown 안전망 결합.
+    def _create():
+        return client.chat.completions.create(
+            model=config.model,
+            max_tokens=max_tokens,
+            temperature=config.temperature,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            extra_body={"thinking_budget": 0},
+            timeout=LLM_HTTP_TIMEOUT_SEC,
+        )
+    resp = _call_with_wall_clock_timeout(_create, LLM_HTTP_TIMEOUT_SEC)
     return (resp.choices[0].message.content or "").strip()
 
 
@@ -1837,9 +1842,22 @@ DEFAULT_LLM_CHUNK_TIMEOUT_SEC = 60.0
 # 불확실 (5/22 Run 1 청크 5 사례) — 본인 daily 영상 완성 우선 결정 정합.
 TIMEOUT_PADDING_MARKER = "[⚠ timeout]"
 
+# B02 한계 1 수정 (5/23) — HTTP-level read timeout (openai SDK timeout 파라미터).
+# 5/23 진단: `with ThreadPoolExecutor` 의 __exit__ shutdown(wait=True) 가 60초 raise 후에도
+# thread 끝까지 대기 → 실질 wall-clock 부재 (964초 폭주 발생). 두 안전장치 동시 적용:
+#   1. HTTP-level timeout (openai SDK → httpx read timeout) — batch 응답에서 정확 작동
+#   2. ThreadPoolExecutor shutdown(wait=False) — HTTP timeout 부재 path 안전망
+# 정상 chunk 처리 시간(5/23 verify 기준 24~84초) 통과 + 폭주(964초) 차단 정합.
+LLM_HTTP_TIMEOUT_SEC = 90.0
+
 
 def _call_with_wall_clock_timeout(fn, timeout_sec: float, *args, **kwargs):
     """sync 함수를 별 thread 에서 실행 + wall-clock timeout 강제 (B02).
+
+    5/23 수정: `with ThreadPoolExecutor` 의 __exit__ shutdown(wait=True) 가 timeout
+    raise 후에도 thread 완료까지 대기하던 결함 catch 후, manual `shutdown(wait=False)`
+    로 변경. timeout 시 caller 즉시 raise, thread 는 백그라운드 잔류 (HTTP-level
+    timeout 으로 thread 자체도 곧 종료).
 
     Args:
         fn: sync callable.
@@ -1850,17 +1868,23 @@ def _call_with_wall_clock_timeout(fn, timeout_sec: float, *args, **kwargs):
         fn 의 return 값.
 
     Raises:
-        TimeoutError: timeout_sec 초과 시.
+        TimeoutError: timeout_sec 초과 시 즉시 raise (thread 완료 대기 부재).
         fn 자체 raise 시 본 exception propagate.
     """
-    with ThreadPoolExecutor(max_workers=1) as ex:
-        future = ex.submit(fn, *args, **kwargs)
-        try:
-            return future.result(timeout=timeout_sec)
-        except FutureTimeoutError:
-            raise TimeoutError(
-                f"LLM 호출 wall-clock timeout — {timeout_sec}초 초과 (B02)"
-            )
+    ex = ThreadPoolExecutor(max_workers=1)
+    future = ex.submit(fn, *args, **kwargs)
+    try:
+        result = future.result(timeout=timeout_sec)
+        # 정상 완료 시 immediate cleanup (wait=True 정합, thread 이미 종료).
+        ex.shutdown(wait=True)
+        return result
+    except FutureTimeoutError:
+        # 핵심: wait=False — thread 완료 대기 부재로 caller 즉시 raise.
+        # cancel_futures=True — 미시작 future cancel (Python 3.9+).
+        ex.shutdown(wait=False, cancel_futures=True)
+        raise TimeoutError(
+            f"LLM 호출 wall-clock timeout — {timeout_sec}초 초과 (B02)"
+        )
 
 
 def _call_llm_once_with_reason(
@@ -1907,13 +1931,18 @@ def _call_llm_once_with_reason(
         # thinking_budget=0 — omlx 정식 thinking 강제 (5/23 진단). openai SDK extra_body
         # 경유로 알려지지 않은 파라미터 호환성 catch.
         "extra_body": {"thinking_budget": 0},
+        # HTTP-level read timeout (5/23 수정) — batch 응답에서 정확 작동 (stream=False catch).
+        # ThreadPool wrapper 결합으로 이중 안전장치.
+        "timeout": LLM_HTTP_TIMEOUT_SEC,
     }
     if response_format:
         kwargs["response_format"] = response_format
     if timeout is not None:
+        # caller 가 명시 timeout 지정 시 override (xgrammar healthcheck path 등).
         kwargs["timeout"] = timeout
 
     # B02 — wall-clock timeout 강제 (slow chunk grammar-recovery loop 차단).
+    # 5/23 수정: manual shutdown(wait=False) 적용 — timeout 시 caller 즉시 raise.
     resp = _call_with_wall_clock_timeout(
         client.chat.completions.create,
         DEFAULT_LLM_CHUNK_TIMEOUT_SEC,

@@ -85,9 +85,11 @@ class TestWallClockTimeout:
 
 
 # =============================================================================
-# B02 한계 1 보완 (5/22) — R1 padding fallback (TimeoutError 시 즉시 padding)
+# B02 한계 1 R2 (5/23) — timeout strict retry + 3회 모두 timeout 시 padding fallback
 # =============================================================================
-class TestTimeoutPaddingFallback:
+# 의도 변경: R1(즉시 padding, retry 부재) → R2(strict retry 후 fallback)
+# 배경: f314d6e 가 timeout 90초 즉시 차단 → retry 토대 마련. 간헐적 폭주 chunk 복구.
+class TestTimeoutRetryR2:
     def _mock_cfg(self):
         from gurunote.llm import LLMConfig
         return LLMConfig(
@@ -97,37 +99,96 @@ class TestTimeoutPaddingFallback:
             base_url="http://mock.local/v1",
         )
 
-    def test_timeout_triggers_padding(self):
-        # _call_llm_with_continuation 이 TimeoutError raise → padding 반환
+    def test_three_consecutive_timeouts_fallback_to_timeout_marker(self):
+        # R2 — 3회 모두 timeout 시 [⚠ timeout] marker 로 fallback
         cfg = self._mock_cfg()
         with patch("gurunote.llm._call_llm_with_continuation") as mock_call:
             mock_call.side_effect = TimeoutError("LLM 호출 wall-clock timeout — 60.0초 초과 (B02)")
             outputs = _call_llm_with_index_mapping(
                 cfg, "prompt", expected_count=15, max_retries=3
             )
-        # 모두 TIMEOUT_PADDING_MARKER 로 padding
+        # 모두 TIMEOUT_PADDING_MARKER 로 padding (마지막 시도 timeout → marker 결정)
         assert all(o == TIMEOUT_PADDING_MARKER for o in outputs)
+        assert len(outputs) == 15
 
-    def test_timeout_padding_segment_count(self):
-        # padding 수 = expected_count 정합
-        cfg = self._mock_cfg()
-        with patch("gurunote.llm._call_llm_with_continuation") as mock_call:
-            mock_call.side_effect = TimeoutError("timeout")
-            outputs = _call_llm_with_index_mapping(
-                cfg, "prompt", expected_count=7, max_retries=3
-            )
-        assert len(outputs) == 7
-
-    def test_timeout_no_retry(self):
-        # R1 — timeout 후 retry 부재 (mock 호출 1회만)
+    def test_timeout_triggers_retry_not_immediate_padding(self):
+        # R2 핵심 — timeout 시 즉시 padding 부재, retry 진입 (max_retries 만큼 호출)
         cfg = self._mock_cfg()
         with patch("gurunote.llm._call_llm_with_continuation") as mock_call:
             mock_call.side_effect = TimeoutError("timeout")
             _call_llm_with_index_mapping(
                 cfg, "prompt", expected_count=10, max_retries=3
             )
-        # max_retries=3 이지만 timeout 즉시 padding 으로 1회 호출만
-        assert mock_call.call_count == 1
+        # R1 (이전): 즉시 padding → 1회만 호출
+        # R2 (현행): retry 3회 진입
+        assert mock_call.call_count == 3
+
+    def test_timeout_then_success_recovers(self):
+        # R2 본질 의도 — 1회 timeout 후 2회차 정상 → 정상 출력 복구
+        import json as _json
+        cfg = self._mock_cfg()
+        valid_outputs = [f"item_{i}" for i in range(5)]
+        valid_json = _json.dumps({"outputs": valid_outputs}, ensure_ascii=False)
+        with patch("gurunote.llm._call_llm_with_continuation") as mock_call:
+            mock_call.side_effect = [
+                TimeoutError("timeout"),
+                (valid_json, "stop"),
+            ]
+            outputs = _call_llm_with_index_mapping(
+                cfg, "prompt", expected_count=5, max_retries=3
+            )
+        # padding 부재 + 정상 outputs 복구
+        assert outputs == valid_outputs
+        assert mock_call.call_count == 2
+
+    def test_two_timeouts_then_success_recovers(self):
+        # R2 — 2회 연속 timeout 후 3회차 정상 → 정상 출력 복구 (max_retries 한계 안)
+        import json as _json
+        cfg = self._mock_cfg()
+        valid_outputs = ["a", "b", "c"]
+        valid_json = _json.dumps({"outputs": valid_outputs}, ensure_ascii=False)
+        with patch("gurunote.llm._call_llm_with_continuation") as mock_call:
+            mock_call.side_effect = [
+                TimeoutError("timeout"),
+                TimeoutError("timeout"),
+                (valid_json, "stop"),
+            ]
+            outputs = _call_llm_with_index_mapping(
+                cfg, "prompt", expected_count=3, max_retries=3
+            )
+        assert outputs == valid_outputs
+        assert mock_call.call_count == 3
+
+    def test_json_fail_then_timeout_uses_timeout_marker(self):
+        # 마지막 시도가 timeout 이면 marker = [⚠ timeout] (last_error_was_timeout 추적 catch)
+        cfg = self._mock_cfg()
+        with patch("gurunote.llm._call_llm_with_continuation") as mock_call:
+            mock_call.side_effect = [
+                ("invalid json", "stop"),
+                ("invalid json", "stop"),
+                TimeoutError("timeout"),
+            ]
+            outputs = _call_llm_with_index_mapping(
+                cfg, "prompt", expected_count=4, max_retries=3
+            )
+        # 3회 모두 실패, 마지막 timeout → [⚠ timeout] padding
+        assert all(o == TIMEOUT_PADDING_MARKER for o in outputs)
+
+    def test_timeout_then_json_fail_uses_translation_missing_marker(self):
+        # 마지막 시도가 JSON 실패면 marker = [번역 누락] (timeout 부재로 reset 정합)
+        cfg = self._mock_cfg()
+        with patch("gurunote.llm._call_llm_with_continuation") as mock_call:
+            mock_call.side_effect = [
+                TimeoutError("timeout"),
+                ("invalid json", "stop"),
+                ("invalid json", "stop"),
+            ]
+            outputs = _call_llm_with_index_mapping(
+                cfg, "prompt", expected_count=4, max_retries=3
+            )
+        # 마지막이 JSON 실패 → [번역 누락] marker (timeout marker 부재)
+        assert all(o == "[번역 누락]" for o in outputs)
+        assert all(o != TIMEOUT_PADDING_MARKER for o in outputs)
 
     def test_timeout_marker_distinct_from_translation_missing(self):
         # TIMEOUT_PADDING_MARKER 가 일반 "[번역 누락]" 과 구분

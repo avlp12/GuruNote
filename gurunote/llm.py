@@ -2092,6 +2092,8 @@ def _call_llm_with_index_mapping(
     max_tokens = config.translation_max_tokens or TRANSLATION_MAX_TOKENS
     outputs: list = []
     use_strict_mode = True
+    # R2 (5/23) — timeout 시 마지막 시도가 timeout 이었는지 추적 (fallback marker 결정).
+    last_error_was_timeout = False
 
     for retry in range(max_retries):
         active_response_format = strict_response_format if use_strict_mode else loose_response_format
@@ -2099,14 +2101,17 @@ def _call_llm_with_index_mapping(
             content, finish_reason = _call_llm_with_continuation(
                 config, messages, max_tokens, response_format=active_response_format
             )
+            last_error_was_timeout = False
         except TimeoutError as exc:
-            # B02 한계 1 (R1) — wall-clock timeout 즉시 padding, retry 부재.
-            # grammar-recovery loop 진입 chunk 는 retry 효과 불확실 + 영상 전체 rc=0 보장 우선.
+            # R2 (5/23) — wall-clock timeout 시 strict mode 유지 retry. 90초 차단(f314d6e)
+            # 후 간헐적 폭주 chunk 가 다음 시도에서 풀릴 가능성 catch. 3회 모두 timeout
+            # 시에만 fallback (loose mode 전환 부재 — R3-수정은 (가) 추론/구조화 분리에서
+            # 통합 예정).
             log_fn(
-                f"   ⚠ chunk wall-clock timeout — R1 padding 적용 "
-                f"({expected_count} segments, retry {retry + 1}/{max_retries} 부재): {exc}"
+                f"   ⚠ chunk wall-clock timeout — retry {retry + 1}/{max_retries}: {exc}"
             )
-            return [TIMEOUT_PADDING_MARKER] * expected_count
+            last_error_was_timeout = True
+            continue
         # JSON 파싱
         try:
             parsed = json.loads(content)
@@ -2150,13 +2155,15 @@ def _call_llm_with_index_mapping(
             ),
         })
 
-    # 3 retries 모두 실패 — fallback (padding 또는 truncate)
+    # 3 retries 모두 실패 — fallback (padding 또는 truncate).
+    # R2 (5/23): 마지막 시도가 timeout 이면 [⚠ timeout] marker, 그 외 일반 [번역 누락].
+    fallback_marker = TIMEOUT_PADDING_MARKER if last_error_was_timeout else "[번역 누락]"
     log_fn(
         f"   ⚠ Index Mapping retry {max_retries}회 실패 — fallback "
-        f"({len(outputs)} → {expected_count})"
+        f"({len(outputs)} → {expected_count}, marker={fallback_marker!r})"
     )
     if len(outputs) < expected_count:
-        outputs = list(outputs) + ["[번역 누락]"] * (expected_count - len(outputs))
+        outputs = list(outputs) + [fallback_marker] * (expected_count - len(outputs))
     else:
         outputs = list(outputs)[:expected_count]
     return outputs

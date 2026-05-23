@@ -27,7 +27,9 @@ from gurunote.types import Segment, Transcript
 ProgressFn = Callable[[str], None]
 
 DEFAULT_MLX_MODEL = "mlx-community/whisper-large-v3-mlx"
-DEFAULT_DIARIZATION_MODEL = "pyannote/speaker-diarization-3.1"
+# 5/23 — community-1 default (speaker confusion marked reduction over 3.1, pyannote 4.0+).
+# Rollback path: PYANNOTE_DIARIZATION_MODEL=pyannote/speaker-diarization-3.1 (line 315 catch).
+DEFAULT_DIARIZATION_MODEL = "pyannote/speaker-diarization-community-1"
 
 
 # =============================================================================

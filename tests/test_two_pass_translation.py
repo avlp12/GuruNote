@@ -44,10 +44,11 @@ def mock_cfg():
 
 @pytest.fixture
 def sample_chunk():
+    # 5/23 — STT speaker 실제 형식 ("A"/"B" 단일 영문 1글자, checkpoint4 verify 정합).
     return [
-        Segment(speaker="Speaker A", start=10.0, end=12.0, text="Hello world"),
-        Segment(speaker="Speaker B", start=13.0, end=15.0, text="How are you"),
-        Segment(speaker="Speaker A", start=16.0, end=18.0, text="I am fine"),
+        Segment(speaker="A", start=10.0, end=12.0, text="Hello world"),
+        Segment(speaker="B", start=13.0, end=15.0, text="How are you"),
+        Segment(speaker="A", start=16.0, end=18.0, text="I am fine"),
     ]
 
 
@@ -141,9 +142,9 @@ class TestToggle:
 
     def test_toggle_on_uses_two_pass(self, mock_cfg, sample_chunk, monkeypatch):
         monkeypatch.setenv("GURUNOTE_TWO_PASS", "1")
-        freeform_text = "티파니: 안녕\n\n판카즈: 안녕\n\n티파니: 좋아"
-        # 2단계 prefix 잔존 시 A5 가 strip → "[00:10] 안녕" 등으로 출력 (test 의도 catch)
-        aligned_json = json.dumps({"outputs": ["A: 안녕", "B: 안녕", "A: 좋아"]}, ensure_ascii=False)
+        # 5/23 — 2-pass 입력 본문만 (화자 부재), 출력도 본문만
+        freeform_text = "안녕\n\n안녕\n\n좋아"
+        aligned_json = json.dumps({"outputs": ["안녕", "안녕", "좋아"]}, ensure_ascii=False)
         with patch("gurunote.llm._call_llm") as mock_freeform, \
              patch("gurunote.llm._call_llm_with_continuation") as mock_align:
             mock_freeform.return_value = freeform_text
@@ -152,10 +153,10 @@ class TestToggle:
         # 2-pass — 1단계 + 2단계 각 1회
         assert mock_freeform.call_count == 1
         assert mock_align.call_count == 1
-        # A5 strip 후 client zip — timestamp + prefix 없는 본문
-        assert "[00:10] 안녕" in result
-        assert "[00:10] A: 안녕" not in result   # prefix strip catch
-        assert "[00:13] 안녕" in result
+        # 5/23 — client zip 코드 부착: timestamp + 화자 라벨 (cache 부재 fallback "화자 N") + 본문
+        assert "[00:10] 화자 1: 안녕" in result  # speaker "A" → "화자 1" fallback
+        assert "[00:13] 화자 2: 안녕" in result  # speaker "B" → "화자 2"
+        assert "[00:16] 화자 1: 좋아" in result  # speaker "A" → "화자 1" (이후)
 
     def test_toggle_value_other_than_one_uses_one_pass(self, mock_cfg, sample_chunk, monkeypatch):
         # "0", "false", 임의 값 모두 1-pass (오로지 "1"만 활성)
@@ -336,3 +337,137 @@ class TestTwoPassWithPostProcess:
             mock_align.return_value = (aligned_json, "stop")
             outputs = _translate_chunk_two_pass(sample_chunk, "", mock_cfg)
         assert outputs[1] == "[번역 누락]"
+
+
+# =============================================================================
+# 5/23 — 화자 라벨 코드 부착 (식별 1회 + 결정론적 표기)
+# =============================================================================
+from gurunote.llm import (
+    CACHE_SCHEMA_VERSION,
+    _bootstrap_entity_cache_from_metadata,
+    _load_entity_cache_full,
+    _resolve_speaker_label,
+    _save_entity_cache,
+)
+
+
+class TestResolveSpeakerLabel:
+    def test_first_occurrence_with_cache_uses_english_annotation(self):
+        cache = {"A": {"english": "Pankaj Sharma", "korean": "판카즈 샤르마"}}
+        seen: set = set()
+        label = _resolve_speaker_label("A", cache, seen)
+        assert label == "판카즈 샤르마(Pankaj Sharma)"
+        assert "A" in seen   # 첫 등장 catch 후 set 추가
+
+    def test_subsequent_occurrence_no_english_annotation(self):
+        cache = {"A": {"english": "Pankaj Sharma", "korean": "판카즈 샤르마"}}
+        seen: set = {"A"}   # 이미 catch
+        label = _resolve_speaker_label("A", cache, seen)
+        assert label == "판카즈 샤르마"
+
+    def test_fallback_when_cache_missing(self):
+        # cache 부재 fallback "화자 N" (A→1, B→2, ...)
+        seen: set = set()
+        assert _resolve_speaker_label("A", {}, seen) == "화자 1"
+        assert _resolve_speaker_label("B", None, seen) == "화자 2"
+        assert _resolve_speaker_label("C", {}, seen) == "화자 3"
+        assert _resolve_speaker_label("Z", {}, seen) == "화자 26"
+
+    def test_fallback_for_unknown_speaker_in_cache(self):
+        # cache 에 있는 speaker 외엔 fallback
+        cache = {"A": {"english": "Pankaj", "korean": "판카즈"}}
+        seen: set = set()
+        label = _resolve_speaker_label("B", cache, seen)
+        assert label == "화자 2"
+
+    def test_fallback_for_empty_korean(self):
+        # korean 빈 string 시 fallback
+        cache = {"A": {"english": "Pankaj", "korean": ""}}
+        seen: set = set()
+        label = _resolve_speaker_label("A", cache, seen)
+        assert label == "화자 1"
+
+    def test_first_etc_after_initial_visit(self):
+        # 영상 단위 첫 등장 catch — set 변화
+        cache = {"A": {"english": "Pankaj Sharma", "korean": "판카즈 샤르마"}}
+        seen: set = set()
+        first = _resolve_speaker_label("A", cache, seen)
+        second = _resolve_speaker_label("A", cache, seen)
+        assert first == "판카즈 샤르마(Pankaj Sharma)"   # 영문 병기
+        assert second == "판카즈 샤르마"                   # 영문 병기 부재
+
+
+class TestBootstrapWithSpeakers:
+    def test_bootstrap_extracts_speakers(self, mock_cfg):
+        ctx = {
+            "title": "NVIDIA GTC Studio",
+            "description": "Pankaj Sharma from Schneider Electric and Tiffany Janzen.",
+        }
+        with patch("gurunote.llm._call_llm") as mock_call:
+            mock_call.return_value = (
+                "Pankaj Sharma → 판카즈 샤르마 [person]\n"
+                "Tiffany Janzen → 티파니 잔젠 [person]\n"
+                "Schneider Electric → 슈나이더 일렉트릭 [company]\n"
+                "SPEAKER A => Pankaj Sharma | 판카즈 샤르마\n"
+                "SPEAKER B => Tiffany Janzen | 티파니 잔젠"
+            )
+            result = _bootstrap_entity_cache_from_metadata(ctx, None, mock_cfg)
+        # __speakers__ 마커 catch
+        speakers = result.pop("__speakers__", {})
+        assert speakers == {
+            "A": {"english": "Pankaj Sharma", "korean": "판카즈 샤르마"},
+            "B": {"english": "Tiffany Janzen", "korean": "티파니 잔젠"},
+        }
+        # entity 도 catch
+        assert "Pankaj Sharma" in result
+        assert "Schneider Electric" in result
+
+    def test_bootstrap_speakers_absent_when_llm_skips(self, mock_cfg):
+        # SPEAKER 라인 부재 시 speakers 부재 (entity 만)
+        ctx = {"title": "Test"}
+        with patch("gurunote.llm._call_llm") as mock_call:
+            mock_call.return_value = "Pankaj Sharma → 판카즈 샤르마 [person]"
+            result = _bootstrap_entity_cache_from_metadata(ctx, None, mock_cfg)
+        # 마커 키 부재 catch
+        assert "__speakers__" not in result
+        assert "Pankaj Sharma" in result
+
+
+class TestCacheSchemaV2:
+    def test_save_load_with_speakers(self):
+        entities = {"P": {"korean": "판카즈", "type": "person", "source": "bootstrap"}}
+        speakers = {"A": {"english": "Pankaj", "korean": "판카즈"}}
+        _save_entity_cache("vid_v2", "Test V2", entities, speakers=speakers)
+        loaded = _load_entity_cache_full("vid_v2")
+        assert loaded is not None
+        assert loaded["entities"] == entities
+        assert loaded["speakers"] == speakers
+
+    def test_save_without_speakers_empty_dict(self):
+        entities = {"P": {"korean": "판카즈", "type": "person", "source": "bootstrap"}}
+        _save_entity_cache("vid_no_sp", "No Speakers", entities)
+        loaded = _load_entity_cache_full("vid_no_sp")
+        assert loaded is not None
+        assert loaded["speakers"] == {}
+
+    def test_v1_cache_invalidated(self, tmp_path, monkeypatch):
+        # v1 cache (cache_schema_version 부재) → load None
+        import gurunote.llm as _llm
+        monkeypatch.setattr(_llm, "CACHE_DIR", tmp_path / "ec")
+        (tmp_path / "ec").mkdir()
+        old_data = {
+            "video_id": "vid_old",
+            "video_title": "Old V1",
+            "created_at": "2026-05-20T00:00:00+09:00",
+            "loanword_spec_version": "2017-14",
+            "entities": [{"english": "X", "korean": "엑스", "type": "unknown", "source": "bootstrap"}],
+            # cache_schema_version 부재 → v1
+        }
+        (tmp_path / "ec" / "vid_old.json").write_text(
+            json.dumps(old_data, ensure_ascii=False), encoding="utf-8"
+        )
+        loaded = _load_entity_cache_full("vid_old")
+        assert loaded is None   # v1 invalidate
+
+    def test_current_schema_version_value(self):
+        assert CACHE_SCHEMA_VERSION == "2"

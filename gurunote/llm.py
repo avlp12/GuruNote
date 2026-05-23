@@ -1078,9 +1078,14 @@ def _bootstrap_entity_cache_from_metadata(
     )
 
     if cache_key:
-        cached = _load_entity_cache(cache_key)
-        if cached is not None:
-            return cached
+        # 5/23 — cache hit 시 speakers 도 함께 로드 (schema v2). 옛 cache (v1) 자동 invalidate.
+        cached_full = _load_entity_cache_full(cache_key)
+        if cached_full is not None:
+            entities_cached = cached_full["entities"]
+            speakers_cached = cached_full["speakers"]
+            if speakers_cached:
+                entities_cached["__speakers__"] = speakers_cached
+            return entities_cached
 
     parts: List[str] = []
     if video_context:
@@ -1106,21 +1111,30 @@ def _bootstrap_entity_cache_from_metadata(
         if loanword_block
         else ""
     )
+    # 5/23 — speakers 식별 추가 (영상당 1회 LLM). entity 와 같은 호출에서 catch.
     system = (
-        "다음 영문 영상 메타 + 자막에서 등장하는 고유 명사 (인명, 회사명, 제품명, 지명) 를 추출하라. "
+        "다음 영문 영상 메타 + 자막에서 다음 두 가지를 추출하라:\n\n"
+        "**Part 1: 고유 명사 (인명, 회사명, 제품명, 지명) entity 추출**\n"
         "각 항목을 'English Name → 한국어 표기 [type]' 형식으로 한 줄에 하나씩 출력하라. "
         "type ∈ {person, company, place, product}.\n\n"
-        "한국어 표기 우선순위 (위에서 아래로):\n"
+        "**Part 2: 화자 식별 (영상 등장 화자)**\n"
+        "STT 가 화자를 'A', 'B', 'C' 등 단일 영문 라벨로 catch. 영상 메타·자막에서 "
+        "각 라벨의 실명을 추론하여 다음 형식으로 출력:\n"
+        "'SPEAKER A => English Name | 한국어 표기'\n"
+        "예: SPEAKER A => Pankaj Sharma | 판카즈 샤르마\n"
+        "추론 불가 라벨 부재 시 해당 라벨 생략 (fallback 은 코드가 catch).\n\n"
+        "**한국어 표기 우선순위 (Part 1, 2 공통, 위에서 아래로)**:\n"
         "1. 한국에서 이미 통용되는 표기 (예: Schneider Electric → 슈나이더 일렉트릭 [company])\n"
         "2. 통용 표기 부재 시 아래 외래어 표기법 표준 적용 (예: Pankaj Sharma → 판카즈 샤르마 [person])\n"
         "3. 그 외는 영어 자모 한글 대조표 정합 자유 출력"
         f"{loanword_section}\n"
-        "설명, 헤더, 메타 텍스트 부재. 매핑만 출력. "
-        "추출할 entity 부재 시 빈 출력만 반환."
+        "**출력 형식**: 설명·헤더·메타 텍스트 부재. 매핑만 출력.\n"
+        "Part 1 (entity) 와 Part 2 (speaker) 줄 형식이 다르니 구분되어 catch 가능.\n"
+        "추출할 entity 또는 speaker 부재 시 해당 부분 생략."
     )
 
     try:
-        result = _call_llm(config, system, text, max_tokens=1024)
+        result = _call_llm(config, system, text, max_tokens=2048)
     except Exception:
         return {}
 
@@ -1128,9 +1142,23 @@ def _bootstrap_entity_cache_from_metadata(
         return {}
 
     entities: dict = {}
+    speakers: dict = {}
+    speaker_re = re.compile(r"^\s*SPEAKER\s+([A-Z])\s*=>\s*(.+?)\s*\|\s*(.+?)\s*$")
     for line in result.splitlines():
         line = line.strip()
-        if not line or "→" not in line:
+        if not line:
+            continue
+        # speaker 패턴 우선 catch (SPEAKER X => English | 한국어)
+        sp_match = speaker_re.match(line)
+        if sp_match:
+            label = sp_match.group(1)
+            sp_english = sp_match.group(2).strip()
+            sp_korean = sp_match.group(3).strip()
+            if label and sp_korean:
+                speakers[label] = {"english": sp_english, "korean": sp_korean}
+            continue
+        # entity 패턴 (English → 한국어 [type])
+        if "→" not in line:
             continue
         left, right = line.split("→", 1)
         english = left.strip().lstrip("-").strip()
@@ -1144,6 +1172,11 @@ def _bootstrap_entity_cache_from_metadata(
                 "type": entity_type,
                 "source": "bootstrap",
             }
+
+    # 5/23 — 화자 식별 결과를 in-memory cache attribute 로 부착 (호출자가 catch 가능).
+    # 기존 entities 반환 형식 유지 (1-pass 호환) + speakers 는 module-level 임시 저장.
+    if speakers:
+        entities["__speakers__"] = speakers   # 마커 키 — translate_transcript 에서 추출
     return entities
 
 
@@ -1155,6 +1188,11 @@ def _bootstrap_entity_cache_from_metadata(
 #   - §3.5 invalidate: spec_version 변경 시 자동 재bootstrap
 CACHE_DIR = Path.home() / ".gurunote" / "entity_cache"
 LOANWORD_SPEC_VERSION = "2017-14"
+
+# 5/23 — cache schema 버전. speakers 필드 추가로 옛 cache 자동 invalidate.
+# v1: entities only (B06 §3.2)
+# v2: entities + speakers (화자 라벨 코드 부착, 식별 1회 + 결정론적 표기)
+CACHE_SCHEMA_VERSION = "2"
 
 # B06 외래어 표기법 자료 file — bootstrap 용 short version + Phase 3 후처리 용 full body.
 _LOANWORD_FILE = Path(__file__).parent / "data" / "loanword_orthography.md"
@@ -1233,14 +1271,17 @@ def _save_entity_cache(
     video_id: str,
     video_title: str,
     entities: dict,
+    speakers: Optional[dict] = None,
     spec_version: str = LOANWORD_SPEC_VERSION,
 ) -> None:
-    """entity_cache 디스크 저장.
+    """entity_cache 디스크 저장 (5/23 — speakers 필드 추가, schema v2).
 
     Args:
         video_id: YouTube 영상 ID (cache key).
         video_title: 영상 제목 (debug 용).
         entities: in-memory dict — `{english: {korean, type, source}}`.
+        speakers: speaker mapping `{label: {english, korean}}` (예: {"A": {"english":
+            "Pankaj Sharma", "korean": "판카즈 샤르마"}}). None 또는 빈 dict 가능.
         spec_version: 외래어 표기법 본문 버전 (LOANWORD_SPEC_VERSION 기본).
 
     Side effects:
@@ -1258,12 +1299,23 @@ def _save_entity_cache(
         for english, meta in entities.items()
     ]
 
+    speakers_list = [
+        {
+            "label": label,
+            "english": meta.get("english", ""),
+            "korean": meta.get("korean", ""),
+        }
+        for label, meta in (speakers or {}).items()
+    ]
+
     data = {
         "video_id": video_id,
         "video_title": video_title,
         "created_at": datetime.now().astimezone().isoformat(),
+        "cache_schema_version": CACHE_SCHEMA_VERSION,
         "loanword_spec_version": spec_version,
         "entities": entities_list,
+        "speakers": speakers_list,
     }
 
     cache_path = _get_cache_file_path(video_id)
@@ -1275,7 +1327,7 @@ def _load_entity_cache(
     video_id: str,
     expected_spec_version: str = LOANWORD_SPEC_VERSION,
 ) -> Optional[dict]:
-    """entity_cache 디스크 로드. file 부재 / 손상 / spec_version 다름 시 None.
+    """entity_cache 디스크 로드 — entities 만 반환 (기존 호출자 호환).
 
     Args:
         video_id: YouTube 영상 ID.
@@ -1283,7 +1335,22 @@ def _load_entity_cache(
 
     Returns:
         `{english: {korean, type, source}}` dict 또는 None.
-        None 시 호출자는 bootstrap 재실행 — §3.5 spec_version 자동 invalidate.
+        None 시 호출자는 bootstrap 재실행.
+    """
+    full = _load_entity_cache_full(video_id, expected_spec_version)
+    return full["entities"] if full is not None else None
+
+
+def _load_entity_cache_full(
+    video_id: str,
+    expected_spec_version: str = LOANWORD_SPEC_VERSION,
+) -> Optional[dict]:
+    """5/23 — cache 전체 로드 (entities + speakers). schema v2 검증.
+
+    schema_version 불일치 시 None (옛 cache 자동 invalidate — speakers 부재).
+
+    Returns:
+        `{"entities": {english: meta}, "speakers": {label: {english, korean}}}` 또는 None.
     """
     cache_path = _get_cache_file_path(video_id)
     if not cache_path.exists():
@@ -1295,21 +1362,34 @@ def _load_entity_cache(
     except (json.JSONDecodeError, OSError):
         return None
 
+    # schema v2 검증 — speakers 필드 추가로 옛 cache (v1, schema field 부재) 자동 invalidate.
+    if data.get("cache_schema_version") != CACHE_SCHEMA_VERSION:
+        return None
     if data.get("loanword_spec_version") != expected_spec_version:
         return None
 
-    result: dict = {}
+    entities: dict = {}
     for item in data.get("entities", []):
         english = item.get("english")
         korean = item.get("korean")
         if not english or not korean:
             continue
-        result[english] = {
+        entities[english] = {
             "korean": korean,
             "type": item.get("type", "unknown"),
             "source": item.get("source", "unknown"),
         }
-    return result
+
+    speakers: dict = {}
+    for item in data.get("speakers", []):
+        label = item.get("label")
+        english = item.get("english", "")
+        korean = item.get("korean", "")
+        if not label or not korean:
+            continue
+        speakers[label] = {"english": english, "korean": korean}
+
+    return {"entities": entities, "speakers": speakers}
 
 
 # =============================================================================
@@ -1471,13 +1551,22 @@ def translate_transcript(
     # Phase 2 (B01) — entity cache + 화자 cache.
     # (b) Two-Stage 부분 적용: 영상 메타 + 자막에서 사전 entity 추출 → chunk 1 차단 catch.
     # (e) Entity Cache: chunk 출력 → entity 추출 → 다음 chunk context prepend.
+    # 5/23 — speakers 식별 추가 (영상당 1회 LLM, 2-pass 화자 라벨 코드 부착용).
     entity_cache: dict = {}
+    speaker_cache: dict = {}
     if config.enable_phase2:
         subtitles_text = (video_context or {}).get("subtitles_text") if video_context else None
         bootstrap = _bootstrap_entity_cache_from_metadata(video_context, subtitles_text, config)
         if bootstrap:
+            # 5/23 — bootstrap 결과의 __speakers__ 마커 추출 (cache file 와 caller 분리).
+            speaker_cache = bootstrap.pop("__speakers__", {}) or {}
             entity_cache.update(bootstrap)
             log(f"   📚 entity cache bootstrap — {len(bootstrap)}건 사전 추출")
+            if speaker_cache:
+                log(f"   🎤 speaker cache bootstrap — {len(speaker_cache)}명 식별")
+
+    # 5/23 — 영상 단위 첫 등장 catch (화자 라벨 영문 병기 first-occurrence, 2-pass 전용).
+    seen_speakers: set = set()
 
     translated_parts: List[str] = []
     for i, chunk in enumerate(chunks, start=1):
@@ -1497,7 +1586,12 @@ def translate_transcript(
         # (zip 100% 결정론). (2) Truncation — finish_reason='length' 명시 catch + retry.
         # 기존 Phase 1 retry/marker 로직 (5/12 trajectory) 영역 제거 — Index Mapping path
         # 가 두 본질 cause 모두 근본 차단.
-        translated = translate_chunk_index_mapping_v2(chunk, extended_context, config, log)
+        # 5/23 — 2-pass 시 speaker_cache + seen_speakers 전달 (화자 라벨 코드 부착).
+        translated = translate_chunk_index_mapping_v2(
+            chunk, extended_context, config, log,
+            speaker_cache=speaker_cache,
+            seen_speakers=seen_speakers,
+        )
         translated_parts.append(translated)
 
         # Phase 2 — chunk 출력의 speaker line prefix entity 추출 + cache 갱신.
@@ -1522,8 +1616,14 @@ def translate_transcript(
         )
         if cache_key:
             try:
-                _save_entity_cache(cache_key, video_title_for_cache, entity_cache)
-                log(f"   💾 entity cache 저장: {len(entity_cache)}건 → {cache_key}")
+                _save_entity_cache(
+                    cache_key, video_title_for_cache, entity_cache,
+                    speakers=speaker_cache,
+                )
+                log(
+                    f"   💾 entity cache 저장: {len(entity_cache)}건 / "
+                    f"speakers {len(speaker_cache)}명 → {cache_key}"
+                )
             except Exception as exc:
                 log(f"   ⚠ entity cache 저장 실패 (무시): {exc}")
 
@@ -1953,36 +2053,37 @@ def _call_llm_once_with_reason(
 
 
 def _build_freeform_translation_prompt(inputs: list, context: str) -> str:
-    """(가) 옵션 A prototype 1단계 — schema 부재 자유 번역 prompt.
+    """(가) 옵션 A 1단계 — schema 부재 자유 번역 prompt (5/23 — 화자 라벨 제거).
 
     DCCD 패턴: 1단계 자유 추론 (schema 부담 부재) → 2단계 정렬 (schema strict).
-    작은 모델에서 json_schema 강제가 추론 품질 저하시키는 issue 회피.
+    5/23 — 화자 라벨이 LLM 처리에서 제외 (client zip 코드 부착). 입력 형식 변경:
+    "A: text" → "text" 만. 모델이 본문 번역에만 집중.
 
     Args:
-        inputs: ["Speaker A: text", ...] N개.
+        inputs: ["text", ...] N개 (speaker prefix 제거된 본문만).
         context: 영상 컨텍스트 + entity_cache markdown block (B06 §4.1 정합).
 
     Returns:
-        user prompt 문자열. system = TRANSLATION_SYSTEM_PROMPT 재사용 (Rule 1~15 보존).
+        user prompt 문자열. system = TRANSLATION_SYSTEM_PROMPT 재사용.
     """
-    return f"""[자유 번역 영역 — (가) 옵션 A 1단계, schema 부재]
+    return f"""[자유 번역 영역 — (가) 옵션 A 1단계, schema 부재, 5/23 화자 라벨 제거]
 
-다음 {len(inputs)}개 segment 를 한국어로 번역하라:
+다음 {len(inputs)}개 segment 본문을 한국어로 번역하라:
 
 1. 형식 제약 부재 — 자유롭게 자연스러운 한국어로 번역.
-2. **각 segment 를 빈 줄 (`\\n\\n`) 로 구분하여 정확히 {len(inputs)} 개 출력**.
-3. 각 segment 형식: "한국어 화자명(English Name): 본문" (첫 등장) 또는 "한국어 화자명: 본문" (이후).
+2. **각 segment 를 빈 줄 (`\\n\\n`) 로 구분하여 정확히 {len(inputs)}개 출력**.
+3. **화자 라벨 출력 절대 부재** — 입력에 화자 prefix 부재, 출력도 화자 부재.
+   본문 한국어 번역만 출력 (예: "안녕하세요. 오늘은…" 형식, "이름: 본문" 형식 절대 부재).
 4. timestamp 출력 절대 부재 (클라이언트가 별도 부착).
-5. "Speaker A/B/C" 영문 라벨 출력 절대 부재 — Rule 2 정합 한국어 화자명.
-6. 다른 모든 규칙 (Rule 3~11 + _SHARED_LANG_RULES) 정합 유지.
-7. segment 를 합치거나 나누지 말 것 — 입력 {len(inputs)} 개 ↔ 출력 {len(inputs)} 개.
+5. 다른 모든 규칙 (Rule 3~11 + _SHARED_LANG_RULES) 정합 유지.
+6. segment 를 합치거나 나누지 말 것 — 입력 {len(inputs)}개 ↔ 출력 {len(inputs)}개.
 
 {context}
 
-Input ({len(inputs)}개 segment, 각 "Speaker X: 영어 text" 형식):
+Input ({len(inputs)}개 segment 본문, 영어 text 만):
 {json.dumps({"inputs": inputs}, ensure_ascii=False, indent=2)}
 
-Output (정확히 {len(inputs)}개 한국어 segment, `\\n\\n` 구분, 다른 텍스트 부재):"""
+Output (정확히 {len(inputs)}개 한국어 본문, `\\n\\n` 구분, 화자/timestamp 부재):"""
 
 
 def _build_alignment_prompt(inputs: list, freeform_translation: str) -> str:
@@ -1998,7 +2099,7 @@ def _build_alignment_prompt(inputs: list, freeform_translation: str) -> str:
     Returns:
         user prompt 문자열. system = TRANSLATION_SYSTEM_PROMPT 재사용.
     """
-    return f"""[정렬 영역 — (가) 옵션 A 2단계, schema strict]
+    return f"""[정렬 영역 — (가) 옵션 A 2단계, schema strict, 5/23 화자 라벨 제거]
 
 다음 자유 번역의 내용을 입력 {len(inputs)}개 segment 에 1:1 대응하는 {len(inputs)}개 outputs 배열로 재배치하라:
 
@@ -2010,22 +2111,23 @@ def _build_alignment_prompt(inputs: list, freeform_translation: str) -> str:
 3. 1단계 자유 번역이 segment 합쳤으면 (예: 입력 3개 → 자유 번역 2개), 자연스러운 의미 경계로 다시 나눠 {len(inputs)}개로 만들 것.
 4. 1단계 자유 번역이 segment 나눴으면 (예: 입력 2개 → 자유 번역 3개), 의미 단위로 합쳐 {len(inputs)}개로 만들 것.
 
-**금지 사항 (빈/반복 차단)**:
+**금지 사항 (빈/반복/화자 차단)**:
 5. **빈 string output 절대 부재** — 모든 outputs 항목은 비어있지 않은 한국어 번역. 부족분을 빈 칸으로 채우지 말 것.
 6. **같은 본문 반복 절대 부재** — outputs 항목들이 서로 다른 내용. 부족분을 라인 반복으로 채우지 말 것.
 7. 입력 {len(inputs)}개가 모두 비슷한 짧은 발화여도, 자유 번역의 해당 부분을 각각 정확히 매핑할 것.
+8. **화자 라벨 출력 절대 부재** (5/23 — 코드 부착으로 분리) — 각 output 은 본문 한국어만. "이름:" 같은 화자 prefix 절대 부재.
 
 **출력 형식**:
-8. JSON 형식: {{"outputs": [str, str, ...]}}
-9. timestamp 출력 절대 부재.
+9. JSON 형식: {{"outputs": [str, str, ...]}}
+10. timestamp 출력 절대 부재.
 
-Input ({len(inputs)}개 원본 segment):
+Input ({len(inputs)}개 원본 segment 본문, 영어 text 만):
 {json.dumps({"inputs": inputs}, ensure_ascii=False, indent=2)}
 
 자유 번역 결과 (1단계 출력):
 {freeform_translation}
 
-Output (JSON 만, 다른 텍스트 부재):"""
+Output (JSON 만, 화자/timestamp 부재, 다른 텍스트 부재):"""
 
 
 def _build_index_mapping_prompt(inputs: list, context: str) -> str:
@@ -2324,6 +2426,45 @@ def _post_process_two_pass_outputs(
     return processed
 
 
+def _resolve_speaker_label(
+    speaker: str,
+    speaker_cache: Optional[dict],
+    seen_speakers: set,
+) -> str:
+    """5/23 — STT speaker label ("A","B",...) → 한국어 화자 라벨 결정론적 부착.
+
+    영상 단위 첫 등장 영문 병기 catch (Layer 13 정합). cache 부재 fallback "화자 N".
+
+    Args:
+        speaker: STT label (예: "A","B","C",...).
+        speaker_cache: {"A": {"english": "Pankaj Sharma", "korean": "판카즈 샤르마"}, ...}.
+            None 또는 빈 dict 가능 (fallback 진입).
+        seen_speakers: 영상 단위 첫 등장 catch set. 호출 후 본 함수가 add.
+
+    Returns:
+        라벨 문자열 (예: "판카즈 샤르마(Pankaj Sharma)" 첫 등장 / "판카즈 샤르마" 이후 / "화자 1" fallback).
+    """
+    is_first = speaker not in seen_speakers
+    seen_speakers.add(speaker)
+
+    meta = (speaker_cache or {}).get(speaker)
+    if meta and meta.get("korean"):
+        korean = meta["korean"]
+        english = meta.get("english", "")
+        if is_first and english:
+            return f"{korean}({english})"
+        return korean
+
+    # fallback: "A" → "화자 1", "B" → "화자 2", ...
+    try:
+        idx = ord(speaker.upper()[0]) - ord("A") + 1
+        if 1 <= idx <= 26:
+            return f"화자 {idx}"
+    except (IndexError, TypeError):
+        pass
+    return f"화자 {speaker or '?'}"
+
+
 def _translate_chunk_two_pass(
     chunk: List[Segment],
     context_block: str,
@@ -2339,6 +2480,9 @@ def _translate_chunk_two_pass(
         - `_call_llm_with_index_mapping` 재사용 + enable_loose_on_timeout=True (R3-수정).
         - schema strict (minItems/maxItems=N) 으로 N개 정합 보장.
 
+    5/23 — 입력에서 speaker prefix 제거 ("A: text" → "text"). 화자 라벨은 client zip
+    에서 코드 부착 (translate_chunk_index_mapping_v2). rule 1 딜레마 근본 해소.
+
     Args:
         chunk: 입력 segment N개.
         context_block: 영상 컨텍스트 + entity_cache (B06 §4.1).
@@ -2346,10 +2490,11 @@ def _translate_chunk_two_pass(
         log: 진행 콜백.
 
     Returns:
-        List[str]: 정렬된 outputs N개. fallback 시 padding 적용.
+        List[str]: 정렬된 outputs N개 (본문만, 화자 부재). fallback 시 padding 적용.
     """
     log_fn = log or (lambda _m: None)
-    inputs = [f"{s.speaker}: {s.text}" for s in chunk]
+    # 5/23 — speaker prefix 제거. 본문만 입력 → LLM 화자 처리 부재.
+    inputs = [s.text for s in chunk]
 
     # 1단계 — 자유 번역.
     log_fn(f"   ↳ 2-pass 1단계: 자유 번역 ({len(inputs)} segments)")
@@ -2391,6 +2536,8 @@ def translate_chunk_index_mapping_v2(
     context_block: str,
     config: LLMConfig,
     log: Optional[ProgressFn] = None,
+    speaker_cache: Optional[dict] = None,
+    seen_speakers: Optional[set] = None,
 ) -> str:
     """단일 chunk 영역의 Index Mapping 적용 — 체크포인트 2 verify 영역.
 
@@ -2399,24 +2546,36 @@ def translate_chunk_index_mapping_v2(
     (가) 옵션 A prototype 토글 (5/23):
         GURUNOTE_TWO_PASS=1 환경변수 시 2-pass 분리 (자유 번역 → 정렬).
         기본 (off) 시 기존 1-pass 보존 — daily 환경 영향 부재.
-    """
-    inputs = [f"{s.speaker}: {s.text}" for s in chunk]
 
-    # (가) 토글 — 환경변수 기반, 기본 off (1-pass 보존).
-    if os.environ.get("GURUNOTE_TWO_PASS", "0") == "1":
+    5/23 — speaker_cache + seen_speakers 인자 추가 (2-pass 화자 라벨 코드 부착).
+        1-pass path 영향 부재 (인자 사용 부재).
+    """
+    is_two_pass = os.environ.get("GURUNOTE_TWO_PASS", "0") == "1"
+
+    if is_two_pass:
+        # 2-pass — 입력 본문만 (speaker prefix 부재), 화자 라벨은 client zip 코드 부착.
         outputs = _translate_chunk_two_pass(chunk, context_block, config, log)
     else:
+        # 1-pass — 기존 path 보존 (speaker prefix 포함된 input, LLM 이 화자 라벨 출력).
+        inputs = [f"{s.speaker}: {s.text}" for s in chunk]
         prompt = _build_index_mapping_prompt(inputs, context_block)
         outputs = _call_llm_with_index_mapping(
             config, prompt, expected_count=len(inputs), max_retries=3, log=log,
         )
 
     # 클라이언트 측 timestamp 부착 — zip 으로 결정론적 매핑 (drift 불가능).
-    # Output 의 korean 영역에 화자 라벨 (예: "판카즈 샤르마(Pankaj Sharma): 본문")
-    # 이 이미 포함되어 있어 segment.speaker prefix 영역 부재 — korean 그대로 사용.
     # Line break = \n\n (Layer 14 정합 — Index Mapping 영역 결정론적 정합).
+    # 5/23 — 2-pass 시 화자 라벨도 client zip 코드 부착 (식별 1회 + 결정론적).
+    # 1-pass 시 LLM output 에 화자 라벨 포함됨 → korean 그대로 사용 (기존 동작).
     result_lines: List[str] = []
+    # 2-pass 경로의 seen_speakers — caller (translate_transcript) 가 영상 단위 공유.
+    # caller 부재 시 chunk 단위 로컬 set (단독 호출 case).
+    local_seen = seen_speakers if seen_speakers is not None else set()
     for segment, korean in zip(chunk, outputs):
         ts = f"[{_format_ts(segment.start)}]"
-        result_lines.append(f"{ts} {korean}")
+        if is_two_pass:
+            speaker_label = _resolve_speaker_label(segment.speaker, speaker_cache, local_seen)
+            result_lines.append(f"{ts} {speaker_label}: {korean}")
+        else:
+            result_lines.append(f"{ts} {korean}")
     return "\n\n".join(result_lines)

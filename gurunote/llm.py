@@ -2000,13 +2000,24 @@ def _build_alignment_prompt(inputs: list, freeform_translation: str) -> str:
     """
     return f"""[정렬 영역 — (가) 옵션 A 2단계, schema strict]
 
-다음 자유 번역을 입력 {len(inputs)}개 segment 에 1:1 대응하는 {len(inputs)}개 outputs 배열로 정렬하라:
+다음 자유 번역의 내용을 입력 {len(inputs)}개 segment 에 1:1 대응하는 {len(inputs)}개 outputs 배열로 재배치하라:
 
-1. **번역 내용 변경 절대 부재** — 자유 번역 글자 그대로, 재정렬·재조립만.
+**핵심 원칙**:
+1. **번역 내용/의미 보존 — 재배치만, 새 번역 생성 부재** — 1단계 자유 번역의 단어와 표현을 그대로 사용하되 (내용 추가·삭제·수정 절대 부재, 새로 번역하지 말 것), 입력 {len(inputs)}개 segment 경계에 맞춰 재배치만 한다.
 2. **outputs 배열은 정확히 {len(inputs)} 개 항목, 입력 순서 유지**.
-3. 자유 번역이 segment 합치기·나누기 했으면 입력 N 개에 맞춰 재정렬 (split·merge).
-4. JSON 형식: {{"outputs": [str, str, ...]}}
-5. timestamp 출력 절대 부재.
+
+**재배치 규칙 (rule 1/3 충돌 해소)**:
+3. 1단계 자유 번역이 segment 합쳤으면 (예: 입력 3개 → 자유 번역 2개), 자연스러운 의미 경계로 다시 나눠 {len(inputs)}개로 만들 것.
+4. 1단계 자유 번역이 segment 나눴으면 (예: 입력 2개 → 자유 번역 3개), 의미 단위로 합쳐 {len(inputs)}개로 만들 것.
+
+**금지 사항 (빈/반복 차단)**:
+5. **빈 string output 절대 부재** — 모든 outputs 항목은 비어있지 않은 한국어 번역. 부족분을 빈 칸으로 채우지 말 것.
+6. **같은 본문 반복 절대 부재** — outputs 항목들이 서로 다른 내용. 부족분을 라인 반복으로 채우지 말 것.
+7. 입력 {len(inputs)}개가 모두 비슷한 짧은 발화여도, 자유 번역의 해당 부분을 각각 정확히 매핑할 것.
+
+**출력 형식**:
+8. JSON 형식: {{"outputs": [str, str, ...]}}
+9. timestamp 출력 절대 부재.
 
 Input ({len(inputs)}개 원본 segment):
 {json.dumps({"inputs": inputs}, ensure_ascii=False, indent=2)}
@@ -2242,6 +2253,77 @@ def _call_llm_with_index_mapping(
     return outputs
 
 
+# A5 (5/23) — 2-pass 정렬 깨짐 deterministic 후처리.
+# prompt 의존 부재 안전망 — 35b 가 rule 무시 시에도 차단.
+_SPEAKER_PREFIX_RE = re.compile(r"^[A-Z]:\s+")
+
+
+def _strip_input_speaker_prefix(text: str) -> str:
+    """input 의 'A:'/'B:' 같은 단일 영문 대문자 prefix 를 제거.
+
+    35b 가 1단계 자유 번역에서 input 의 `"A: text"` 형식 prefix 를 한국어 라벨 앞에
+    잔존시킬 case 차단 (1단계 prompt rule 5 모호성, 5/23 진단).
+
+    정상 형식 보호:
+        - "한국어 화자명: 본문" — 한국어는 영문 대문자 부재 → 매치 부재 ✅
+        - "한국어 화자명(English Name): 본문" — 영문 병기는 line 시작 부재 → 매치 부재 ✅
+        - "Jensen Huang: 본문" — 영문 단어는 다음 글자가 소문자 → 매치 부재 ✅
+        - "A: 티파니 잔젠: 본문" — 단일 대문자 + 콜론 + 공백 → 매치 → "티파니 잔젠: 본문" ✅
+
+    Args:
+        text: chunk output 한 항목.
+
+    Returns:
+        prefix strip 후 text. 매치 부재 시 원본 그대로.
+    """
+    return _SPEAKER_PREFIX_RE.sub("", text)
+
+
+def _post_process_two_pass_outputs(
+    outputs: list,
+    expected_count: int,
+    log: Optional[ProgressFn] = None,
+) -> list:
+    """A5 — 2-pass outputs deterministic 후처리 (5/23).
+
+    1. **prefix strip**: 각 output 의 'A:'/'B:' 같은 입력 prefix 잔존 제거.
+    2. **빈 segment 검출**: 빈 string output 을 "[번역 누락]" marker 로 교체.
+    3. **반복 라인 검출**: consecutive 동일 output 발견 시 log 경고 (자동 제거 부재
+       — 짧은 발화의 정상 반복 오인 방지).
+
+    Args:
+        outputs: _call_llm_with_index_mapping 결과 list.
+        expected_count: 기대 길이 (안전 검사용).
+        log: 진행 콜백.
+
+    Returns:
+        후처리된 outputs list (길이 = expected_count 보존).
+    """
+    log_fn = log or (lambda _m: None)
+    processed = [_strip_input_speaker_prefix(o or "") for o in outputs]
+
+    # 빈 segment → [번역 누락] marker
+    empty_count = 0
+    for i, o in enumerate(processed):
+        if not o or not o.strip():
+            processed[i] = "[번역 누락]"
+            empty_count += 1
+    if empty_count:
+        log_fn(f"   ⚠ 2-pass 빈 output {empty_count}건 → [번역 누락] padding")
+
+    # 연속 동일 라인 검출 (경고만)
+    repeat_count = 0
+    for i in range(1, len(processed)):
+        if processed[i] == processed[i - 1] and processed[i] != "[번역 누락]":
+            repeat_count += 1
+    if repeat_count:
+        log_fn(
+            f"   ⚠ 2-pass 연속 동일 output {repeat_count}건 catch — 정상 반복 가능성"
+        )
+
+    return processed
+
+
 def _translate_chunk_two_pass(
     chunk: List[Segment],
     context_block: str,
@@ -2299,7 +2381,9 @@ def _translate_chunk_two_pass(
         log=log,
         enable_loose_on_timeout=True,
     )
-    return outputs
+
+    # A5 (5/23) — deterministic 후처리 (prefix strip + 빈 검출 + 반복 경고).
+    return _post_process_two_pass_outputs(outputs, len(inputs), log)
 
 
 def translate_chunk_index_mapping_v2(

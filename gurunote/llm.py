@@ -2217,12 +2217,16 @@ def _call_llm_with_index_mapping(
     max_retries: int = 3,
     log: Optional[ProgressFn] = None,
     enable_loose_on_timeout: bool = False,
+    reject_empty_outputs: bool = False,
 ) -> list:
     """Index Mapping + 길이 검증 + retry feedback.
 
     Args:
         enable_loose_on_timeout: True 시 timeout 발생 → strict→loose 전환 (R3-수정,
             (가) 옵션 A 2단계 전용). 기본 False — 1-pass 동작 보존.
+        reject_empty_outputs: True 시 outputs 안에 빈 string 있으면 retry 트리거
+            (5/23 — 2-pass 빈 output 복구 1차). 기본 False — 1-pass 동작 보존
+            (1-pass 는 화자 라벨 포함 출력이라 빈 비현실적이지만 명시 분리).
 
     Returns:
         List[str]: outputs 배열 (길이 = expected_count 보장, fallback 시 [번역 누락] padding)
@@ -2319,6 +2323,33 @@ def _call_llm_with_index_mapping(
 
         # 길이 검증 — drift 근본 차단
         if len(outputs) == expected_count:
+            # 5/23 — 빈 string 검출 (reject_empty_outputs=True 시, 2-pass 전용).
+            # 1-pass 는 화자 라벨 포함 출력이라 빈 비현실적 — 기본 False 로 동작 보존.
+            empty_indices = [
+                i for i, o in enumerate(outputs)
+                if not isinstance(o, str) or not o.strip()
+            ]
+            if reject_empty_outputs and empty_indices:
+                log_fn(
+                    f"   ⚠ 빈 output {len(empty_indices)}건 catch "
+                    f"(idx={empty_indices[:5]}{'...' if len(empty_indices) > 5 else ''}, "
+                    f"retry {retry + 1}/{max_retries})"
+                )
+                # strict mode 라면 loose 전환 (자유도 catch — 본문 채우기 가능성 ↑)
+                if use_strict_mode:
+                    log_fn(f"   ↳ 빈 output retry — json_object mode 전환")
+                    use_strict_mode = False
+                messages.append({"role": "assistant", "content": content})
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        f"Previous output had {len(empty_indices)} empty items "
+                        f"at indices {empty_indices[:10]}. "
+                        f"All {expected_count} outputs MUST be non-empty Korean translations. "
+                        f"Do NOT use empty strings or placeholders. Return complete JSON."
+                    ),
+                })
+                continue
             log_fn(f"   ✅ Index Mapping 정합 — {len(outputs)} outputs (finish_reason={finish_reason})")
             return outputs
 
@@ -2515,7 +2546,14 @@ def _translate_chunk_two_pass(
         log_fn(f"   ⚠ 2-pass 1단계 빈 응답 — 전체 fallback ({len(inputs)} segments)")
         return ["[번역 누락]"] * len(inputs)
 
-    # 2단계 — 정렬 (schema strict + R3-수정 loose 전환).
+    # 5/23 — 1단계 결과 로깅 (책임 단계 확정 + 옵션 나 활용 자료).
+    freeform_lines = [line.strip() for line in freeform.split("\n\n") if line.strip()]
+    log_fn(
+        f"   📝 2-pass 1단계 출력 — {len(freeform_lines)} lines / N={len(inputs)}, "
+        f"empty lines: {sum(1 for ln in freeform_lines if not ln)}"
+    )
+
+    # 2단계 — 정렬 (schema strict + R3-수정 loose 전환 + 빈 output retry).
     log_fn(f"   ↳ 2-pass 2단계: 정렬 ({len(inputs)} outputs schema strict)")
     alignment_prompt = _build_alignment_prompt(inputs, freeform)
     outputs = _call_llm_with_index_mapping(
@@ -2525,10 +2563,99 @@ def _translate_chunk_two_pass(
         max_retries=3,
         log=log,
         enable_loose_on_timeout=True,
+        reject_empty_outputs=True,   # 5/23 — 1차 복구: 빈 string retry
     )
 
-    # A5 (5/23) — deterministic 후처리 (prefix strip + 빈 검출 + 반복 경고).
+    # 5/23 — 복구 시퀀스 (2차 + 3차).
+    outputs = _recover_empty_outputs(
+        outputs, freeform_lines, inputs, chunk, config, log,
+    )
+
+    # A5 (5/23) — deterministic 후처리 (prefix strip + 잔존 빈 → marker + 반복 경고).
     return _post_process_two_pass_outputs(outputs, len(inputs), log)
+
+
+def _recover_empty_outputs(
+    outputs: List[str],
+    freeform_lines: List[str],
+    inputs: List[str],
+    chunk: List[Segment],
+    config: LLMConfig,
+    log: Optional[ProgressFn] = None,
+) -> List[str]:
+    """5/23 — 2-pass 빈 output 복구 시퀀스 (2차 + 3차).
+
+    2차 (옵션 나): 1단계 자유 번역 line 수가 N 과 정합하면 해당 index 의 1단계 본문 활용
+        → LLM 호출 0 으로 복구.
+    3차 (옵션 다): 1단계도 빈 또는 line 수 불일치 → 해당 segment STT text 단독 재번역
+        (1-pass 방식, 본 segment 하나만 _call_llm 호출).
+
+    Args:
+        outputs: 2단계 정렬 결과 N개 (일부 빈 가능).
+        freeform_lines: 1단계 자유 번역 결과를 빈 줄 구분으로 split.
+        inputs: 원본 STT text N개.
+        chunk: 원본 segment N개 (speaker 정보 등).
+        config: LLM 호출용.
+        log: 진행 콜백.
+
+    Returns:
+        복구된 outputs N개 (실패 시 빈 잔존 — A5 가 marker 교체).
+    """
+    log_fn = log or (lambda _m: None)
+    processed = list(outputs)
+
+    # 2차 — 1단계 자유 번역 활용 (line 수 정합 시).
+    if len(freeform_lines) == len(inputs):
+        recovered_2nd = 0
+        for i, out in enumerate(processed):
+            if not isinstance(out, str) or not out.strip():
+                candidate = freeform_lines[i].strip() if i < len(freeform_lines) else ""
+                if candidate:
+                    processed[i] = candidate
+                    recovered_2nd += 1
+        if recovered_2nd:
+            log_fn(f"   🛟 빈 output 복구 2차 (1단계 활용): {recovered_2nd}건")
+
+    # 3차 — 단독 재번역 (해당 segment STT text 만).
+    still_empty = [
+        i for i, o in enumerate(processed)
+        if not isinstance(o, str) or not o.strip()
+    ]
+    if still_empty:
+        log_fn(f"   🛟 빈 output 복구 3차 (단독 재번역): {len(still_empty)}건 시도")
+        recovered_3rd = 0
+        for i in still_empty:
+            seg_text = inputs[i] if i < len(inputs) else ""
+            if not seg_text or not seg_text.strip():
+                continue   # STT 원본도 빈 — 복구 부재 → 최종 marker
+            try:
+                solo = _call_llm(
+                    config,
+                    system=TRANSLATION_SYSTEM_PROMPT,
+                    user=(
+                        f"[단독 재번역 — (가) 2-pass 3차 복구]\n\n"
+                        f"다음 영어 발화 1건을 자연스러운 한국어로 번역하라. "
+                        f"화자 라벨/timestamp 출력 부재 — 본문 한국어만.\n\n"
+                        f"Input: {seg_text!r}\n\n"
+                        f"Output (한국어 본문만):"
+                    ),
+                    max_tokens=512,
+                )
+                if solo and solo.strip():
+                    processed[i] = solo.strip()
+                    recovered_3rd += 1
+            except Exception as exc:
+                log_fn(f"   ⚠ 빈 output 복구 3차 idx={i} 실패: {exc}")
+        if recovered_3rd:
+            log_fn(f"   🛟 빈 output 복구 3차 (단독 재번역): {recovered_3rd}건 catch")
+        remaining = sum(
+            1 for o in processed
+            if not isinstance(o, str) or not o.strip()
+        )
+        if remaining:
+            log_fn(f"   ⚠ 복구 후에도 잔존 빈 output: {remaining}건 → 최종 marker")
+
+    return processed
 
 
 def translate_chunk_index_mapping_v2(

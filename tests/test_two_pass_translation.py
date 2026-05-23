@@ -327,7 +327,8 @@ class TestTwoPassWithPostProcess:
         assert outputs == ["티파니 잔젠: 안녕", "판카즈 샤르마: 인사", "티파니 잔젠: 답변"]
 
     def test_two_pass_empty_segment_replaced(self, mock_cfg, sample_chunk):
-        # 2단계가 빈 segment 반환 시 [번역 누락] 교체
+        # 5/23 — 복구 시퀀스 추가 후 의도 변경:
+        # 2단계 빈 → 2차 복구 (1단계 본문 활용) catch (marker 부재)
         aligned_json = json.dumps({
             "outputs": ["정상 본문 1", "", "정상 본문 3"]
         }, ensure_ascii=False)
@@ -336,7 +337,8 @@ class TestTwoPassWithPostProcess:
             mock_freeform.return_value = "정상 1\n\n정상 2\n\n정상 3"
             mock_align.return_value = (aligned_json, "stop")
             outputs = _translate_chunk_two_pass(sample_chunk, "", mock_cfg)
-        assert outputs[1] == "[번역 누락]"
+        # 2차 복구 — 1단계 line 2 ("정상 2") 활용, marker 부재
+        assert outputs == ["정상 본문 1", "정상 2", "정상 본문 3"]
 
 
 # =============================================================================
@@ -471,3 +473,173 @@ class TestCacheSchemaV2:
 
     def test_current_schema_version_value(self):
         assert CACHE_SCHEMA_VERSION == "2"
+
+
+# =============================================================================
+# 5/23 — 2-pass 빈 output 복구 시퀀스 (옵션 라 — 3단계 안전망)
+# =============================================================================
+from gurunote.llm import _recover_empty_outputs
+
+
+class TestRejectEmptyOutputs:
+    def test_default_off_one_pass_passes_with_empty(self, mock_cfg):
+        # 1-pass 동작 보존 — 빈 string 있어도 length 정합이면 return
+        outputs_json = json.dumps({"outputs": ["a", "", "c"]}, ensure_ascii=False)
+        with patch("gurunote.llm._call_llm_with_continuation") as mock_call:
+            mock_call.return_value = (outputs_json, "stop")
+            result = _call_llm_with_index_mapping(
+                mock_cfg, "prompt", expected_count=3, max_retries=3,
+                # reject_empty_outputs 기본 False
+            )
+        assert result == ["a", "", "c"]
+        assert mock_call.call_count == 1   # 1회 통과
+
+    def test_two_pass_rejects_empty_and_retries(self, mock_cfg):
+        # 2-pass 전용 — reject_empty_outputs=True 시 빈 있으면 retry
+        empty_then_full = [
+            (json.dumps({"outputs": ["a", "", "c"]}, ensure_ascii=False), "stop"),
+            (json.dumps({"outputs": ["a", "b", "c"]}, ensure_ascii=False), "stop"),
+        ]
+        with patch("gurunote.llm._call_llm_with_continuation") as mock_call:
+            mock_call.side_effect = empty_then_full
+            result = _call_llm_with_index_mapping(
+                mock_cfg, "prompt", expected_count=3, max_retries=3,
+                reject_empty_outputs=True,
+            )
+        assert result == ["a", "b", "c"]
+        assert mock_call.call_count == 2   # 빈 1회 → retry 1회
+
+    def test_all_retries_empty_returns_outputs_for_recovery(self, mock_cfg):
+        # 3회 모두 빈 잔존 시 outputs 반환 (recovery 시퀀스가 잡음)
+        outputs_json = json.dumps({"outputs": ["a", "", "c"]}, ensure_ascii=False)
+        with patch("gurunote.llm._call_llm_with_continuation") as mock_call:
+            mock_call.return_value = (outputs_json, "stop")
+            result = _call_llm_with_index_mapping(
+                mock_cfg, "prompt", expected_count=3, max_retries=3,
+                reject_empty_outputs=True,
+            )
+        # fallback: length 정합 후 빈 잔존 → "[번역 누락]" 으로 padding 부재 (length 그대로)
+        # → outputs 그대로 반환 (3차 복구가 잡도록)
+        # 단 retry 소진 후 fallback 분기 진입 — 빈 잔존 시 [번역 누락] 으로 채우는 분기 부재
+        # 실제: length 정합이라 retry loop 끝까지 진행, fallback 분기 부재 → 마지막 outputs 그대로
+        # 단 본 test 는 retry 진행만 확인 (recovery 시퀀스 별 test)
+        assert mock_call.call_count == 3
+        # 빈 잔존 — recovery 시퀀스가 잡아야 함
+        assert "" in result or "[번역 누락]" in result
+
+
+class TestRecoverEmptyOutputs:
+    def _make_chunk(self, n: int):
+        return [
+            Segment(speaker="A", start=float(i*5), end=float(i*5+3), text=f"text {i}")
+            for i in range(n)
+        ]
+
+    def test_2nd_recovery_uses_freeform_when_line_count_matches(self, mock_cfg):
+        # 2차 복구: 1단계 line 수 == N → 빈 index 의 1단계 본문 활용
+        outputs = ["번역 1", "", "번역 3"]
+        freeform_lines = ["freeform 1", "freeform 2", "freeform 3"]
+        inputs = ["en 1", "en 2", "en 3"]
+        chunk = self._make_chunk(3)
+        result = _recover_empty_outputs(
+            outputs, freeform_lines, inputs, chunk, mock_cfg
+        )
+        assert result == ["번역 1", "freeform 2", "번역 3"]
+
+    def test_2nd_recovery_skips_when_freeform_line_count_differs(self, mock_cfg):
+        # 1단계 line 수 != N → 2차 복구 skip → 3차로
+        outputs = ["번역 1", "", "번역 3"]
+        freeform_lines = ["freeform 합쳐짐"]   # N=3 인데 1줄
+        inputs = ["en 1", "en 2", "en 3"]
+        chunk = self._make_chunk(3)
+        # 3차 단독 재번역 mock
+        with patch("gurunote.llm._call_llm") as mock_solo:
+            mock_solo.return_value = "단독 재번역 결과"
+            result = _recover_empty_outputs(
+                outputs, freeform_lines, inputs, chunk, mock_cfg
+            )
+        # 2차 skip + 3차 catch
+        assert result == ["번역 1", "단독 재번역 결과", "번역 3"]
+        assert mock_solo.call_count == 1   # 빈 1건만 단독 재번역
+
+    def test_3rd_recovery_solo_translate(self, mock_cfg):
+        # 1단계도 비고 line 수 정합 → 2차 skip → 3차 단독 재번역
+        outputs = ["번역 1", "", "번역 3"]
+        freeform_lines = ["fl 1", "", "fl 3"]   # idx 1 도 빈 → 2차 복구 부재
+        inputs = ["en 1", "en 2", "en 3"]
+        chunk = self._make_chunk(3)
+        with patch("gurunote.llm._call_llm") as mock_solo:
+            mock_solo.return_value = "단독 결과"
+            result = _recover_empty_outputs(
+                outputs, freeform_lines, inputs, chunk, mock_cfg
+            )
+        # 2차: freeform_lines[1] 도 빈 → skip → 3차 LLM 호출
+        assert result == ["번역 1", "단독 결과", "번역 3"]
+        assert mock_solo.call_count == 1
+
+    def test_3rd_recovery_failure_keeps_empty_for_marker(self, mock_cfg):
+        # 3차도 실패 (LLM 빈 응답) → 빈 잔존 → A5 marker 가 catch
+        outputs = ["번역 1", "", "번역 3"]
+        freeform_lines = ["", "", ""]   # 1단계 모두 빈
+        inputs = ["en 1", "en 2", "en 3"]
+        chunk = self._make_chunk(3)
+        with patch("gurunote.llm._call_llm") as mock_solo:
+            mock_solo.return_value = ""   # 3차도 빈 응답
+            result = _recover_empty_outputs(
+                outputs, freeform_lines, inputs, chunk, mock_cfg
+            )
+        # 빈 잔존 — A5 가 marker 교체 catch
+        assert result[1] == ""
+
+    def test_no_empty_no_recovery(self, mock_cfg):
+        # 빈 부재 시 복구 호출 부재
+        outputs = ["a", "b", "c"]
+        with patch("gurunote.llm._call_llm") as mock_solo:
+            result = _recover_empty_outputs(
+                outputs, ["fl1", "fl2", "fl3"], ["en1", "en2", "en3"],
+                self._make_chunk(3), mock_cfg
+            )
+        assert result == ["a", "b", "c"]
+        assert mock_solo.call_count == 0
+
+
+class TestTwoPassEmptyRecoveryIntegration:
+    def test_full_recovery_sequence_2nd_catches(self, mock_cfg):
+        # 2-pass 전체: 2단계가 빈 1건 → retry 후에도 빈 → 2차 1단계 활용 catch
+        # 1단계 freeform 정합, 2단계 빈 1건 (idx 1)
+        chunk = [
+            Segment(speaker="A", start=10.0, end=12.0, text="Hello"),
+            Segment(speaker="B", start=13.0, end=15.0, text="World"),
+            Segment(speaker="A", start=16.0, end=18.0, text="Bye"),
+        ]
+        freeform_text = "안녕\n\n세계\n\n잘 가"
+        # 2단계는 retry 후에도 빈 잔존 (3회 모두 빈)
+        empty_json = json.dumps({"outputs": ["안녕 정렬", "", "잘 가 정렬"]}, ensure_ascii=False)
+        with patch("gurunote.llm._call_llm") as mock_solo, \
+             patch("gurunote.llm._call_llm_with_continuation") as mock_align:
+            mock_solo.return_value = freeform_text   # 1단계
+            mock_align.return_value = (empty_json, "stop")
+            outputs = _translate_chunk_two_pass(chunk, "", mock_cfg)
+        # 2차 복구로 idx 1 = "세계" catch (1단계 line 2)
+        assert outputs[0] == "안녕 정렬"
+        assert outputs[1] == "세계"   # 2차 복구
+        assert outputs[2] == "잘 가 정렬"
+
+    def test_recovery_logs_book_keeping(self, mock_cfg):
+        # 복구 단계별 log 출력 catch
+        chunk = [
+            Segment(speaker="A", start=0.0, end=2.0, text="text1"),
+            Segment(speaker="B", start=3.0, end=5.0, text="text2"),
+        ]
+        freeform_text = "안녕\n\n세계"
+        empty_json = json.dumps({"outputs": ["", ""]}, ensure_ascii=False)
+        log_msgs = []
+        with patch("gurunote.llm._call_llm") as mock_solo, \
+             patch("gurunote.llm._call_llm_with_continuation") as mock_align:
+            # 1단계 freeform 반환 + 3차 단독 재번역 mock (idx 1 호출 시)
+            mock_solo.side_effect = [freeform_text]
+            mock_align.return_value = (empty_json, "stop")
+            _translate_chunk_two_pass(chunk, "", mock_cfg, log=log_msgs.append)
+        # 1단계 로깅 + 2차 복구 log catch
+        assert any("📝 2-pass 1단계 출력" in m for m in log_msgs)
+        assert any("복구 2차" in m for m in log_msgs)

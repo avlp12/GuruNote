@@ -31,6 +31,39 @@ DEFAULT_MLX_MODEL = "mlx-community/whisper-large-v3-mlx"
 # Rollback path: PYANNOTE_DIARIZATION_MODEL=pyannote/speaker-diarization-3.1 (line 315 catch).
 DEFAULT_DIARIZATION_MODEL = "pyannote/speaker-diarization-community-1"
 
+# 5/24 — STT 의미 단위 재분할 (word-level 방법 4) 토글.
+# Whisper segment 경계는 음성 신호 기반이라 의미 단위 부재 (예: "secure and" 같은
+# 미완 끝). 재분할 on 시 word-level 구두점 + 끝 검사로 의미 완결 단위로 병합.
+# 6개 영상 검증: D leak 해소, 2-pass SHIFT/합침 50%↓, 정합 30→57~69%, 화자 보존.
+# 기본 off — daily 1-pass 동작 보존. on 시 llm.py 가 chunk size 자동 축소 (cs=12,
+# char_limit=2000) 로 1-pass timeout 회피.
+SEGMENT_RESPLIT_ENV = "GURUNOTE_SEGMENT_RESPLIT"
+
+# 끝 검사 사전 — 미완 끝 catch (재분할 시 다음 segment 와 병합).
+_SEGMENT_END_COMPLETE = {".", "?", "!"}
+_SEGMENT_END_MID_PUNCT = {",", ":", ";", "-", "—"}
+_SEGMENT_END_CONJUNCTIONS = {
+    "and", "or", "but", "nor", "so", "yet", "for",
+    "because", "while", "when", "if", "though", "although",
+    "as", "than", "that",
+}
+_SEGMENT_END_PREPOSITIONS = {
+    "to", "of", "in", "on", "at", "by", "from", "with", "for",
+    "about", "into", "during", "over", "under", "between",
+    "through", "across", "against", "before", "after", "around",
+    "as", "without", "within", "upon",
+}
+_SEGMENT_END_DANGLING = {
+    "the", "a", "an",
+    "is", "are", "was", "were", "be", "been", "being",
+    "have", "has", "had", "having",
+    "will", "would", "shall", "should", "can", "could", "may", "might", "must",
+    "do", "does", "did", "done",
+    "my", "your", "his", "her", "its", "our", "their",
+    "this", "that", "these", "those",
+    "more", "less", "most", "least", "very", "really", "quite",
+}
+
 
 # =============================================================================
 # 환경 검사 헬퍼
@@ -74,6 +107,107 @@ def _normalize_speaker_label(raw: str) -> str:
         except (ValueError, IndexError):
             return raw
     return raw or "A"
+
+
+def _segment_last_token(text: str) -> str:
+    """text 마지막 token (트레일링 구두점 strip)."""
+    t = text.strip().lower()
+    while t and t[-1] in ".,?!;:\"')]":
+        t = t[:-1]
+    if not t:
+        return ""
+    parts = t.split()
+    return parts[-1] if parts else ""
+
+
+def _segment_is_complete(text: str) -> bool:
+    """segment text 가 의미 완결인지 catch (재분할 끝 검사)."""
+    t = text.strip()
+    if not t:
+        return True
+    last_char = t[-1]
+    if last_char in _SEGMENT_END_COMPLETE:
+        return True
+    if last_char in _SEGMENT_END_MID_PUNCT:
+        return False
+    last_word = _segment_last_token(t)
+    if last_word in _SEGMENT_END_CONJUNCTIONS:
+        return False
+    if last_word in _SEGMENT_END_PREPOSITIONS:
+        return False
+    if last_word in _SEGMENT_END_DANGLING:
+        return False
+    # 구두점 부재 = 미완 보수적 (mlx-whisper 는 자연 종결 시 . 부착).
+    if last_char not in ".,?!;:":
+        return False
+    return True
+
+
+def _resplit_segments_by_semantics(
+    raw_segments: List[Dict],
+    turns: List[Tuple[float, float, str]],
+) -> List[Dict]:
+    """Whisper raw segments 를 의미 단위로 재분할 (word-level 방법 4).
+
+    Whisper segment 경계는 음성 신호 기반이라 의미 단위 부재 (예: "secure and"
+    같은 미완 끝). 본 함수는 끝 검사 (구두점 + conjunction/preposition/dangling)
+    로 미완 segment 검출 후 다음 segment 와 병합. 화자 다르면 병합 부재 (화자
+    우선), 시간 갭 5초 초과 부재, 합친 길이 30초 초과 부재.
+
+    Args:
+        raw_segments: Whisper raw segments (dict, words 키 포함 가능).
+        turns: diarization (start, end, speaker) — 화자 다른 segment 병합 부재용.
+
+    Returns:
+        병합된 raw segments (dict, 같은 형태). 후속 noise/dedup loop 그대로 적용 가능.
+    """
+    if not raw_segments:
+        return raw_segments
+
+    # 1차 화자 부착 (segment 단위) — 화자 우선 병합 catch 위함.
+    enriched = []
+    for s in raw_segments:
+        start = float(s.get("start", 0.0))
+        end = float(s.get("end", 0.0))
+        speaker = _assign_speaker_by_overlap(start, end, turns) if turns else "A"
+        enriched.append({**s, "_resplit_speaker": speaker})
+
+    # 2차 greedy 정방향 병합.
+    out: List[Dict] = []
+    i = 0
+    while i < len(enriched):
+        cur = dict(enriched[i])
+        j = i + 1
+        while j < len(enriched):
+            cur_text = (cur.get("text") or "").strip()
+            if _segment_is_complete(cur_text):
+                break
+            nxt = enriched[j]
+            # 화자 우선 — 다르면 병합 부재.
+            if nxt["_resplit_speaker"] != cur["_resplit_speaker"]:
+                break
+            # 시간 갭 5초 초과 — 의도적 멈춤 catch.
+            gap = float(nxt.get("start", 0.0)) - float(cur.get("end", 0.0))
+            if gap > 5.0:
+                break
+            # 합친 길이 30초 초과 부재 — 안전 상한.
+            if (float(nxt.get("end", 0.0)) - float(cur.get("start", 0.0))) > 30.0:
+                break
+            # 병합.
+            cur_text_new = ((cur.get("text") or "").rstrip()
+                              + " " + (nxt.get("text") or "").lstrip()).strip()
+            cur["text"] = cur_text_new
+            cur["end"] = nxt.get("end", cur.get("end"))
+            cur_words = cur.get("words") or []
+            nxt_words = nxt.get("words") or []
+            if cur_words or nxt_words:
+                cur["words"] = list(cur_words) + list(nxt_words)
+            j += 1
+        cur.pop("_resplit_speaker", None)
+        out.append(cur)
+        i = j if j > i else i + 1
+
+    return out
 
 
 def _assign_speaker_by_overlap(
@@ -190,6 +324,20 @@ def transcribe_mlx(
             "  에서 모델 사용에 동의하세요."
         )
 
+    # 5/24 — 의미 단위 재분할 (GURUNOTE_SEGMENT_RESPLIT=1 토글, 기본 off).
+    # Whisper segment 경계는 음성 신호 기반이라 의미 단위 부재. 재분할 on 시
+    # word-level 끝 검사로 미완 segment 를 다음과 병합 → D leak 해소, 2-pass
+    # SHIFT/합침 감소, 정합 향상. 기본 off — daily 1-pass 동작 보존.
+    resplit_on = os.environ.get(SEGMENT_RESPLIT_ENV, "0").strip() == "1"
+    raw_segments_for_norm = raw_segments
+    if resplit_on:
+        before_count = len(raw_segments)
+        raw_segments_for_norm = _resplit_segments_by_semantics(raw_segments, diarization_turns)
+        log(
+            f"세그먼트 재분할 (GURUNOTE_SEGMENT_RESPLIT=1) — "
+            f"{before_count} → {len(raw_segments_for_norm)} segments (의미 단위 병합)"
+        )
+
     # 3. Segment 정규화 (화자 할당)
     # Layer 6 fix: Whisper hallucination 영역 (빈 text + noise placeholder + 중복) 필터링.
     # 본인 daily 사용 catch (5/9): NVIDIA GTC 영상의 같은 timestamp + 같은 화자의 빈
@@ -200,7 +348,7 @@ def transcribe_mlx(
     _seen_keys: set = set()
     _filtered_empty = 0
     _filtered_duplicate = 0
-    for seg in raw_segments:
+    for seg in raw_segments_for_norm:
         start = float(seg.get("start", 0.0))
         end = float(seg.get("end", 0.0))
         text = (seg.get("text") or "").strip()
@@ -236,7 +384,8 @@ def transcribe_mlx(
         segments=segments,
         engine="mlx",
         language=language,
-        raw={"language": language, "model": model_repo},
+        raw={"language": language, "model": model_repo,
+              "segment_resplit": resplit_on},
     )
 
 

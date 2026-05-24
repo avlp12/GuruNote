@@ -459,6 +459,16 @@ DEFAULT_CHUNK_CHAR_LIMIT = 12_000  # 5/10 본인 설계 복원 (5/14 6000 가설
 # 안전 영역). char limit = LLM 토큰 한도 보조 safety net (요약 path 보존).
 MAX_SEGMENTS_PER_CHUNK = 15
 
+# 5/24 — STT 의미 단위 재분할 (GURUNOTE_SEGMENT_RESPLIT=1) on 시 적용.
+# 재분할 후 segment 길이 ↑ → cs=15 default 시 일부 영상 chunk_max 5061 chars 까지
+# 폭주 → 1-pass wall-clock 60초 timeout 다발. 다영상 6개 검증 (TED/인터뷰/긴발화):
+#   - cs=12 + char_limit=2000 → chunk_max ≤ 1989, 1-pass timeout 6→1 (잔존 1건은
+#     B02 안전망 + 빈 복구 시퀀스 catch).
+#   - 2-pass 모든 영상 timeout 0 유지 + 1단계 정합 30→57~69% 향상.
+# 토글 off 시 기존값 (12000/15) 보존 — daily 1-pass 동작 불변.
+RESPLIT_CHAR_LIMIT = 2000
+RESPLIT_SEGMENT_LIMIT = 12
+
 # 번역/요약 호출의 응답 토큰 상한 (gpt-5.4 / claude-sonnet-4-6 둘 다
 # 수용 가능한 안전한 값).
 TRANSLATION_MAX_TOKENS = 8192
@@ -1541,8 +1551,22 @@ def translate_transcript(
             "  brew services restart jundot/omlx/omlx"
         )
 
-    chunks = chunk_segments(transcript.segments)
-    log(f"🌐 LLM 번역 시작 — {len(chunks)} 청크 ({config.provider}/{config.model})")
+    # 5/24 — STT 의미 단위 재분할 적용 시 chunk size 자동 축소.
+    # transcript.raw["segment_resplit"]=True (stt_mlx.py 토글 on) → cs=12, char_limit=2000.
+    # off → 기존 (cs=15, char_limit=12000) — daily 1-pass 동작 보존.
+    resplit_applied = bool(getattr(transcript, "raw", None)
+                            and transcript.raw.get("segment_resplit"))
+    if resplit_applied:
+        chunks = chunk_segments(
+            transcript.segments,
+            char_limit=RESPLIT_CHAR_LIMIT,
+            segment_limit=RESPLIT_SEGMENT_LIMIT,
+        )
+        log(f"🌐 LLM 번역 시작 — {len(chunks)} 청크 (cs={RESPLIT_SEGMENT_LIMIT}, "
+            f"char_limit={RESPLIT_CHAR_LIMIT}, 재분할 적용) ({config.provider}/{config.model})")
+    else:
+        chunks = chunk_segments(transcript.segments)
+        log(f"🌐 LLM 번역 시작 — {len(chunks)} 청크 ({config.provider}/{config.model})")
 
     context_block = build_video_context_block(video_context)
     if context_block:

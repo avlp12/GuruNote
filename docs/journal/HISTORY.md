@@ -1,6 +1,6 @@
 # GuruNote 역사 — 시간순
 
-> 2026-04-11 첫 commit ~ 2026-05-24 (758 commit + 183 test). 1차 사료는 `docs/wip/session_history_digest.md` (Claude Code 세션 18개, 4/19~5/24) + git log + README/CHANGELOG. **Phase 0 (4/11~18) 일부는 본인 기억 기반 2차 사료** — 본 문서에서 명시.
+> 2026-04-11 첫 commit ~ 2026-05-24 v1.0.0.0 선언 + main 통합. 통합 main 트리 412 commit + archive/main-pre-cli 211 commit + 183 test 통과. 1차 사료는 `docs/wip/session_history_digest.md` (Claude Code 세션 18개, 4/19~5/24) + git log + README/CHANGELOG. **Phase 0 (4/11~18) 일부는 본인 기억 기반 2차 사료** — 본 문서에서 명시.
 
 ## 0. 시작 (2026-04-11, 2차 사료)
 
@@ -180,15 +180,33 @@ ab86b9e  04-12 08:46  Codex review (hotwords, token budget, env mutation)
 | 5/24 | `4f2db79` | docs: 옛 UI 작업 문서 legacy로 정리 이동 (37 rename) |
 | 5/24 | `373d5db` | docs: Phase 5 검증 산출물 보존 (prototype + 보고서) |
 | 5/24 | `5c3c240` | docs: 18개 세션 사료화 (역사 1차 자료) |
+| 5/24 | `41745e6` | docs: GuruNote 역사 기록 (통합 일지 + HISTORY/DECISIONS/DEBUGGING/CHANGELOG 첫 작성) |
 
-## 5. 현재 (2026-05-24, HEAD 5c3c240)
+### Phase 5 마무리 + v1.0.0.0 선언 + main 통합 (5/24 저녁)
+
+| 시기 | commit | 사건 |
+|------|--------|-----|
+| 5/24 | `6dc9934` | **Phase 5 default on**: `GURUNOTE_SEGMENT_RESPLIT` + `GURUNOTE_TWO_PASS` 기본값 off → on. daily 검증 영상 2개 통과 — xKK5ze3FukQ (Boston Dynamics, 5.7 분) 96→49 segments / zNuOOMM20Tk (NVIDIA Podcast, 33.4 분) 586→294 segments. timeout 0, CJK 0, 화자 이름 정상 부착. 토글 off 안전망 유지 (`=0` 명시 시 기존 동작). 신규 백로그 B07 (D 재평가) + B08 (화자 bootstrap 한계). |
+| 5/24 | `2971939` | **release: v1.0.0.0** — 버전 0.8.0.6 → 1.0.0.0 (7 곳 갱신: `__init__.py`, `gui.py` 사이드바, `package_desktop.py` Inno Setup + pkgbuild, `SettingsScreen.jsx` fallback, README "현재 버전", CHANGELOG entry). CLAUDE.md 체크리스트 5-file → 6-file (React UI fallback 추가). 신규 `run_webview.command` (React/PyWebView 진입점 wrapper). README 약 60% 재작성 — 진입점 `app_webview.py` 권장 + 옛 진입점 호환 표기, React/Mac/MLX 위주. backlog B09 (PipelineWorker 분리) + B10 (setup 스크립트 echo 갱신) 신규. test 183 passed. |
+| 5/24 | (브랜치 작업) | **main 통합 — unrelated histories 처리**. 옛 main 트리 (root `4bcbee6`, HEAD `9b6c621` v0.8.0.6) 와 redesign 트리 (root `af50c2e`, HEAD `2971939` v1.0.0.0) 가 공통 조상 부재 사실 확인 (4/19 직후 웹 Claude → 로컬 CLI Claude Code 전환 시 별도 init 한 결과). 옛 main 211 commit 을 `archive/main-pre-cli` 로 origin 보존 → `git push origin main --force-with-lease` 로 redesign 트리를 main 으로 통일. origin/main: `9b6c621` → `2971939`. |
+
+## 5. 현재 (2026-05-24 22시 GMT+9 기준, HEAD 2971939, v1.0.0.0)
 
 ### 코드 상태
 - gurunote/ ~9100 line (llm.py 2700+ / stt_mlx.py 517 / stt.py 455 / updater.py 534 / 등)
-- webui/ React 신축 (Phase 2B)
+- webui/ React 신축 (Phase 2B, 10 컴포넌트)
 - tests/ 183 passed
 - License: Elastic 2.0
-- branch: `redesign/tailwind-v2` (main 머지 대기)
+- 통합 main 트리: 412 commit (root `af50c2e`)
+- 보존: `archive/main-pre-cli` 211 commit (root `4bcbee6`, 옛 main v0.x 전체)
+
+### 진입점 (v1.0.0.0)
+
+| 진입점 | 위치 | 상태 |
+|---|---|---|
+| **React/PyWebView** (권장) | `app_webview.py`, `run_webview.command` | v1.0+ |
+| **CustomTkinter** (호환 유지) | `gui.py`, `run_gui.command`, `run_desktop.{sh,bat}` | `PipelineWorker` 클래스 보유 — React UI 가 의존 (B09 분리 작업 백로그) |
+| **Streamlit** (호환 유지) | `app.py`, `run_web.{sh,bat}` | 단독 사용 가능 |
 
 ### backlog 미해결
 
@@ -197,16 +215,23 @@ ab86b9e  04-12 08:46  Codex review (hotwords, token budget, env mutation)
 | B03 | not_started | Phase 1 fix-up #3 schema text leak — xgrammar 외부 의존, 신 버전 대기 |
 | B04 | blocked | Phase 1 fix-up #2 tail attention drop — 정황 확인 필요 |
 | B05 | blocked | Phase 4 capability profile — 모델 교체 결정 후 진입 (5/24 "모델 비의존" 방향으로 본 전제 우회) |
+| B07 | not_started | D segment 단독 번역 재평가 — Phase 5 후속, 정합 낮은 영상에서 SHIFT 재발 시 |
+| B08 | not_started | 화자 bootstrap 식별 한계 후속 — 5/24 영상1 5명 중 3명만 식별, 메타데이터 한계 |
+| B09 | not_started | PipelineWorker 를 gui.py 에서 별도 모듈로 분리 — React 가 옛 CustomTkinter UI 파일에 의존하는 기술 부채 |
+| B10 | not_started | setup.sh / setup.bat echo 갱신 — README v1.0 진입점과 일관성 |
 
 ## 6. 다음 — 본 문서 작성 시점 기준
 
-- D 재평가 (재분할 + char_limit 후 D 단독 번역 여전히 필요?)
-- 마무리: 2-pass default on, 재분할 default on, README 갱신, main 머지
-- B03/B04/B05 각 결정
+- 역사 문서 주기적 갱신 (본 commit 이 첫 갱신 적용 사례).
+- `docs/wip/daily_verify_phase5.py` / `verify_results/daily_phase5/` 운명 (커밋 / .gitignore / 삭제).
+- GitHub release 태그 `v1.0.0.0` 생성 여부.
+- B07/B08/B09/B10 각 결정.
+- B03/B04/B05 각 결정.
 
 ---
 
 **자료 한계 명시**:
 - Phase 0 (4/11~18 첫 commit ~ v0.8.0.6) — 본인 메모/기억 2차 사료. session_history_digest 시작이 4/19.
 - VibeVoice OOM 32분 / Nemotron Omni 평가 / 정체성 진화 시점 일부 — 본인 기억 2차 사료.
-- License MIT → Elastic 전환 동기 — 본인 링크 대화 catch (DECISIONS.md 확장).
+- License MIT → Elastic 전환 동기 — 본인 링크 대화 (DECISIONS.md 확장).
+- main 트리 / redesign 트리 unrelated histories 사실 — 5/24 통합 시점에 사후 확인. 별도 init 가 정확히 어느 commit 인지는 기록 부재 (양쪽 모두 "Initial commit" 메시지, 4/11 같은 날, hash `4bcbee6` vs `af50c2e`). 본인 기억으로는 4/19 직후 로컬 CLI Claude Code 도입 시 환경 변경.

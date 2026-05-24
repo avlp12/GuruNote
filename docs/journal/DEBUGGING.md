@@ -228,7 +228,48 @@
 → F3QDC7HDMyg 38분 영상 catch 부족
 → char_limit=2000 검증
 → 통합 본체 검증 (모델 비의존 hardness 도달)
+→ daily 검증 영상 2개 토글 on (5/24 저녁, `6dc9934`)
+→ default on 결정 (off 안전망 유지)
+→ v1.0.0.0 선언 + README 60% 재작성 (`2971939`)
+→ main 통합 시 unrelated histories 발견 (4bcbee6 vs af50c2e)
+→ archive/main-pre-cli 보존 + force-with-lease 통일
 ```
+
+## 4-1. Phase 5 마무리 (5/24, `6dc9934`) — 짧은 추적
+
+**daily 검증 영상 2 개 토글 on 측정**:
+- xKK5ze3FukQ (Boston Dynamics, 5.7 분): 96 → 49 segments (-49 %), timeout 0, CJK 0, **5 명 화자 중 3 명만 bootstrap 식별** — 메타데이터 한계 (백로그 B08 등록)
+- zNuOOMM20Tk (NVIDIA Podcast, 33.4 분): 586 → 294 segments (-50 %), timeout 0, CJK 0, 2/2 화자 식별
+
+**결정 사슬**:
+1. 토글 on 결과 통과 → default 전환 후보
+2. test 2 건 회귀 — `test_default_off_uses_one_pass` (`delenv` 가정) 가 default on 으로 변경 시 깨짐
+3. test 의도 갱신: `test_explicit_off_uses_one_pass` (env=`0` 명시 시 1-pass) + `test_env_default_on` (env 부재 시 `1`)
+4. 183 tests passed → commit + push
+
+## 4-2. v1.0.0.0 + main 통합 (5/24 저녁) — 사전 점검 + 안전망
+
+**gui.py/app.py legacy 이동 검토 → 결정적 의존성 사전 발견**:
+- 초기 의도: gui.py / app.py 둘 다 `docs/legacy/` 이동
+- 참조 스캔 결과: `gurunote/webui/session.py:67` 에 `from gui import PipelineWorker` — React UI 가 옛 CustomTkinter UI 파일의 클래스를 import
+- 진단: `gui.py` (CustomTkinter) 안에 `PipelineWorker` 클래스가 들어있고, React UI 가 그걸 그대로 사용. legacy 이동 시 React UI 깨짐.
+- 결정 (Path C, ADR-013): 파일 이동 0, README/안내만 갱신. `PipelineWorker` 분리는 백로그 B09.
+
+**main 통합 시 unrelated histories 발견**:
+1. `git fetch origin` 후 `git log --left-right --graph origin/main...redesign/tailwind-v2` — `>` 만 보임, `<` 부재
+2. `git merge-base origin/main redesign/tailwind-v2` — **빈 결과 반환**
+3. `git log --reverse` 양쪽 첫 commit: main `4bcbee6 Initial commit` vs redesign `af50c2e Initial commit` — 같은 메시지, 다른 hash
+4. 진단: 두 브랜치가 별도 `git init` 으로 시작한 별개 트리. 공통 조상 부재. 본인 기억으로는 4/19 직후 웹 Claude → 로컬 CLI Claude Code 전환 시 환경 변경.
+5. STOP RULE 발동 — 본인 결정 path 4 가지 제시 후 본인 선택 (옛 main archive 보존 + force-with-lease).
+
+**안전망 시퀀스 (force push 전 필수)**:
+1. `git branch archive/main-pre-cli origin/main`
+2. `git push origin archive/main-pre-cli` → `9b6c62...` 확인 (211 commit, root `4bcbee6` 도달)
+3. `git merge-base --is-ancestor 4bcbee6 archive/main-pre-cli` → 통과
+4. `git checkout main && git reset --hard redesign/tailwind-v2`
+5. `git push origin main --force-with-lease` → `+ 9b6c621...2971939 main -> main (forced update)` 성공
+
+**해결**: ADR-012 안전망 보존 + force-with-lease 통일.
 
 ---
 

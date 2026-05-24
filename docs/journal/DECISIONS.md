@@ -144,6 +144,99 @@
 
 ---
 
+### ADR-010. Phase 5 default on — 재분할 + 2-pass 기본값 전환 (5/24)
+
+**맥락**: ADR-008 STT 의미 단위 재분할 (`527d2ea`) 진입 시점에는 토글 기본값 off (daily 1-pass 동작 보존 의도). 다영상 6 개 검증 + 통합 본체 검증 통과했으나, daily 환경 (cache 격리 부재, qwen3.6-35b-q5) 에서 본인 평소 영상 토글 on 결과는 미측정.
+
+**결정 (`6dc9934`, 5/24)**: daily 검증 영상 2 개 토글 on 결과 통과 후 **`GURUNOTE_SEGMENT_RESPLIT` + `GURUNOTE_TWO_PASS` 기본값 off → on** 전환. 토글 자체는 유지 — `GURUNOTE_*=0` 명시 시 기존 1-pass + 원본 segment 동작 보존 (안전망).
+
+**검증 결과**:
+- xKK5ze3FukQ (Boston Dynamics, 5.7 분): 96 → 49 segments (-49 %), timeout 0, CJK 0, 5 명 화자 중 3 명 bootstrap 식별 (메타데이터 한계 — B08 등록)
+- zNuOOMM20Tk (NVIDIA Podcast, 33.4 분): 586 → 294 segments (-50 %), timeout 0, CJK 0, 2/2 화자 식별
+
+**대안**:
+- A. default off 유지 — 안전, 단 사용자가 토글 모를 시 개선 반영 부재
+- B. (채택) default on, off 안전망 유지 — 새 사용자 자동 적용 + 익숙 사용자 우회 가능
+- C. default on, 토글 제거 — 회귀 차단 path 부재 (기각)
+
+**이유**: daily 검증 통과 = 권장 동작이 default. 토글 안전망 유지로 회귀 대비.
+
+**결과**: test 2 건 수정 (`test_default_off_uses_one_pass` → `test_explicit_off_uses_one_pass`, `test_env_default_off` → `test_env_default_on`), 183 tests passed.
+
+---
+
+### ADR-011. v1.0.0.0 선언 — CLAUDE.md "1.0 전 MINOR 대체" 의식적 예외 (5/24)
+
+**맥락**: CLAUDE.md 버전 정책 본문에 "1.0.0 전까지는 MINOR 로 대체" 명시. 단 redesign/tailwind-v2 누적 변경 = License MIT → Elastic, UI CustomTkinter/Streamlit → React/Material 3/PyWebView, 번역 1-pass → 2-pass DCCD + entity_cache + CJK 차단 + STT 재분할 — 셋 다 하위 호환을 동시에 깸.
+
+**결정 (`2971939`, 5/24)**: **0.8.0.6 → 1.0.0.0**. CLAUDE.md 정책의 **의식적 예외**. 1.0 선언이 변경 규모를 정직하게 표기.
+
+**대안**:
+- A. 0.9.0.0 (표준 MINOR 1 회) — 변화 규모 과소 표현
+- B. 0.10.0.0 (MINOR 2 회 분량) — 의미가 약함
+- C. (채택) 1.0.0.0 — License + UI + 백엔드 셋 다 하위 호환 깸 = MAJOR 정직 표기
+- D. 보류 — 변경 묶음 누적이 이미 큼
+
+**이유**: 라이선스 (외부 사용자 영향) + 진입점 (사용자 명령 변경) + 파이프라인 동작 (출력 형식 영향) 셋이 한 묶음으로 통합되는 시점이 1.0 선언에 부합.
+
+**결과**:
+- 버전 6 곳 + pkgbuild 1 곳 = **7 곳 일치** (`__init__.py:9`, `gui.py:3341`, `package_desktop.py:113` Inno Setup, `package_desktop.py:231` pkgbuild, `SettingsScreen.jsx:721` fallback, `README.md:506`, `CHANGELOG.md` entry)
+- CLAUDE.md 체크리스트 5-file → **6-file** (React fallback `SettingsScreen.jsx` 추가)
+- 신규 `run_webview.command` (React/PyWebView macOS 런처)
+- README 약 60 % 재작성
+- 신규 백로그 B09 (PipelineWorker 분리) + B10 (setup 스크립트 echo 갱신)
+
+---
+
+### ADR-012. main 통합 — unrelated histories + force-with-lease (5/24)
+
+**맥락**: 5/24 main 통합 시점에 두 브랜치가 **공통 조상 부재** 사실 사후 확인. `git merge-base origin/main redesign/tailwind-v2` 가 빈 결과 반환. main 트리 root `4bcbee6` (4/11 "Initial commit"), redesign 트리 root `af50c2e` (같은 메시지, 다른 hash). 4/19 직후 웹 Claude → 로컬 CLI Claude Code 전환 시 별도 `git init` 으로 시작한 결과로 추정 (본인 기억 — 정확한 시점/commit 기록 부재).
+
+**결정 (5/24)**: 옛 main 영구 보존 후 redesign 트리를 main 으로 통일. **`git push origin main --force-with-lease`**.
+
+**대안**:
+- A. `--allow-unrelated-histories` 머지 — 파일 충돌 다수 예상 (같은 경로 다른 파일), 머지 commit 통합
+- B. (채택) 옛 main archive 보존 + redesign 를 main 으로 force-with-lease — 안전망 먼저 + history 깔끔
+- C. branch 자체 교체 (delete main + rename redesign) — GitHub default branch 재설정 필요
+- D. 보류 — 두 브랜치 양립 운영 (운영 복잡)
+
+**안전망 시퀀스**:
+1. `git branch archive/main-pre-cli origin/main`
+2. `git push origin archive/main-pre-cli` (확인: `9b6c62...`, 211 commit, root `4bcbee6` 도달)
+3. `git checkout main && git reset --hard redesign/tailwind-v2`
+4. `git push origin main --force-with-lease` (origin/main 예상 상태 검증 후 push, plain `--force` 부재)
+
+**이유**: force push 는 본인 명시 허용 + archive 보존이 되돌릴 수 있는 안전망. force-with-lease 는 다른 사용자 push 보호. 단일 main 트리가 운영 복잡도를 낮춤.
+
+**결과**:
+- origin/main: `9b6c621` (v0.8.0.6) → `2971939` (v1.0.0.0)
+- origin/archive/main-pre-cli: `9b6c621` 유지 (옛 main v0.x 전체 211 commit 영구 보존)
+- test 183 passed (main 상태)
+
+---
+
+### ADR-013. gui/app legacy 처리 — Path C (파일 유지, 분리는 백로그) (5/24)
+
+**맥락**: v1.0.0.0 준비 시 옛 진입점 `gui.py` (CustomTkinter) + `app.py` (Streamlit) 의 legacy 이동 검토. 의존성 사전 점검 시 **`gurunote/webui/session.py:67`** 에 `from gui import PipelineWorker` 발견. React UI (`app_webview.py`) 가 옛 CustomTkinter UI 파일에 들어있는 `PipelineWorker` 클래스를 그대로 import 함.
+
+**결정 (5/24)**: **Path C** — gui.py / app.py 둘 다 루트 유지. README / 진입점 안내만 갱신. `PipelineWorker` 분리는 **B09 백로그**.
+
+**대안**:
+- A. gui.py 유지, app.py 만 legacy 이동 — 일부 정리
+- B. PipelineWorker 를 `gurunote/pipeline_worker.py` 신규 모듈로 분리 후 gui.py legacy 이동 — 가장 깔끔하나 코드 로직 이동 (가드레일 "코드 로직 변경 부재" 위반)
+- C. (채택) 양쪽 다 루트 유지, README/안내만 갱신 — 가장 안전, 외과적
+- D. 보류 — v1.0 작업 범위 축소
+
+**이유**: 본 세션 가드레일 "외과적, 코드 로직 변경 부재". PipelineWorker 분리는 별도 세션 작업으로 분리. 옛 진입점 호환 유지 = 옛 사용자 안전망.
+
+**결과**:
+- 파일 이동 0, 코드 로직 변경 0
+- README 가 `app_webview.py` 권장 + 옛 진입점 호환 사실 + B09 백로그 안내 명시
+- 백로그 B09 (PipelineWorker 분리, P3, 중간 비용) 등록
+- 백로그 B10 (setup 스크립트 echo 갱신, P3, 작음) 등록
+
+---
+
 ## 기각된 대안
 
 ### REJ-001. VibeVoice / Nemotron Omni 통합 모델 (시점 기록 부재)
@@ -203,7 +296,14 @@
 | ADR-007 community-1 | gurunote/stt_mlx.py | 5/23 |
 | ADR-008 STT 재분할 | gurunote/stt_mlx.py, llm.py, tests/test_segment_resplit.py | 5/24 |
 | ADR-009 Phase 4 보류 | backlog.md (B05 blocked 유지) | 5/24 |
+| ADR-010 Phase 5 default on | gurunote/stt_mlx.py, llm.py, tests 2 건 수정 | 5/24 (`6dc9934`) |
+| ADR-011 v1.0.0.0 선언 | __init__.py, gui.py, package_desktop.py, SettingsScreen.jsx, README, CHANGELOG, CLAUDE.md, run_webview.command (신규), backlog.md | 5/24 (`2971939`) |
+| ADR-012 main 통합 | origin/main (force-with-lease), origin/archive/main-pre-cli (신규 보존) | 5/24 |
+| ADR-013 gui/app Path C | (파일 이동 부재) — README 진입점 안내, backlog B09/B10 | 5/24 |
 
 ---
 
-**자료 한계 명시**: REJ-001/REJ-002/REJ-005 시점 일부 본인 기억 2차 사료. ADR-001/004/006/007/008은 commit hash + session_history_digest 1차 사료.
+**자료 한계 명시**:
+- REJ-001/REJ-002/REJ-005 시점 일부 본인 기억 2차 사료.
+- ADR-001/004/006/007/008/010/011/012 는 commit hash + session_history_digest + git ref 1차 사료.
+- ADR-012 의 unrelated histories 발생 정확한 시점 (별도 init 한 commit) 은 **기록 부재** — 양쪽 root commit 메시지 동일 ("Initial commit"), 4/11 같은 날, hash `4bcbee6` vs `af50c2e`. 본인 기억으로는 4/19 직후 환경 전환.

@@ -68,8 +68,8 @@
 ## 다음 할 일
 
 - 역사 문서 주기적 갱신 (본 commit).
-- `docs/wip/daily_verify_phase5.py` / `verify_results/daily_phase5/` 운명 결정 (커밋 / .gitignore / 삭제).
-- GitHub release 태그 `v1.0.0.0` 생성 여부 결정.
+- ~~`docs/wip/daily_verify_phase5.py` / `verify_results/daily_phase5/` 운명 결정~~ → **commit 완료** (`208f18a`, 5/25). `docs/wip/` verify 스크립트 + `verify_results/` 추적 선례 일치. `.gitignore` 는 raw/segments/resplit 무거운 산출물 계속 비추적.
+- ~~GitHub release 태그 `v1.0.0.0` 생성 여부 결정~~ → **생성 완료** (5/25). annotated tag `v1.0.0.0` @ `2971939`(릴리스 커밋, origin/main) + GitHub release(latest) 발행.
 - **B07** D segment 단독 번역 재평가 — 정합 낮은 영상에서 SHIFT 재발 시.
 - **B08** 화자 bootstrap 식별 한계 후속 — 영상 빈도 누적 후 B01 연계 검토.
 - **B09** PipelineWorker 를 gui.py 에서 별도 모듈로 분리 — 옛 진입점 폐기 시점 또는 React 단일화 결정 시.

@@ -1,0 +1,44 @@
+Phase 2B-3-backend Layer 13 fix: 화자 표기 한국어 번역 + 본문 entity 영문 병기 명확화
+
+★ LLM 화자 라벨 + 본문 entity 처리 본질 fix ★
+
+배경:
+- Layer 8 fix-up push (c2da2d3) 후 본인 5/10 daily 사용 catch
+- NVIDIA GTC 재처리 결과 본인 본질 catch:
+  * [00:10] Speaker A (Tiffany Janzen): 안녕하세요... → Speaker A/B 메타 라벨이 한국어 스크립트 노출
+  * 본문 entity 한국어 번역 부재 (Pankaj Sharma 영문 그대로)
+  * 1차 fix 후 추가 catch: 화자 라벨 한국어 중복 출력 (판카즈 샤르마(판카즈 샤르마))
+
+본인 결정:
+- Fix 영역 = TRANSLATION_SYSTEM_PROMPT의 Rule 2 + Rule 8 + Rule 10 정정
+- 한국어 스크립트 / 영어 원문 분리 spec
+- 본문 entity 처리 명확화 + 한국어 중복 금지 명시
+- 추가 dict 등록 (AI Native, Energy Intelligence)
+
+수정 (gurunote/llm.py +40/-6 = net +34L):
+
+[Rule 2 정정] 한국어 스크립트 vs 영어 원문 분리:
+- 한국어 스크립트: 첫 등장 한국어 화자명(English Name), 이후 한국어만
+- 영어 원문: **[HH:MM] Speaker A:** 본문 (그대로 보존)
+- Speaker A/B/C 메타 라벨 한국어 스크립트 부재
+- 한국어 중복 출력 금지 명시 (판카즈 샤르마(판카즈 샤르마) 등)
+
+[Rule 8 정정] 화자 매핑 형식 일관성
+
+[Rule 10 추가 명확화]
+- 영문 병기 룰 한국어 중복 금지 명시
+- 본문 영역 화자 인용 처리 명시 (첫 등장 영문 병기, 이후 한국어만)
+- 추가 dict: AI Native → AI 네이티브, Energy Intelligence → 에너지 인텔리전스
+
+검증 통과 (본인 5/10 verify):
+- [화자 라벨] 첫 등장 영문 병기 정합 + 한국어 중복 부재
+- [본문 영역] 첫 등장 영문 병기 + 이후 한국어만
+- [영어 원문] Speaker A/B 그대로 보존
+- [추가 dict] AI Native / Energy Intelligence 적용 catch
+- 회귀 부재 (Layer 1/5/6/7/8/9 fix 결과 보존)
+
+원칙 준수:
+- ✅ 본질적 fix
+- ✅ 우리 코드 (llm.py)
+- ✅ 최고의 결과
+- ✅ 사용자 본질 catch + 진단 + 결정 + 직접 verify

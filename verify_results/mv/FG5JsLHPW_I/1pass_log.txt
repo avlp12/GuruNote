@@ -1,0 +1,23 @@
+[11:01:36] 🌐 LLM 번역 시작 — 6 청크 (openai_compatible/Qwen3.6-35B-A3B-oQ6-mtp)
+[11:01:36] 📖 영상 컨텍스트(게시일/챕터/자막)를 LLM 에 주입합니다.
+[11:01:42]    📚 entity cache bootstrap — 4건 사전 추출
+[11:01:42]    🎤 speaker cache bootstrap — 2명 식별
+[11:01:42]    ↳ 청크 1/6 번역 중…
+[11:01:54]    ✅ Index Mapping 정합 — 12 outputs (finish_reason=stop)
+[11:01:55]    ↳ 청크 2/6 번역 중…
+[11:02:09]    ✅ Index Mapping 정합 — 12 outputs (finish_reason=stop)
+[11:02:10]    ↳ 청크 3/6 번역 중…
+[11:02:20]    ✅ Index Mapping 정합 — 12 outputs (finish_reason=stop)
+[11:02:21]    ↳ 청크 4/6 번역 중…
+[11:02:33]    ✅ Index Mapping 정합 — 12 outputs (finish_reason=stop)
+[11:02:34]    ↳ 청크 5/6 번역 중…
+[11:02:41]    ✅ Index Mapping 정합 — 12 outputs (finish_reason=stop)
+[11:02:42]    ↳ 청크 6/6 번역 중…
+[11:02:50]    ✅ Index Mapping 정합 — 11 outputs (finish_reason=stop)
+[11:02:50]    📚 entity cache 갱신: +1건 (누적 5건)
+[11:02:50] ✅ 번역 완료
+[11:02:50]    💾 entity cache 저장: 5건 / speakers 2명 → FG5JsLHPW_I_1p
+[11:02:52]    🔧 Phase 3 후처리 — Sub-A 1건, Sub-B 2건, Sub-C fallback 0건
+[11:03:25]    ⚠ canonicalize entity 외 변경 의심 1건 (canonical 채택, 로그만):
+[11:03:25]   L30: '[01:25] 다리오 아모데이(Dario Amodei): 유선 인프라와 …' → '[01:25] 다리오 아모데이(Dario Amodei): 유선 인프라와 …'
+[11:03:25]    🔧 entity canonicalize 적용 (5건 cache, 줄 수 140 → 140)

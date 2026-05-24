@@ -1,0 +1,87 @@
+Phase 2B-3-backend Layer 15 fix-up #1: title hallucination 가이드라인 강화
+
+★ METADATA prompt 의 title 등장 인물 룰 본질 강화 — 본문 인용 인물 title 배제 ★
+
+배경:
+- Layer 15 push (ece961e) 후 본인 daily 사용 catch:
+  * title: "젠슨 황(Jensen Huang)과 슈나이더 일렉트릭(Schneider Electric)의 AI 인프라 에너지 논의"
+  * 영상 실제 화자 = 티파니 잔젠 + 판카즈 샤르마 (2명)
+  * 젠슨 황은 본문 [01:09]에서 단순 인용 (5층 케이크 keynote 언급) — 영상 출연 부재
+  * LLM이 본문 prominent entity (젠슨 황) 를 title 에 끌어와 hallucinate
+- 본질 cause 진단 (Layer 15 fix-up #1 read-only):
+  * METADATA_SYSTEM_PROMPT 의 title 가이드라인:
+    - 화자 ↔ 인용 인물 구분 부재
+    - 단순 번역 우선 강화 부재
+    - 형식 예시가 "젠슨 황: ..." 단일 패턴 → LLM 에게 화자 우선 학습
+
+본인 결정 (3 Decision):
+- Q1 = (가) 화자 우선 + 인용 인물 배제 + 단순 번역 우선
+- Q2 = (가) 다양한 패턴 예시 3개 (단순 번역 / 화자+주제 / 주제 중심)
+- Q3 = (가) 트랙 B 진입 (Layer 15 영역 정합)
+
+수정 (gurunote/llm.py +12/-3):
+
+A. METADATA_SYSTEM_PROMPT 항목 1 (organized_title) 가이드라인 본질 강화:
+
+   기존 (Layer 15 push):
+   - 원본 영상 제목이 충분히 명확하면 그대로 사용 가능
+   - 영어/너무 김/광고문구 포함되어 있으면 핵심 주제로 새로 작성
+   - 형식 예: "젠슨 황(Jensen Huang): NVIDIA - 4조 달러 기업과 AI 혁명"
+
+   변경:
+   - ★ 우선순위: 원본 영상 제목이 충분히 명확하면 그대로 사용 또는 단순 한국어 번역
+   - 영어/너무 김/광고문구 포함되어 있으면 핵심 주제로 새로 작성
+   - ★ title 등장 인물 룰 (Layer 15 fix-up #1 — hallucination 차단):
+     * 영상의 실제 화자 + 영상의 핵심 주제만 포함
+     * 본문에서 단순 인용된 인물 (키노트 발표자, 언급된 학자, 화자가 인용한
+       다른 사람 등) 은 title 등장 절대 부재
+     * 영상의 실제 화자는 transcript 의 화자 라벨에서 확인 — 인용 인물과 구분
+   - 형식 예시 (다양 패턴 — 영상 성격에 맞게 선택):
+     * 단순 번역: "엔비디아 GTC 스튜디오: 슈나이더 일렉트릭의 AI 인프라 인사이트"
+     * 화자 + 주제: "판카즈 샤르마(Pankaj Sharma): AI 팩토리의 에너지 인텔리전스"
+     * 주제 중심: "AI 팩토리 에너지 인프라: Energy for AI vs AI for Energy"
+   - 부정합 사례: 본문에서 단순 인용된 인물을 title 화자로 배치 ✗
+
+검증 통과 (자동 15/15):
+- ★ py_compile OK
+- ★ diff +12/-3
+- ★ Layer 15 가이드라인 4개 신규 (우선순위 + 인물 룰 + 다양 예시 + 부정합)
+- ★ Layer 15 의 _SHARED_LANG_RULES inline 보존
+- ★ Layer 15 의 title 영문 병기 정합 예시 보존
+- ★ Layer 15 의 표기 룰 섹션 보존
+- ★ JSON 출력 안전성 보존
+- ★ Layer 11 / Layer 13 fix-up #2 / Rule 10 dict 회귀 부재
+
+본인 GUI verify 통과 (NVIDIA GTC 재처리):
+- ★ title hallucination 차단 정합:
+  * 현 title: "판카즈 샤르마(Pankaj Sharma): 에너지 인텔리전스와 AI 팩토리 인프라"
+  * 영상 실제 화자 (판카즈 샤르마) title 화자 정합
+  * 젠슨 황 hallucinate 부재
+  * 형식 예시의 "화자+주제" 패턴 정합 (저희가 예시에 넣은 패턴과 거의 동일)
+- ★ Layer 15 회귀 부재 (영문 병기 + 띄어쓰기 + tags + JSON 안전성)
+
+본질적 발견:
+1. title 가이드라인 본질 강화로 LLM 의 chunk-level hallucination 차단 정합 작동
+   → 본문 prominent entity (인용 인물) 를 title 화자로 배치 hallucinate 본질 차단
+2. 형식 예시 다양화 (단순 번역 / 화자+주제 / 주제 중심) — LLM 에게 "화자 우선만이 정답" 영역의 인지 차단
+3. 본인 영구 원칙 (feedback_first_occurrence_furigana.md) 정합 — title 영문 병기 보존
+
+알려진 한계 — Phase 1~3 영역의 본질 본질 영역 (백로그):
+본 fix 와 무관한 별도 본질 영역의 회귀 catch 4건 — LLM sampling 변동 영역:
+- 화자명 표기 일관성 부재 (스키에더 vs 슈나이더) — Phase 2 영역
+- 한국어 중복 출력 위반 (AI for Energy(AI는 에너지에 활용)) — Phase 3 영역
+- 화자명 hallucinate (티파즈 샤르마) — Phase 2 영역
+- chunk 누락 (2분 10초) — Phase 1 영역 (가장 본질)
+
+→ prompt 차원 fix 한계 catch — Phase 1~3 영역의 post-call validation 영역에서 본질 차단
+→ 본인 영구 원칙 (5/11 GuruNote = "강건한 LLM 하네스") 정합
+
+연관 phase:
+- Phase 2B-3-backend Layer 15 (ece961e, METADATA prompt _SHARED_LANG_RULES inline)
+- Phase 2B-3-backend Layer 13 fix-up #2 (12e1868, 영상 전체 첫 등장 영문 병기)
+
+원칙 준수:
+- ✅ 본질적 fix (title 가이드라인 본질 강화)
+- ✅ 우리 코드 (llm.py)
+- ✅ 본인 영구 원칙 정합 (feedback_first_occurrence_furigana.md)
+- ✅ 본인 catch + 진단 + 결정 + 직접 verify

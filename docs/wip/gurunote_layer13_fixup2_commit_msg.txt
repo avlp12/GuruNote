@@ -1,0 +1,69 @@
+Phase 2B-3-backend Layer 13 fix-up #2: 화자 라벨 첫 등장 영문 병기 누락 fix
+
+★ LLM 화자 라벨 첫 등장 영문 병기 누락 본질 fix ★
+
+배경:
+- Layer 13 push (027f243) + Step 3b-2 push (db98761) 후 본인 5/10 daily 사용 catch
+- NVIDIA GTC 재처리 결과 본인 본질 catch:
+  * 본문 entity 첫 등장 영문 병기 정합 (Pankaj Sharma) ✓
+  * 화자 라벨 첫 등장 영문 병기 누락 ([00:10] 티파니 잔젠: ... 영문 병기 부재) ✗
+  * 화자 라벨 이후 등장 영문 병기 부재 정합 ✓
+
+본인 본질 결정 (영구 원칙 등록):
+- 최초로 언급하거나 등장하는 인명/지명 등 고유 명사는
+  "한국어 번역(영문 표기 또는 원어 표기 병기)" 적용
+- 영상 전체에서 처음 등장 시 한 번만 영문 병기 (chunk 분할 reset 부재)
+- 화자 라벨 + 본문 entity 모두 동일 패턴 적용
+
+본질 cause 진단:
+1. Rule 2의 화자 라벨 첫 등장 영문 병기 룰과 본문 entity 룰 간 LLM 우선순위 충돌
+2. chunk 분할 영역의 첫 등장 catch reset 가능성
+3. Rule 2의 "첫 등장" 정의 명확화 부재 (영상 전체 vs chunk별)
+
+수정 (gurunote/llm.py +15/-4 = net +11L):
+
+A. Rule 2 top — [첫 등장 정의 — 영상 전체 catch — 절대 원칙] 신규:
+   - 영상 전체 첫 등장 한 번 catch
+   - chunk 분할 reset 절대 부재
+   - 화자 라벨 + 본문 entity 동일 패턴
+
+B. Rule 2 [한국어 스크립트] — ★ 영문 병기 필수 강조 + 판카즈 샤르마 예시 추가
+C. Rule 2 [본문 영역] — ★ 영문 병기 필수 강조 + 화자 라벨 동일 적용 명시
+D. Rule 10 — 영상 전체 첫 등장 catch + 누락 절대 금지 (Rule 2 정합)
+
+E. ~/.claude 메모리 영구 원칙 등록:
+   - feedback_first_occurrence_furigana.md 신규 (Why + How to apply)
+   - MEMORY.md index 업데이트
+
+검증 통과 (본인 5/10 GUI verify):
+- ★ [00:10] 티파니 잔젠(Tiffany Janzen): ... 화자 라벨 첫 등장 영문 병기 ✓
+- ★ [00:13] 티파니 잔젠: 슈나이더 일렉트릭(Schneider Electric) 소프트웨어 및
+   서비스 부문 부사장인 판카즈 샤르마(Pankaj Sharma)님께서는... ✓
+- ★ 화자 라벨 이후 등장 영문 병기 부재 ✓
+- ★ 본문 entity 첫 등장 영문 병기 + 이후 한국어만 ✓
+- ★ 회귀 부재 (Layer 1/5/6/7/8/9/13 + Step 3b-2 보존)
+- ★ 한국어 중복 출력 부재 (Layer 13 fix-up #1 보존)
+- ★ Rule 10 dict 회귀 부재 (Tiffany 잔젠 / Pankaj 샤르마 / Schneider / Motivair / 추가 dict 보존)
+
+본질적 발견:
+1. LLM 화자 라벨 + 본문 entity 룰 간 우선순위 충돌 영역의 본질 catch
+2. "첫 등장" 정의 = 영상 전체 catch (chunk 분할 reset 부재) — 본인 영구 원칙 등록
+3. 본인 영구 원칙 등록 (feedback_first_occurrence_furigana.md) → 다음 trajectory 자동 적용
+
+알려진 한계 (다음 trajectory):
+- ResultPanel CreateScreen 한국어/영어 tab placeholder 노출 — Layer 14 또는 Layer 9 fix-up 영역
+- transcript line break inconsistency (chunk 경계 \n vs \n\n) — 별도 영역
+- 일본어 mix 회귀 (取り組んでいる) — Layer 11 (Rule 8 한자/일본어 차단 강화) 영역
+- 요약/타임라인 dict 미적용 (젠슨 헨슨 등) — Layer 11 (SUMMARY_SYSTEM_PROMPT 분리) 영역
+
+연관 phase:
+- Phase 2B-3-backend Layer 8 (cf4a7bd, 외래어 표기법 dict)
+- Phase 2B-3-backend Layer 8 fix-up (c2da2d3, Tiffany Janzen 표준 표기)
+- Phase 2B-3-backend Layer 13 (027f243, 화자 표기 한국어 번역 + 본문 entity)
+- Phase 2B-3-backend Step 3b-2 (db98761, delete_history wiring)
+
+원칙 준수:
+- ✅ 본질적 fix (Rule 2 + Rule 10 명확화 + 영구 원칙 등록)
+- ✅ 우리 코드 (llm.py + 메모리)
+- ✅ 최고의 결과 (화자 라벨 + 본문 entity 일관 적용)
+- ✅ 사용자 본질 catch + 진단 + 결정 + 직접 verify

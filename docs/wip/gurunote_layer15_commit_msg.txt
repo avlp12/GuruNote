@@ -1,0 +1,76 @@
+Phase 2B-3-backend Layer 15: METADATA prompt _SHARED_LANG_RULES inline + title 표기 정합
+
+★ METADATA_SYSTEM_PROMPT 의 _SHARED_LANG_RULES 미inline 영역 본질 fix ★
+
+배경:
+- Layer 14 push (ee8b616) 후 본인 daily 사용 catch:
+  * 노트 제목 띄어쓰기 누락 (예: "슈나이더일렉트릭" vs 본문의 "슈나이더 일렉트릭")
+  * 본문 영역 dict 정합 catch 단 METADATA 영역만 dict 미적용
+- 본질 cause 진단 (Layer 15 read-only):
+  * METADATA_SYSTEM_PROMPT (line 715) 별도 상수 존재 — Layer 11 의 _SHARED_LANG_RULES 미inline
+  * TRANSLATION (line 205) + SUMMARY (line 232) 양쪽만 inline catch
+  * METADATA prompt = JSON only 출력 영역 → 단순 끝부분 append 시 JSON 안전성 위험
+
+본인 결정 (2 Decision):
+- Decision A = (가) JSON 지시 직전 삽입 — JSON template 끝부분 보존, "오로지 다음 JSON 만 출력하세요" 마지막 instruction 정합
+- Decision B = (가) title + tags 본문 패턴 (영문 병기 적용)
+  * title 거의 수정 부재 + 영문 표기 검색 가능 본질 catch (본인 사용 패턴)
+  * 본인 영구 원칙 (feedback_first_occurrence_furigana.md) 정합
+
+수정 (gurunote/llm.py +12/-1):
+
+A. METADATA_SYSTEM_PROMPT line 723 — title 형식 예시 영문 병기 정합:
+   기존: "젠슨 황: NVIDIA - 4조 달러 기업과 AI 혁명"
+   변경: "젠슨 황(Jensen Huang): NVIDIA - 4조 달러 기업과 AI 혁명"
+
+B. METADATA_SYSTEM_PROMPT 추출 항목 직후 — _SHARED_LANG_RULES 연결:
+   """ + _SHARED_LANG_RULES + """
+
+C. Shared rules 직후 신규 섹션 (~8L):
+   [중요 — title + tags 영역의 표기 룰 (Layer 15)]
+   - title: 본문 동일 패턴 — 첫 등장 entity 영문 병기 적용
+   - tags: 통용 표기 dict 정합 (한국어). 영문 병기 부재 (hashtag 부자연)
+   - title 60자 제한 안전 (영문 병기 추가해도 일반 entity 빈도 영역 50자 안쪽)
+
+D. JSON 지시 + JSON template 끝부분 그대로 보존 (마지막 instruction 영역 정합)
+
+검증 통과 (자동 12/12):
+- ★ py_compile OK
+- ★ diff +12/-1
+- ★ _SHARED_LANG_RULES inline 3/3 (TRANSLATION + SUMMARY + METADATA)
+- ★ JSON 지시 끝부분 정합 + JSON template 보존
+- ★ Layer 11 / Layer 13 fix-up #2 / Rule 10 dict 회귀 부재
+
+본인 GUI verify 통과 (NVIDIA GTC 재처리, 8 시나리오):
+- ★ JSON 출력 안전성 (organized_title / field / tags parsing 정합)
+- ★ title 첫 등장 entity 영문 병기 (슈나이더 일렉트릭(Schneider Electric))
+- ★ title 띄어쓰기 정합 (슈나이더일렉트릭 부재)
+- ★ title 60자 제한 안전 (50자 안쪽)
+- ★ tags 한국어 dict 정합 (한국어 표기만)
+- ★ tags 영문 병기 부재 (hashtag 영역)
+- ★ TRANSLATION + SUMMARY shared rules 보존
+- ★ 회귀 부재 (Layer 1/5/6/7/8/9/13/13-fixup#2/Layer 11/Layer 14 + Step 3b-2)
+
+본질적 발견:
+1. METADATA prompt 가 별도 상수 존재 — _SHARED_LANG_RULES 단순 추가만으로 본질 fix
+2. JSON 출력 영역의 안전성 — _SHARED_LANG_RULES 를 끝부분 append 부재, JSON 지시 직전 삽입 영역 정합
+3. title 영역의 영문 병기 = 본인 영구 원칙 (feedback_first_occurrence_furigana.md) 정합
+   본인 사용 패턴 (title 거의 수정 부재 + 영문 검색 가능 본질) 정합
+
+알려진 한계 — Layer 15 fix-up #1 영역 (백로그 신규):
+- title hallucination catch (LLM 이 본문 prominent entity 를 title 에 끌어옴)
+  예: 영상 실제 화자 = 티파니 잔젠 + 판카즈 샤르마 단 title 에 젠슨 황 hallucinate
+- 본질 cause: METADATA prompt 의 title 가이드라인 부재
+  (화자 ↔ 인용 인물 구분, 단순 번역 우선 강화)
+- 다음 trajectory: METADATA prompt title 가이드라인 강화 (~15L)
+
+연관 phase:
+- Phase 2B-3-backend Layer 11 (d30c782, _SHARED_LANG_RULES 신규 + TRANSLATION + SUMMARY inline)
+- Phase 2B-3-backend Layer 13 fix-up #2 (12e1868, 영상 전체 첫 등장 영문 병기 영구 원칙)
+- Phase 2B-3-backend Layer 14 (ee8b616, CreateScreen ResultPanel + line break)
+
+원칙 준수:
+- ✅ 본질적 fix (_SHARED_LANG_RULES 3 곳 inline 영역의 마지막 영역 catch)
+- ✅ 우리 코드 (llm.py)
+- ✅ DRY 정합 (Layer 11 패턴 그대로 재사용)
+- ✅ 본인 catch + 진단 + 결정 + 직접 verify

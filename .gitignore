@@ -224,3 +224,13 @@ __marimo__/
 
 # Session logs (local only)
 docs/design/session_log_*.md
+
+# 5/24 — Phase 5 검증 cache (재생성 가능, 보고서/분석은 추적 유지).
+# root + 하위 디렉터리 모두 catch.
+verify_results/**/raw.json
+verify_results/*_raw.json
+verify_results/**/*_body*.md
+verify_results/**/segments.json
+verify_results/*_segments.json
+verify_results/**/resplit.json
+verify_results/*_resplit.json

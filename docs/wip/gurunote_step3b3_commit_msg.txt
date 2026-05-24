@@ -1,0 +1,103 @@
+Phase 2B-3-backend Step 3b-3: Title 동기화 — frontmatter SSOT + history.json sync hook
+
+★ Frontmatter 수정 시 라이브러리/헤더 자동 갱신 본질 fix (Plan A MVP) ★
+
+배경:
+- Layer 15 push (ece961e) 후 본인 daily 사용 catch:
+  * 사용자가 frontmatter title: 수정 + ⌘S → result.md 저장 ✓
+  * 단 라이브러리 카드 + EditorScreen 헤더 영역 옛 title 잔재 ❌
+  * → bridge.py update_note 의 history.json 갱신 부재 본질 catch
+- 본질 cause 진단 (Step 3b-3 read-only):
+  * bridge.py update_note (L1024+): result.md 저장만 — history.json 갱신 부재
+  * frontmatter PARSE 함수 부재 (exporter.py BUILD + semantic.py REMOVE 만 catch)
+  * Naming inconsistency: frontmatter title ↔ history organized_title (display 동일 의미, 다른 naming)
+
+본인 결정 (4 Decision):
+- Q1 = (가) Plan A 만 (MVP, ~60L) — inline editable header (C) 는 별도 trajectory
+  → 본인 daily 사용 catch 후 본질 영역 결정 영역
+- Q2 = (가) bridge.py 안 helper (_parse_transcripts 패턴 정합)
+- Q3 = (가) regex 기반 simple parser (PyYAML 의존성 회피)
+- Q4 = (가) history.py 의 update_meta(job_id, patch) atomic helper
+
+수정 (4 파일, +111L net):
+
+A. gurunote/webui/bridge.py (+76L) — _parse_frontmatter helper 신규 + update_note sync hook:
+   - _FRONTMATTER_BLOCK_RE + _FM_LINE_RE 영역의 regex parser (~15L)
+   - _strip_yaml_value: type infer (str/int/list, quoted/unquoted)
+   - _parse_frontmatter: result.md → frontmatter dict
+   - update_note: result.md 저장 후 frontmatter parse → mapping → update_meta 호출
+
+B. gurunote/history.py (+19L) — update_meta(job_id, patch) atomic helper:
+   - load_index() → job_id 영역 catch → merge patch → _write_index_atomic
+   - 위치 보존 (insert(0) 부재)
+   - 부재 job_id → None (caller graceful 처리)
+
+C. gurunote/webui/components/EditorScreen.jsx (+18L) — handleSave post-save refetch:
+   - onHistoryRefresh prop 신규
+   - save 성공 후 get_history_detail 재조회 → setItem/setFullHtml/setDetail 갱신
+   - onHistoryRefresh callback 호출 (HistoryScreen/Sidebar/Dashboard 갱신 trigger)
+
+D. gurunote/webui/components/App.jsx (+1L) — EditorScreen 에 prop pass:
+   - onHistoryRefresh={() => setHistoryRefreshKey((k) => k + 1)} pattern
+   - Step 3b-prep 의 base 영역 활용
+
+핵심 mapping (frontmatter ↔ history.json):
+- frontmatter "title"          → history "organized_title" (display)
+- frontmatter "original_title" → history "title" (yt-dlp raw)
+- frontmatter "field"          → history "field" (직접)
+- frontmatter "tags"           → history "tags" (직접)
+- frontmatter "uploader"       → history "uploader" (직접)
+- 기타 (source_url, upload_date, duration_sec 등) → 사용자 변경 영역 부재, skip
+
+검증 통과 (자동 6/6):
+- ★ py_compile (bridge.py + history.py)
+- ★ JSX brace balance (EditorScreen depth=2 = HEAD baseline / App.jsx depth=0)
+- ★ Unit test 6/6:
+  * real result.md 정상 parse (title / tags list / int / 한글 quoted)
+  * frontmatter 부재 (--- 없음) → {} 반환
+  * synthetic tags [a, b, c] parse
+  * 한글 quoted title strip
+  * update_meta: patch 적용 + 위치 보존 + 다른 키 손실 부재
+  * 부재 job_id → None
+
+본인 GUI verify 통과 (스크린샷 4건):
+- ★ EditorScreen 진입 + frontmatter title 수정 → ⌘S (스크린샷 1~2)
+- ★ 저장 토스트 + 헤더 즉시 갱신 (스크린샷 3)
+- ★ Breadcrumb 영역 갱신 (스크린샷 3)
+- ★ HistoryScreen DetailPanel 진입 → 새 title 정합 (스크린샷 4 — history.json persist catch)
+- ★ tags / field / uploader 영역 보존 (Layer 15 정합)
+- ★ 회귀 부재 (Layer 1/5/6/7/8/9/13/13-fixup#2/11/14/15 + Step 3b-2)
+
+본질적 발견:
+1. bridge.py update_note 의 history.json 갱신 부재가 본질 cause
+   → frontmatter SSOT + post-save sync hook 본질 fix
+2. Naming inconsistency (frontmatter title ↔ history organized_title) 영역의 mapping 명시
+   → 추후 trajectory 영역의 naming refactor 영역 catch 시 별도 commit
+3. EditorScreen handleSave 의 post-save refetch — Layer 7 의 onHistoryRefresh 패턴 재사용
+   (Step 3b-prep base 영역 활용)
+4. PyYAML 의존성 회피 — regex 기반 simple parser (exporter.py 가 build 하는 알려진 구조만 지원)
+
+본인 daily fix 사례 영역:
+- Layer 15 fix-up #1 영역의 본인 manual fix 영역 정합 catch:
+  "젠슨 황(Jensen Huang)과 슈나이더 일렉트릭..." (LLM hallucinate)
+  → "엔비디아 GTC 스튜디오, 슈나이더 일렉트릭(Schneider Electric)의 AI 인프라 에너지 논의"
+- 본인 시각 catch → 본인 수정 → Step 3b-3 자동 sync 정합
+
+다음 trajectory 영역 (백로그):
+- Layer 15 fix-up #1 — title hallucination 가이드라인 (METADATA prompt, ~15L)
+- Phase 1 — 하네스 chunk timestamp 검증 + 자동 재호출
+- Plan C (inline editable header) — 본인 daily 사용 catch 후 결정 영역
+
+연관 phase:
+- Phase 2B-3-backend Step 3b-prep (38381db, MainScreen state lifted + history refresh base)
+- Phase 2B-3-backend Step 3b-2 (db98761, delete_history wiring + onHistoryRefresh 패턴)
+- Phase 2B-3-backend Layer 7 (c7e9e1a, ResultPanel 4 tab DetailPanel + EditorScreen)
+- Phase 2B-3-backend Layer 14 (ee8b616, CreateScreen ResultPanel + line break)
+- Phase 2B-3-backend Layer 15 (ece961e, METADATA prompt _SHARED_LANG_RULES inline)
+
+원칙 준수:
+- ✅ 본질적 fix (history.json 갱신 부재 본질 catch)
+- ✅ MVP 영역 (Plan A, inline editable 별도 trajectory)
+- ✅ 우리 코드 (bridge.py + history.py + EditorScreen.jsx + App.jsx)
+- ✅ DRY 정합 (Step 3b-prep + onHistoryRefresh 패턴 재사용)
+- ✅ 본인 catch + 진단 + 결정 + 직접 verify

@@ -1,0 +1,22 @@
+{
+ "on": {
+  "segments": 309,
+  "chunks": 26,
+  "chunk_max": 1528,
+  "chunk_avg": 1082.8076923076924,
+  "resplit_applied": true,
+  "total_chunks": 26,
+  "match_exact": 16,
+  "match_less": 10,
+  "match_extreme": 7,
+  "timeouts": 0,
+  "elapsed": 342.59923577308655
+ },
+ "off": {
+  "segments": 332,
+  "chunks": 23,
+  "chunk_max": 1638,
+  "chunk_avg": 1253.0434782608695,
+  "resplit_applied": false
+ }
+}

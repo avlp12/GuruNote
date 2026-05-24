@@ -1,0 +1,35 @@
+{
+ "1pass": {
+  "12": {
+   "elapsed": 275.18172311782837,
+   "body_lines": 652,
+   "timeouts": 0,
+   "length_mismatch": 0,
+   "other_retry": 0
+  },
+  "10": {
+   "elapsed": 320.39048504829407,
+   "body_lines": 616,
+   "timeouts": 0,
+   "length_mismatch": 0,
+   "other_retry": 0
+  },
+  "8": {
+   "elapsed": 480.7213668823242,
+   "body_lines": 616,
+   "timeouts": 0,
+   "length_mismatch": 0,
+   "other_retry": 0
+  }
+ },
+ "2pass": {
+  "chunk_size": 12,
+  "elapsed": 352.6639268398285,
+  "body_lines": 616,
+  "total_chunks": 26,
+  "match_exact": 18,
+  "match_less": 8,
+  "match_extreme": 8,
+  "timeouts": 0
+ }
+}

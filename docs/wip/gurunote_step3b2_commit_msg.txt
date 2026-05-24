@@ -1,0 +1,61 @@
+Phase 2B-3-backend Step 3b-2: delete_history wiring + DeleteConfirmDialog
+
+★ HistoryScreen 노트 삭제 wiring 본질 fix ★
+
+배경:
+- 5/8 trajectory 영역 stash 보존 (Step 3b-2 WIP)
+- Layer 7 + Layer 8 + Layer 9 + Layer 13 push 후 stash pop catch
+- Auto-merge 정합 (Layer 7의 onHistoryRefresh prop + EditorScreen redirect useEffect와 충돌 부재)
+
+수정 (4 파일 +188L):
+
+A. gurunote/webui/bridge.py (+17L):
+   - delete_history(job_id) stub → real impl
+   - history.delete_job wrap + INVALID_ID 가드 + DELETE_FAILED 핸들링
+
+B. gurunote/webui/components/App.jsx (+16L):
+   - onHistoryRefresh prop pass (Layer 7 영역과 자동 merge)
+   - EditorScreen redirect useEffect (편집 중 노트 삭제 시 HistoryScreen 자동 이동)
+
+C. gurunote/webui/components/HistoryScreen.jsx (+85L):
+   - DeleteConfirmDialog component 신규 (L429+)
+   - state/handlers (L657-660) + JobCard onDelete prop
+   - dialog 마운트 (L838+)
+
+D. gurunote/webui/styles/history.css (+75L):
+   - .gn-confirm-overlay (fade-in animation)
+   - .gn-confirm-card (slide-in)
+   - .gn-confirm-info / .gn-confirm-actions
+   - .btn--danger (Material modal 스타일)
+
+검증 통과 (본인 5/10 GUI verify, 15 시나리오):
+[기본 동작]
+- ★ 카드 [⋯] menu (편집/다운로드/삭제) ✓
+- ★ [삭제] → DeleteConfirmDialog Material modal (fade-in + slide-in) ✓
+- ★ [취소] → 노트 보존 ✓
+- ★ [삭제] → 카드 사라짐 + 토스트 ✓
+
+[Edge case]
+- ★ EditorScreen 편집 중 노트 삭제 → 자동 redirect ✓
+- ★ 태그 노트 삭제 → sidebar count 갱신 ✓
+
+[Backend]
+- ★ ~/.gurunote/jobs/<job_id>/ 실제 삭제 ✓
+- ★ result.md / pipeline.log / audio 모두 삭제 ✓
+- ★ concurrent race 부재 ✓
+
+[회귀]
+- ★ Layer 1/5/6/7/8/9/13 fix 결과 보존 ✓
+- ★ ResultPanel 4 tab 정상 ✓
+- ★ transcript 가독성 (Layer 9) + 화자 표기 (Layer 13) 정합 ✓
+
+연관 phase:
+- Phase 2B-3-backend Step 3b-prep (38381db, MainScreen state lift)
+- Phase 2B-3-backend Layer 7 (c7e9e1a, ResultPanel 통합 — auto-merge 정합)
+- Phase 2B-3-backend Layer 13 (027f243, 화자 표기 — 회귀 점검 통과)
+
+원칙 준수:
+- ✅ 본질적 fix (delete_history 실구현 + Material modal + redirect useEffect)
+- ✅ 우리 코드 (4 파일)
+- ✅ 최고의 결과 (15 시나리오 모두 통과)
+- ✅ 사용자 본질 catch + 진단 + 결정 + 직접 verify

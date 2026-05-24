@@ -1,0 +1,230 @@
+[
+ {
+  "video_id": "C18aaP4lvUk",
+  "label": "TED (긴 발화/독백 1)",
+  "chars": {
+   "orig_count": 234,
+   "resplit_count": 143,
+   "merge_count": 64,
+   "orig_avg_chars": 41.94017094017094,
+   "resplit_avg_chars": 69.26573426573427,
+   "resplit_max_chars": 206,
+   "chunks_cs12": 12,
+   "chunk_max_chars": 1541,
+   "chunk_avg_chars": 1182.9166666666667,
+   "duration": 723.0,
+   "speaker_count": 1,
+   "subtitles_chars": 9877
+  },
+  "1pass": {
+   "timeouts": 0,
+   "length_mismatch": 0,
+   "total_chunks": null,
+   "match_exact": null,
+   "match_less": null,
+   "match_extreme": null,
+   "elapsed": 168.48856568336487,
+   "body_lines": 284
+  },
+  "2pass": {
+   "timeouts": 0,
+   "length_mismatch": 0,
+   "total_chunks": 12,
+   "match_exact": 7,
+   "match_less": 5,
+   "match_extreme": 4,
+   "elapsed": 199.861732006073,
+   "body_lines": 284
+  }
+ },
+ {
+  "video_id": "g3M3WaixeOw",
+  "label": "TED (긴 발화/독백 2)",
+  "chars": {
+   "orig_count": 377,
+   "resplit_count": 260,
+   "merge_count": 78,
+   "orig_avg_chars": 34.861333333333334,
+   "resplit_avg_chars": 50.723076923076924,
+   "resplit_max_chars": 194,
+   "chunks_cs12": 22,
+   "chunk_max_chars": 1166,
+   "chunk_avg_chars": 954.0,
+   "duration": 1092.0,
+   "speaker_count": 2,
+   "subtitles_chars": 13616
+  },
+  "1pass": {
+   "timeouts": 1,
+   "length_mismatch": 0,
+   "total_chunks": null,
+   "match_exact": null,
+   "match_less": null,
+   "match_extreme": null,
+   "elapsed": 353.29546999931335,
+   "body_lines": 518
+  },
+  "2pass": {
+   "timeouts": 0,
+   "length_mismatch": 0,
+   "total_chunks": 22,
+   "match_exact": 7,
+   "match_less": 15,
+   "match_extreme": 14,
+   "elapsed": 575.5068418979645,
+   "body_lines": 518
+  }
+ },
+ {
+  "video_id": "7ZFh7qI1xyg",
+  "label": "인터뷰 1 (주고받기)",
+  "chars": {
+   "orig_count": 373,
+   "resplit_count": 275,
+   "merge_count": 62,
+   "orig_avg_chars": 32.381615598885794,
+   "resplit_avg_chars": 42.57818181818182,
+   "resplit_max_chars": 280,
+   "chunks_cs12": 23,
+   "chunk_max_chars": 1359,
+   "chunk_avg_chars": 867.7826086956521,
+   "duration": 732.0,
+   "speaker_count": 4,
+   "subtitles_chars": 11762
+  },
+  "1pass": {
+   "timeouts": 0,
+   "length_mismatch": 1,
+   "total_chunks": null,
+   "match_exact": null,
+   "match_less": null,
+   "match_extreme": null,
+   "elapsed": 251.0111198425293,
+   "body_lines": 548
+  },
+  "2pass": {
+   "timeouts": 0,
+   "length_mismatch": 0,
+   "total_chunks": 23,
+   "match_exact": 8,
+   "match_less": 14,
+   "match_extreme": 13,
+   "elapsed": 366.0244369506836,
+   "body_lines": 549
+  }
+ },
+ {
+  "video_id": "adgbH9FixW0",
+  "label": "인터뷰 2 (주고받기)",
+  "chars": {
+   "orig_count": 867,
+   "resplit_count": 300,
+   "merge_count": 144,
+   "orig_avg_chars": 25.868894601542415,
+   "resplit_avg_chars": 68.68,
+   "resplit_max_chars": 313,
+   "chunks_cs12": 25,
+   "chunk_max_chars": 1716,
+   "chunk_avg_chars": 1184.16,
+   "duration": 1560.0,
+   "speaker_count": 3,
+   "subtitles_chars": 20855
+  },
+  "1pass": {
+   "timeouts": 1,
+   "length_mismatch": 0,
+   "total_chunks": null,
+   "match_exact": null,
+   "match_less": null,
+   "match_extreme": null,
+   "elapsed": 362.7281379699707,
+   "body_lines": 598
+  },
+  "2pass": {
+   "timeouts": 0,
+   "length_mismatch": 0,
+   "total_chunks": 25,
+   "match_exact": 14,
+   "match_less": 11,
+   "match_extreme": 8,
+   "elapsed": 608.3524010181427,
+   "body_lines": 598
+  }
+ },
+ {
+  "video_id": "F3QDC7HDMyg",
+  "label": "기타 1",
+  "chars": {
+   "orig_count": 634,
+   "resplit_count": 377,
+   "merge_count": 143,
+   "orig_avg_chars": 62.51273885350319,
+   "resplit_avg_chars": 104.79840848806366,
+   "resplit_max_chars": 662,
+   "chunks_cs12": 32,
+   "chunk_max_chars": 5061,
+   "chunk_avg_chars": 1588.09375,
+   "duration": 2315.0,
+   "speaker_count": 2,
+   "subtitles_chars": 40136
+  },
+  "1pass": {
+   "timeouts": 6,
+   "length_mismatch": 1,
+   "total_chunks": null,
+   "match_exact": null,
+   "match_less": null,
+   "match_extreme": null,
+   "elapsed": 838.3079400062561,
+   "body_lines": 752
+  },
+  "2pass": {
+   "timeouts": 0,
+   "length_mismatch": 0,
+   "total_chunks": 32,
+   "match_exact": 14,
+   "match_less": 18,
+   "match_extreme": 8,
+   "elapsed": 644.3426749706268,
+   "body_lines": 752
+  }
+ },
+ {
+  "video_id": "FG5JsLHPW_I",
+  "label": "기타 2",
+  "chars": {
+   "orig_count": 88,
+   "resplit_count": 71,
+   "merge_count": 12,
+   "orig_avg_chars": 64.52325581395348,
+   "resplit_avg_chars": 78.36619718309859,
+   "resplit_max_chars": 229,
+   "chunks_cs12": 6,
+   "chunk_max_chars": 1562,
+   "chunk_avg_chars": 1282.3333333333333,
+   "duration": 322.0,
+   "speaker_count": 4,
+   "subtitles_chars": 5817
+  },
+  "1pass": {
+   "timeouts": 0,
+   "length_mismatch": 0,
+   "total_chunks": null,
+   "match_exact": null,
+   "match_less": null,
+   "match_extreme": null,
+   "elapsed": 113.68542003631592,
+   "body_lines": 140
+  },
+  "2pass": {
+   "timeouts": 0,
+   "length_mismatch": 0,
+   "total_chunks": 6,
+   "match_exact": 4,
+   "match_less": 2,
+   "match_extreme": 2,
+   "elapsed": 100.4995391368866,
+   "body_lines": 140
+  }
+ }
+]

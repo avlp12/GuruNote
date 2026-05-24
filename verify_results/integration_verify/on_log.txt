@@ -1,0 +1,145 @@
+[12:38:54] 🌐 LLM 번역 시작 — 26 청크 (cs=12, char_limit=2000, 재분할 적용) (openai_compatible/Qwen3.6-35B-A3B-oQ6-mtp)
+[12:38:54] 📖 영상 컨텍스트(게시일/챕터/자막)를 LLM 에 주입합니다.
+[12:38:55]    📚 entity cache bootstrap — 6건 사전 추출
+[12:38:55]    ↳ 청크 1/26 번역 중…
+[12:38:55]    ↳ 2-pass 1단계: 자유 번역 (12 segments)
+[12:38:59]    📝 2-pass 1단계 출력 — 12 lines / N=12, empty lines: 0
+[12:38:59]    ↳ 2-pass 2단계: 정렬 (12 outputs schema strict)
+[12:39:03]    ✅ Index Mapping 정합 — 12 outputs (finish_reason=stop)
+[12:39:04]    ↳ 청크 2/26 번역 중…
+[12:39:04]    ↳ 2-pass 1단계: 자유 번역 (12 segments)
+[12:39:08]    📝 2-pass 1단계 출력 — 12 lines / N=12, empty lines: 0
+[12:39:08]    ↳ 2-pass 2단계: 정렬 (12 outputs schema strict)
+[12:39:13]    ✅ Index Mapping 정합 — 12 outputs (finish_reason=stop)
+[12:39:14]    ↳ 청크 3/26 번역 중…
+[12:39:14]    ↳ 2-pass 1단계: 자유 번역 (12 segments)
+[12:39:18]    📝 2-pass 1단계 출력 — 12 lines / N=12, empty lines: 0
+[12:39:18]    ↳ 2-pass 2단계: 정렬 (12 outputs schema strict)
+[12:39:21]    ✅ Index Mapping 정합 — 12 outputs (finish_reason=stop)
+[12:39:22]    ↳ 청크 4/26 번역 중…
+[12:39:22]    ↳ 2-pass 1단계: 자유 번역 (12 segments)
+[12:39:26]    📝 2-pass 1단계 출력 — 11 lines / N=12, empty lines: 0
+[12:39:26]    ↳ 2-pass 2단계: 정렬 (12 outputs schema strict)
+[12:39:30]    ⚠ 길이 미스매치: 11 != 12 (retry 1/3, finish_reason=stop)
+[12:39:35]    ✅ Index Mapping 정합 — 12 outputs (finish_reason=stop)
+[12:39:36]    ↳ 청크 5/26 번역 중…
+[12:39:36]    ↳ 2-pass 1단계: 자유 번역 (12 segments)
+[12:39:39]    📝 2-pass 1단계 출력 — 1 lines / N=12, empty lines: 0
+[12:39:39]    ↳ 2-pass 2단계: 정렬 (12 outputs schema strict)
+[12:39:43]    ✅ Index Mapping 정합 — 12 outputs (finish_reason=stop)
+[12:39:44]    ↳ 청크 6/26 번역 중…
+[12:39:44]    ↳ 2-pass 1단계: 자유 번역 (12 segments)
+[12:39:48]    📝 2-pass 1단계 출력 — 12 lines / N=12, empty lines: 0
+[12:39:48]    ↳ 2-pass 2단계: 정렬 (12 outputs schema strict)
+[12:39:51]    ✅ Index Mapping 정합 — 12 outputs (finish_reason=stop)
+[12:39:52]    ↳ 청크 7/26 번역 중…
+[12:39:52]    ↳ 2-pass 1단계: 자유 번역 (12 segments)
+[12:39:57]    📝 2-pass 1단계 출력 — 12 lines / N=12, empty lines: 0
+[12:39:57]    ↳ 2-pass 2단계: 정렬 (12 outputs schema strict)
+[12:40:01]    ✅ Index Mapping 정합 — 12 outputs (finish_reason=stop)
+[12:40:02]    ↳ 청크 8/26 번역 중…
+[12:40:02]    ↳ 2-pass 1단계: 자유 번역 (12 segments)
+[12:40:05]    📝 2-pass 1단계 출력 — 11 lines / N=12, empty lines: 0
+[12:40:05]    ↳ 2-pass 2단계: 정렬 (12 outputs schema strict)
+[12:40:09]    ⚠ 빈 output 1건 catch (idx=[11], retry 1/3)
+[12:40:09]    ↳ 빈 output retry — json_object mode 전환
+[12:40:29]    ✅ Index Mapping 정합 — 12 outputs (finish_reason=stop)
+[12:40:29]    ⚠ 2-pass 연속 동일 output 1건 catch — 정상 반복 가능성
+[12:40:30]    ↳ 청크 9/26 번역 중…
+[12:40:30]    ↳ 2-pass 1단계: 자유 번역 (12 segments)
+[12:40:33]    📝 2-pass 1단계 출력 — 11 lines / N=12, empty lines: 0
+[12:40:33]    ↳ 2-pass 2단계: 정렬 (12 outputs schema strict)
+[12:40:37]    ⚠ 빈 output 1건 catch (idx=[11], retry 1/3)
+[12:40:37]    ↳ 빈 output retry — json_object mode 전환
+[12:40:40]    ✅ Index Mapping 정합 — 12 outputs (finish_reason=stop)
+[12:40:41]    ↳ 청크 10/26 번역 중…
+[12:40:41]    ↳ 2-pass 1단계: 자유 번역 (12 segments)
+[12:40:44]    📝 2-pass 1단계 출력 — 12 lines / N=12, empty lines: 0
+[12:40:44]    ↳ 2-pass 2단계: 정렬 (12 outputs schema strict)
+[12:40:47]    ✅ Index Mapping 정합 — 12 outputs (finish_reason=stop)
+[12:40:48]    ↳ 청크 11/26 번역 중…
+[12:40:48]    ↳ 2-pass 1단계: 자유 번역 (12 segments)
+[12:40:52]    📝 2-pass 1단계 출력 — 12 lines / N=12, empty lines: 0
+[12:40:52]    ↳ 2-pass 2단계: 정렬 (12 outputs schema strict)
+[12:40:56]    ✅ Index Mapping 정합 — 12 outputs (finish_reason=stop)
+[12:40:57]    ↳ 청크 12/26 번역 중…
+[12:40:57]    ↳ 2-pass 1단계: 자유 번역 (12 segments)
+[12:41:00]    📝 2-pass 1단계 출력 — 12 lines / N=12, empty lines: 0
+[12:41:00]    ↳ 2-pass 2단계: 정렬 (12 outputs schema strict)
+[12:41:04]    ✅ Index Mapping 정합 — 12 outputs (finish_reason=stop)
+[12:41:05]    ↳ 청크 13/26 번역 중…
+[12:41:05]    ↳ 2-pass 1단계: 자유 번역 (12 segments)
+[12:41:09]    📝 2-pass 1단계 출력 — 12 lines / N=12, empty lines: 0
+[12:41:09]    ↳ 2-pass 2단계: 정렬 (12 outputs schema strict)
+[12:41:14]    ✅ Index Mapping 정합 — 12 outputs (finish_reason=stop)
+[12:41:15]    ↳ 청크 14/26 번역 중…
+[12:41:15]    ↳ 2-pass 1단계: 자유 번역 (12 segments)
+[12:41:19]    📝 2-pass 1단계 출력 — 1 lines / N=12, empty lines: 0
+[12:41:19]    ↳ 2-pass 2단계: 정렬 (12 outputs schema strict)
+[12:41:23]    ✅ Index Mapping 정합 — 12 outputs (finish_reason=stop)
+[12:41:24]    ↳ 청크 15/26 번역 중…
+[12:41:24]    ↳ 2-pass 1단계: 자유 번역 (12 segments)
+[12:41:28]    📝 2-pass 1단계 출력 — 1 lines / N=12, empty lines: 0
+[12:41:28]    ↳ 2-pass 2단계: 정렬 (12 outputs schema strict)
+[12:41:32]    ✅ Index Mapping 정합 — 12 outputs (finish_reason=stop)
+[12:41:33]    ↳ 청크 16/26 번역 중…
+[12:41:33]    ↳ 2-pass 1단계: 자유 번역 (12 segments)
+[12:41:37]    📝 2-pass 1단계 출력 — 1 lines / N=12, empty lines: 0
+[12:41:37]    ↳ 2-pass 2단계: 정렬 (12 outputs schema strict)
+[12:41:42]    ✅ Index Mapping 정합 — 12 outputs (finish_reason=stop)
+[12:41:43]    ↳ 청크 17/26 번역 중…
+[12:41:43]    ↳ 2-pass 1단계: 자유 번역 (12 segments)
+[12:41:46]    📝 2-pass 1단계 출력 — 12 lines / N=12, empty lines: 0
+[12:41:46]    ↳ 2-pass 2단계: 정렬 (12 outputs schema strict)
+[12:41:50]    ✅ Index Mapping 정합 — 12 outputs (finish_reason=stop)
+[12:41:51]    ↳ 청크 18/26 번역 중…
+[12:41:51]    ↳ 2-pass 1단계: 자유 번역 (12 segments)
+[12:41:54]    📝 2-pass 1단계 출력 — 1 lines / N=12, empty lines: 0
+[12:41:54]    ↳ 2-pass 2단계: 정렬 (12 outputs schema strict)
+[12:41:58]    ✅ Index Mapping 정합 — 12 outputs (finish_reason=stop)
+[12:41:59]    ↳ 청크 19/26 번역 중…
+[12:41:59]    ↳ 2-pass 1단계: 자유 번역 (12 segments)
+[12:42:03]    📝 2-pass 1단계 출력 — 12 lines / N=12, empty lines: 0
+[12:42:03]    ↳ 2-pass 2단계: 정렬 (12 outputs schema strict)
+[12:42:07]    ✅ Index Mapping 정합 — 12 outputs (finish_reason=stop)
+[12:42:08]    ↳ 청크 20/26 번역 중…
+[12:42:08]    ↳ 2-pass 1단계: 자유 번역 (12 segments)
+[12:42:12]    📝 2-pass 1단계 출력 — 12 lines / N=12, empty lines: 0
+[12:42:12]    ↳ 2-pass 2단계: 정렬 (12 outputs schema strict)
+[12:42:16]    ✅ Index Mapping 정합 — 12 outputs (finish_reason=stop)
+[12:42:17]    ↳ 청크 21/26 번역 중…
+[12:42:17]    ↳ 2-pass 1단계: 자유 번역 (12 segments)
+[12:42:20]    📝 2-pass 1단계 출력 — 12 lines / N=12, empty lines: 0
+[12:42:20]    ↳ 2-pass 2단계: 정렬 (12 outputs schema strict)
+[12:42:23]    ✅ Index Mapping 정합 — 12 outputs (finish_reason=stop)
+[12:42:24]    ↳ 청크 22/26 번역 중…
+[12:42:24]    ↳ 2-pass 1단계: 자유 번역 (12 segments)
+[12:42:27]    📝 2-pass 1단계 출력 — 1 lines / N=12, empty lines: 0
+[12:42:27]    ↳ 2-pass 2단계: 정렬 (12 outputs schema strict)
+[12:42:30]    ✅ Index Mapping 정합 — 12 outputs (finish_reason=stop)
+[12:42:31]    ↳ 청크 23/26 번역 중…
+[12:42:31]    ↳ 2-pass 1단계: 자유 번역 (12 segments)
+[12:42:35]    📝 2-pass 1단계 출력 — 12 lines / N=12, empty lines: 0
+[12:42:35]    ↳ 2-pass 2단계: 정렬 (12 outputs schema strict)
+[12:42:38]    ✅ Index Mapping 정합 — 12 outputs (finish_reason=stop)
+[12:42:39]    ↳ 청크 24/26 번역 중…
+[12:42:39]    ↳ 2-pass 1단계: 자유 번역 (12 segments)
+[12:42:42]    📝 2-pass 1단계 출력 — 12 lines / N=12, empty lines: 0
+[12:42:42]    ↳ 2-pass 2단계: 정렬 (12 outputs schema strict)
+[12:42:46]    ✅ Index Mapping 정합 — 12 outputs (finish_reason=stop)
+[12:42:46]    ⚠ 2-pass 연속 동일 output 1건 catch — 정상 반복 가능성
+[12:42:47]    ↳ 청크 25/26 번역 중…
+[12:42:47]    ↳ 2-pass 1단계: 자유 번역 (12 segments)
+[12:42:50]    📝 2-pass 1단계 출력 — 12 lines / N=12, empty lines: 0
+[12:42:50]    ↳ 2-pass 2단계: 정렬 (12 outputs schema strict)
+[12:42:54]    ✅ Index Mapping 정합 — 12 outputs (finish_reason=stop)
+[12:42:54]    ⚠ 2-pass 연속 동일 output 1건 catch — 정상 반복 가능성
+[12:42:55]    ↳ 청크 26/26 번역 중…
+[12:42:55]    ↳ 2-pass 1단계: 자유 번역 (9 segments)
+[12:42:58]    📝 2-pass 1단계 출력 — 1 lines / N=9, empty lines: 0
+[12:42:58]    ↳ 2-pass 2단계: 정렬 (9 outputs schema strict)
+[12:43:02]    ✅ Index Mapping 정합 — 9 outputs (finish_reason=stop)
+[12:43:02] ✅ 번역 완료
+[12:43:02]    💾 entity cache 저장: 6건 / speakers 0명 → oE5lNDhz9oo_integ_on
+[12:43:05]    🔧 Phase 3 후처리 — Sub-A 0건, Sub-B 4건, Sub-C fallback 0건
+[12:44:35]    ⚠ canonicalize LLM 실패 (원본 유지): LLM 호출 wall-clock timeout — 90.0초 초과 (B02)

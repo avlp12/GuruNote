@@ -1,0 +1,74 @@
+Phase 2B-3-backend Layer 9 fix: markdown transcript 가독성 정합
+
+★ ResultPanel transcript 영역의 center-align + line break 부재 → 본질 fix ★
+
+배경:
+- Layer 7 push (c7e9e1a) 후 본인 5/9 daily 사용 catch
+- ResultPanel의 한국어/영어 transcript tab 영역 가독성 저하 catch
+- 본질 cause 영역 (2개):
+  1. main.css L297-304의 .result-empty 클래스 (placeholder 용) 영역
+     transcript content 렌더링에 재사용 — text-align: center + padding-left 부재 +
+     white-space 부재 → \n 모두 collapse + 한 문단 흐름
+  2. ResultPanel.jsx:81, 87 영역 transcript content가 .result-empty className 그대로 사용
+
+본인 결정:
+- Q1 = (가) className 분기 (.result-empty placeholder vs .result-transcript content)
+- Q2 = (c) <strong> 태그 적용 + fallback (태그 미적용 오류 시 ** 제거)
+- Q3 = (가) 4 surface 모두 verify (MainScreen + DetailPanel + EditorScreen + Empty fallback)
+
+수정 (2 파일 +33L net):
+
+A. gurunote/webui/styles/main.css (+15L):
+   - .result-transcript 신규 rule 추가 (.result-empty 다음 영역):
+     * text-align: left
+     * padding: var(--sp-4) + padding-left: var(--sp-5)
+     * font-size: 14px + line-height: 1.75
+     * white-space: pre-wrap (\n 보존)
+     * word-break: keep-all + overflow-wrap: break-word
+     * color: var(--gn-on-surface)
+   - .result-transcript strong { font-weight: 600 } (영어 transcript 강조)
+
+B. gurunote/webui/components/ResultPanel.jsx (+18L):
+   - renderTranscript helper 함수 신규 (transcript 렌더링 영역):
+     * Korean transcript → text 그대로 (passthrough)
+     * English transcript → ** marker split + <strong> 태그 적용
+     * try-catch fallback: 오류 시 .replace(/\*\*/g, '')
+   - korean tab 영역 className 분기:
+     * korean_transcript 정합 → result-transcript className
+     * 부재 → result-empty className (placeholder)
+   - english tab 영역 className 분기:
+     * '' 영역 → result-empty (한국어 원본 노트 fallback 메시지)
+     * 정합 → result-transcript + renderTranscript(text, true)
+     * undefined → result-empty (legacy 노트 placeholder)
+
+검증 통과 (본인 5/9 5/10 GUI verify):
+- ★ MainScreen (CreateScreen) 한국어/영어 tab 정합 ✓
+- ★ HistoryScreen DetailPanel 한국어/영어 tab 정합 ✓
+- ★ EditorScreen Preview 4 tab 정합 ✓
+- ★ Empty fallback (한국어 원본 노트의 영어 tab) 정합 ✓
+- ★ 회귀 부재 (Layer 1/5/6/7/8 fix 결과 보존)
+
+본질적 발견:
+1. .result-empty 클래스 = placeholder 용도 영역 catch — content 렌더링 시 별도 클래스 영역 정합
+2. ResultPanel 외부 component 분리 (Layer 7) 영역 = 한 곳 수정 시 4 surface 자동 전파 정합 ★
+3. white-space: pre-wrap = \n 보존 영역 본질 영역 (text-align + padding 영역 부족)
+4. <strong> 태그 + try-catch fallback = 본인 quality bar 정합 (graceful 처리)
+
+알려진 한계 (다음 trajectory):
+- 화자 라벨 영역 (Speaker A (Tiffany Janzen)) 한국어 번역 부재 — Layer 8 fix-up #2 영역 (Rule 2 + Rule 10 정정), 별도 commit
+
+연관 phase:
+- Phase 2B-3-backend Step 3b-1 (한국어 skip, 0cc5608)
+- Phase 2B-3-backend Step 3b-prep (historyRefreshKey, 38381db)
+- Phase 2B-3-backend audio fix (58d30ba)
+- Phase 2B-3-backend Layer 1 (pyannote, d9c5f0b)
+- Phase 2B-3-backend Layer 5+6 (LLM cascading + STT noise, 1846098)
+- Phase 2B-3-backend Layer 7 (ResultPanel 통합, c7e9e1a)
+- Phase 2B-3-backend Layer 8 (고유명사 표기법, cf4a7bd)
+- Phase 2B-3-backend Layer 8 fix-up (Tiffany Janzen 표준 표기, c2da2d3)
+
+원칙 준수:
+- ✅ 본질적 fix (className 분기 + CSS 신규 rule + transcript renderer)
+- ✅ 우리 코드 (ResultPanel.jsx + main.css만)
+- ✅ 최고의 결과 (4 surface 모두 정합 + <strong> + fallback graceful)
+- ✅ 사용자 본질 catch + 진단 + 결정 + 직접 verify

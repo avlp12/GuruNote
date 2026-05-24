@@ -1,0 +1,44 @@
+[11:03:26] 🌐 LLM 번역 시작 — 6 청크 (openai_compatible/Qwen3.6-35B-A3B-oQ6-mtp)
+[11:03:26] 📖 영상 컨텍스트(게시일/챕터/자막)를 LLM 에 주입합니다.
+[11:03:27]    📚 entity cache bootstrap — 2건 사전 추출
+[11:03:27]    🎤 speaker cache bootstrap — 2명 식별
+[11:03:27]    ↳ 청크 1/6 번역 중…
+[11:03:27]    ↳ 2-pass 1단계: 자유 번역 (12 segments)
+[11:03:33]    📝 2-pass 1단계 출력 — 12 lines / N=12, empty lines: 0
+[11:03:33]    ↳ 2-pass 2단계: 정렬 (12 outputs schema strict)
+[11:03:39]    ✅ Index Mapping 정합 — 12 outputs (finish_reason=stop)
+[11:03:39]    📚 entity cache 갱신: +1건 (누적 3건)
+[11:03:40]    ↳ 청크 2/6 번역 중…
+[11:03:40]    ↳ 2-pass 1단계: 자유 번역 (12 segments)
+[11:03:45]    📝 2-pass 1단계 출력 — 1 lines / N=12, empty lines: 0
+[11:03:45]    ↳ 2-pass 2단계: 정렬 (12 outputs schema strict)
+[11:03:50]    ✅ Index Mapping 정합 — 12 outputs (finish_reason=stop)
+[11:03:51]    ↳ 청크 3/6 번역 중…
+[11:03:51]    ↳ 2-pass 1단계: 자유 번역 (12 segments)
+[11:03:54]    📝 2-pass 1단계 출력 — 12 lines / N=12, empty lines: 0
+[11:03:54]    ↳ 2-pass 2단계: 정렬 (12 outputs schema strict)
+[11:03:58]    ✅ Index Mapping 정합 — 12 outputs (finish_reason=stop)
+[11:03:58]    ⚠ 2-pass 연속 동일 output 5건 catch — 정상 반복 가능성
+[11:03:58]    📚 entity cache 갱신: +1건 (누적 4건)
+[11:03:59]    ↳ 청크 4/6 번역 중…
+[11:03:59]    ↳ 2-pass 1단계: 자유 번역 (12 segments)
+[11:04:04]    📝 2-pass 1단계 출력 — 1 lines / N=12, empty lines: 0
+[11:04:04]    ↳ 2-pass 2단계: 정렬 (12 outputs schema strict)
+[11:04:09]    ✅ Index Mapping 정합 — 12 outputs (finish_reason=stop)
+[11:04:09]    ⚠ 2-pass 연속 동일 output 5건 catch — 정상 반복 가능성
+[11:04:10]    ↳ 청크 5/6 번역 중…
+[11:04:10]    ↳ 2-pass 1단계: 자유 번역 (12 segments)
+[11:04:15]    📝 2-pass 1단계 출력 — 12 lines / N=12, empty lines: 0
+[11:04:15]    ↳ 2-pass 2단계: 정렬 (12 outputs schema strict)
+[11:04:22]    ✅ Index Mapping 정합 — 12 outputs (finish_reason=stop)
+[11:04:23]    ↳ 청크 6/6 번역 중…
+[11:04:23]    ↳ 2-pass 1단계: 자유 번역 (11 segments)
+[11:04:27]    📝 2-pass 1단계 출력 — 11 lines / N=11, empty lines: 0
+[11:04:27]    ↳ 2-pass 2단계: 정렬 (11 outputs schema strict)
+[11:04:32]    ✅ Index Mapping 정합 — 11 outputs (finish_reason=stop)
+[11:04:32] ✅ 번역 완료
+[11:04:32]    💾 entity cache 저장: 4건 / speakers 2명 → FG5JsLHPW_I_2p
+[11:04:34]    🔧 Phase 3 후처리 — Sub-A 0건, Sub-B 2건, Sub-C fallback 0건
+[11:05:06]    ⚠ canonicalize entity 외 변경 의심 1건 (canonical 채택, 로그만):
+[11:05:06]   L4: '[00:09] 화자 4: 그는 어제 제가 진행한 제이피모건(JPMorga…' → '[00:09] 화자 4: 그는 어제 제가 진행한 JPMorgan Chas…'
+[11:05:06]    🔧 entity canonicalize 적용 (4건 cache, 줄 수 140 → 140)

@@ -1,0 +1,72 @@
+Phase 2B-3-backend Layer 14: CreateScreen ResultPanel payload + transcript line break 정규화
+
+★ CreateScreen ResultPanel 의 한국어/영어 tab placeholder + chunk 별 line break 변동 본질 fix ★
+
+배경:
+- Layer 11 push (d30c782) 후 본인 daily 사용 catch:
+  * CreateScreen 처리 완료 후 한국어/영어 tab "처리 완료 후 표시됩니다" placeholder 잔재
+  * HistoryScreen DetailPanel + EditorScreen Preview 는 정상 — CreateScreen 만 부재
+  * transcript line break 변동: chunk 1 영역 [00:10]~[07:47] 단일 \n / chunk 2+ 영역 [07:50]~ \n\n
+- 본질 cause 진단 (Layer 14 read-only 진단):
+  * Bug #1: session.py _normalize_result payload 부재 키 (korean_transcript, english_transcript, summary_html)
+    → ResultPanel L99 result?.korean_transcript 부재 → fallback placeholder 표시
+  * Bug #2: LLM 이 chunk 마다 [HH:MM] line 사이 \n / \n\n mix 출력 → llm.py:560 chunk join 만 정합
+
+수정 (2 파일, +23L net):
+
+A. gurunote/webui/session.py (+17L) — Bug #1 fix:
+   - _normalize_result payload 에 3 키 추가 (lazy import — 순환 회피):
+     * korean_transcript: _parse_transcripts(full_md)[0]
+     * english_transcript: _parse_transcripts(full_md)[1]
+     * summary_html: _md_to_html(_parse_summary(full_md))
+   - bridge.py 의 _parse_transcripts / _parse_summary 와 동일 logic 재사용
+   - docstring 정정 (3 신규 키 명시)
+
+B. gurunote/llm.py (+8L) — Bug #2 fix:
+   - re import 추가
+   - translate_transcript 의 chunk join 직전 lookahead regex 정규화:
+     _TS_BOUNDARY_RE = re.compile(
+         r"(\[\d{1,2}(?::\d{2}){1,2}\][^\n]*)\n(?=\[\d{1,2}(?::\d{2}){1,2}\])"
+     )
+     normalized_parts = [_TS_BOUNDARY_RE.sub(r"\1\n\n", part) for part in translated_parts]
+   - Lookahead (?=...) 영역: 다음 [ts] 를 consume 하지 않아 연속 boundary 모두 매치
+   - 본문 표준 = \n\n (Q3 결정, late chunk 패턴 / 본인 daily UX 정합)
+
+검증 통과 (자동 + GUI):
+- ★ Python compile (양쪽)
+- ★ Regex unit test 4/4 (single \n 연속 boundary, 이미 \n\n 보존, 비-[ts] line 보존, HH:MM:SS)
+- ★ overlapping match 본질 catch (원안 \1\n\n\2 → 두 번째 [ts] consume → 첫 번째만 매치)
+  → Lookahead 정정 (regex unit test 가 catch)
+- ★ 본인 GUI verify (NVIDIA GTC 재처리, 9 시나리오):
+  * CreateScreen 한국어 tab placeholder 부재 ✓
+  * CreateScreen 영어 원문 tab placeholder 부재 ✓
+  * transcript line break \n\n 일관 ✓
+  * Layer 9 가독성 보존 ✓
+  * Layer 1/5/6/7/8/9/13/13-fixup#2/Layer 11 + Step 3b-2 보존 ✓
+  * HistoryScreen DetailPanel 정상 ✓
+  * EditorScreen Preview 정상 ✓
+
+본질적 발견:
+1. session.py payload 키 부재가 ResultPanel CreateScreen 영역 placeholder 본질 cause
+   → bridge.py 의 _parse_transcripts / _parse_summary 재사용 (단일 source of truth)
+2. LLM chunk 별 line break 변동 본질 cause = LLM sampling 변동
+   → chunk join 직전 lookahead regex 정규화 (frontend 정규화보다 본질 영역 차단)
+3. Lookahead overlapping match 본질 — unit test 가 catch (원안 \1\n\n\2 → 2 boundary 중 1 만 매치)
+   → 본질 영역 = group 2 consume 부재 (?=...) 패턴
+
+알려진 한계 (다음 trajectory: 백로그 2번 Phase 1 — 하네스 검증 layer):
+- LLM sampling 변동으로 chunk 잔재 (取り組んでいる, 必须具备 등 — Layer 11 회귀)
+- Executive VP → CVP 오역 (LLM 본질 변동성)
+→ Phase 1 (chunk 응답 timestamp completeness 검증 + 자동 재호출)
+   + Phase 3 (language purity 검증) 영역에서 본질 cause 차단
+
+연관 phase:
+- Phase 2B-3-backend Layer 7 (c7e9e1a, ResultPanel 4 tab DetailPanel + EditorScreen)
+- Phase 2B-3-backend Layer 9 (a512b12, transcript 가독성 — line break \n\n 표준)
+- Phase 2B-3-backend Layer 11 (d30c782, _SHARED_LANG_RULES 공통 상수 추출)
+
+원칙 준수:
+- ✅ 본질적 fix (payload 키 추가 + lookahead regex 정규화)
+- ✅ 우리 코드 (session.py + llm.py)
+- ✅ 본인 catch + 진단 + 결정 + 직접 verify
+- ✅ Claude Code unit test 가 overlapping match 본질 catch

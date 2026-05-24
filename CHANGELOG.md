@@ -7,6 +7,65 @@
 
 ## [Unreleased]
 
+## [1.0.0.0] - 2026-05-24
+
+> **1.0 선언 릴리스.** `redesign/tailwind-v2` 브랜치에서 누적된 4월 24일 이후의
+> 모든 변경을 묶어 1.0 으로 승격. CLAUDE.md "1.0 전 MINOR 대체" 정책의
+> 의식적 예외 — 라이선스 전환 + UI 전면 교체 + 백엔드 파이프라인 재구조가
+> 동시에 하위 호환성을 깨므로 1.0 선언이 정직한 표기라고 판단.
+
+### Changed
+- **UI 전면 교체 (BREAKING)**: CustomTkinter (`gui.py`) / Streamlit (`app.py`)
+  양립 구조에서 **React + Material 3 + PyWebView** 신축 (`gurunote/webui/`)
+  으로 권장 진입점 이동. 새 진입점: `app_webview.py` (모든 OS), macOS 는
+  `run_webview.command` 더블 클릭 가능. 사이드바 + 5 화면 (Main / History /
+  Editor / Dashboard / Settings) + ⌘K SearchPalette. 옛 두 진입점은 호환
+  유지 — `gui.py` 는 React UI 가 `PipelineWorker` 클래스로 의존하기 때문
+  (분리 작업은 백로그 B09).
+- **License (BREAKING)**: MIT → **Elastic License 2.0** (4/24). SaaS 호스팅 /
+  라이선스 키 우회 부재 조항. 4/24 이전 main 브랜치 커밋은 MIT 유지.
+- **STT 파이프라인**:
+  - pyannote `3.1` → `community-1` (speaker confusion 마킹 감소, pyannote.audio 4.0+ 정합).
+  - STT 직후 word-level **의미 단위 재분할** 도입 (`gurunote/stt_mlx.py`).
+    Whisper segment 경계는 음성 신호 기반이라 의미 단위 부재 — 끝 검사 +
+    화자 우선 합침으로 D context leak, 2-pass 정렬 drift, 가독성, 1-pass
+    hallucinate 4 단계 공통 동기 차단. 모델 비의존 방식.
+  - 환경변수 `PYANNOTE_DIARIZATION_MODEL` 토글 추가 (기본 `community-1`).
+- **번역 파이프라인**:
+  - 1-pass → **2-pass DCCD** (Draft-Conditioned Constrained Decoding)
+    기본값 on. 1단계 자유 번역 + 2단계 strict 정렬 (minItems=maxItems=N).
+    약한 로컬 모델에서도 segment 수 정합 보장. 환경변수
+    `GURUNOTE_TWO_PASS` 토글 (기본 on, off 강제: `=0`).
+  - **entity_cache 디스크 영속** + 외래어 표기법 (문화체육관광부고시
+    제2017-14호) LLM 참조 → 인명·지명 표기 일관성. bootstrap 단계에서
+    영상 메타데이터로 1 회 식별 + 캐시.
+  - 화자 라벨 코드 부착 (LLM 식별 1 회 + 코드 결정론 부착) — Rule 충돌
+    해소.
+  - 한자 / 일본어 / 중국어 문자 차단 후처리 (3 단계 sub-path).
+  - chunk 당 wall-clock timeout (B02) — slow chunk grammar-recovery 루프
+    즉시 종료.
+  - 환경변수 `GURUNOTE_SEGMENT_RESPLIT` 토글 (기본 on, off 강제: `=0`).
+- **버전**: `0.8.0.6` → `1.0.0.0`. 6 곳 동시 갱신 (`gurunote/__init__.py`,
+  `gui.py` 사이드바, `scripts/package_desktop.py` Inno Setup,
+  `gurunote/webui/components/SettingsScreen.jsx` fallback, `README.md`,
+  본 파일). CLAUDE.md 버전 체크리스트 5-file → 6-file 로 갱신 (React UI
+  fallback 추가).
+
+### Added
+- `app_webview.py` 신규 진입점 (PyWebView 기반 React UI).
+- `run_webview.command` macOS 런처.
+- `gurunote/webui/` — React 컴포넌트 10 개, CSS, vendor (Babel standalone /
+  React / Tailwind utility), `bridge.py` (Api 클래스 — Python ↔ JS bridge),
+  `session.py` (PipelineSession 어댑터).
+- `gurunote/data/loanword_orthography.md` — 외래어 표기법 본문 (LLM 참조).
+- `gurunote/_net.py` — certifi 번들 기반 SSL context (`v0.8.0.6` 에서 도입,
+  1.0 으로 승격).
+- 백엔드 품질 Phase 1~5 (`docs/journal/CHANGELOG.md` 통합 일지 참고).
+
+### Fixed
+- 다수 — `docs/journal/HISTORY.md` / `docs/journal/DEBUGGING.md` 의 통합
+  기록 참고.
+
 ## [0.8.0.6] - 2026-04-19
 
 ### Fixed
@@ -1300,6 +1359,7 @@ bash run_desktop.sh
   override 로 request-local 하게 주입.
 
 [Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.8.0.6...HEAD
+[1.0.0.0]: https://github.com/avlp12/GuruNote/compare/v0.8.0.6...v1.0.0.0
 [0.8.0.6]: https://github.com/avlp12/GuruNote/compare/v0.8.0.5...v0.8.0.6
 [0.8.0.5]: https://github.com/avlp12/GuruNote/compare/v0.8.0.4...v0.8.0.5
 [0.8.0.4]: https://github.com/avlp12/GuruNote/compare/v0.8.0.3...v0.8.0.4

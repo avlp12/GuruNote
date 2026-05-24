@@ -58,10 +58,11 @@
 버전을 올릴 때 **반드시** 다음 5곳을 동시에 갱신:
 
 1. `gurunote/__init__.py` → `__version__`
-2. `gui.py` → 사이드바 버전 라벨
+2. `gui.py` → 사이드바 버전 라벨 (CustomTkinter 진입점, v0.8 호환 유지)
 3. `scripts/package_desktop.py` → Inno Setup + pkgbuild 버전
-4. `README.md` → "현재 버전" 문구
-5. `CHANGELOG.md`:
+4. `gurunote/webui/components/SettingsScreen.jsx` → fallback 문자열 (`v{appInfo?.version || '...'}`) — bridge `get_app_info()` 실패 시에만 표시되지만 표기 일치 유지
+5. `README.md` → "현재 버전" 문구
+6. `CHANGELOG.md`:
    - `[Unreleased]` 내용을 `[X.Y.Z.W] - YYYY-MM-DD` 로 승격
    - 새 `[Unreleased]` 섹션 생성
    - 하단 비교 링크 갱신 (`[X.Y.Z.W]: .../compare/v<prev>...v<new>`)

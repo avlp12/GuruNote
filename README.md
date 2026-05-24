@@ -2,15 +2,13 @@
 
 > 유튜브 링크 한 줄로 해외 IT/AI 팟캐스트를 **화자 분리된 한국어 마크다운 요약본**으로.
 
-> 🚧 **Phase 2A (2026-04 진행 중)** — Tailwind 리디자인 중입니다.
-> 새 UI 는 `redesign/tailwind-v2` 브랜치에서 개발되며, `main` 브랜치는
-> v0.8.0.6 기능 그대로 유지됩니다. Phase 2A 완료 후 머지 예정.
-
 ```bash
-$ ./run_gui.command                # macOS — 백그라운드 실행 (터미널 분리, 로그는 ~/.gurunote/gui.log)
-$ python gui.py                    # 데스크톱 앱 (모든 OS, 터미널 출력 보임)
-# 또는
-$ streamlit run app.py             # 웹 앱 실행
+$ ./run_webview.command            # macOS — React/PyWebView UI (v1.0+ 권장 진입점)
+$ python3 app_webview.py           # 모든 OS — 동일 진입점, 터미널 출력 보임
+
+# (v0.8 호환 — 옛 UI 진입점, 유지)
+$ ./run_gui.command                # CustomTkinter 데스크톱 (백그라운드, 로그는 ~/.gurunote/gui.log)
+$ streamlit run app.py             # Streamlit 웹 앱
 
 # 실행 결과 (파이프라인 로그 — 타임스탬프 + ETA 포함):
 [14:23:05] [Step 1] 유튜브 오디오 추출 중...
@@ -72,8 +70,8 @@ cd GuruNote
 # 2. 설치 (플랫폼 자동 감지 + STT 엔진 자동 설치 + .venv 자동 생성)
 bash setup.sh        # macOS / Linux  (Windows 는 setup.bat)
 # 자동 감지 + 설치:
+#   - Apple Silicon Mac (M1~M5)  → MLX Whisper + pyannote (Metal/MPS GPU 가속, 권장)
 #   - NVIDIA GPU (Linux/Windows) → CUDA PyTorch + WhisperX
-#   - Apple Silicon Mac (M1~M5)  → MLX Whisper + pyannote (Metal/MPS GPU 가속)
 #   - 그 외                       → AssemblyAI Cloud API 만 사용 가능
 
 # 3. API 키 설정 (OpenAI / Anthropic / Google Gemini 중 하나)
@@ -81,10 +79,13 @@ cp .env.example .env
 # .env 를 열어 OPENAI_API_KEY=sk-... 입력
 # (Windows PowerShell 은 cp 대신 Copy-Item .env.example .env)
 
-# 4. 실행 (venv activate 불필요 — 래퍼 스크립트가 .venv 의 Python/Streamlit 을 직접 호출)
-bash run_desktop.sh      # 데스크톱 앱 (macOS/Linux)
-bash run_web.sh          # 웹 앱   (macOS/Linux)
-# Windows: run_desktop.bat / run_web.bat
+# 4. 실행 — v1.0+ React/PyWebView UI (권장)
+bash run_webview.command     # macOS (더블 클릭도 가능)
+python3 app_webview.py       # 모든 OS
+
+# (v0.8 호환 — 옛 진입점, 유지)
+bash run_desktop.sh          # CustomTkinter (macOS/Linux), Windows 는 run_desktop.bat
+bash run_web.sh              # Streamlit (macOS/Linux), Windows 는 run_web.bat
 ```
 
 > 💡 **macOS 주의**: macOS 12+ 는 `python` 명령이 없고 `python3` 만 있습니다.
@@ -131,7 +132,7 @@ bash run_web.sh          # 웹 앱   (macOS/Linux)
 - 🔍 **검색** — 키워드 substring + **의미 기반 (sentence-transformers, Korean 지원)**
 - 📊 **대시보드** — 분야/업로더/태그/월별 통계 + 의미 검색 인덱스 빌드 패널
 - ⏱ **실시간 진행 표시** — 5단계 뱃지 인디케이터 + ETA (경과 시간 + 남은 예상 시간)
-- 🎨 **Material 3 다크 UI** — 구글 모던 톤 팔레트 + 전용 앱 아이콘 (로켓 아이콘 제거)
+- 🎨 **Material 3 React UI** (v1.0+) — `gurunote/webui/` 의 React + Tailwind CSS 구성. PyWebView 가 네이티브 윈도우 (macOS WKWebView / Windows WebView2 / Linux WebKitGTK) 를 띄움. 사이드바 + 5개 화면 (Main / History / Editor / Dashboard / Settings).
 - 📦 **WhisperX 미설치 시 안내** (NVIDIA 환경) — 설치 또는 AssemblyAI 전환 선택 다이얼로그.
   Apple Silicon 환경에서는 `setup.sh` 가 MLX 스택을 자동 설치.
 - 🧹 **임시 파일 자동 정리**
@@ -319,57 +320,45 @@ HUGGINGFACE_TOKEN=hf_...
 
 ## ▶️ 실행
 
-### 데스크톱 앱 (권장)
+### React/PyWebView UI (v1.0+ 권장 진입점)
 
-**macOS — 터미널 없이 백그라운드 실행 (v0.7.1.0+ 권장)**
+**macOS**
 ```bash
-./run_gui.command
+./run_webview.command
 ```
-- Finder 에서 더블클릭하거나 위 명령으로 실행. `nohup` + `disown` 으로 터미널과 완전히 분리되어,
-  pyannote/mlx-whisper 의 진행 로그가 터미널에 쏟아지지 않습니다.
-- 모든 출력은 `~/.gurunote/gui.log` 에 기록됩니다. 진단 시: `tail -f ~/.gurunote/gui.log`.
+- Finder 에서 더블 클릭 또는 터미널에서 실행.
+- stdout/stderr 가 콘솔에 그대로 남아 pywebview + 파이프라인 디버깅이 쉽습니다 (CustomTkinter `run_gui.command` 와 달리 `~/.gurunote/gui.log` 로 리다이렉트하지 않음).
 - venv 자동 감지 (`./.venv` → `./venv` → 시스템 `python3`).
 
-**모든 OS 공통 — 터미널 출력 보면서 실행**
+**모든 OS 공통**
 ```bash
-# macOS / Linux
-bash run_desktop.sh
-
-# Windows
-run_desktop.bat
-
-# 또는 venv activate 후 직접 실행
-source .venv/bin/activate     # Windows: .venv\Scripts\activate
-python gui.py
+# macOS / Linux / Windows
+python3 app_webview.py
 ```
 
-| 기능 | 설명 |
-|---|---|
-| **사이드바** | GuruNote 브랜드 + Settings / History / Dashboard / Update |
-| **입력 카드** | 유튜브 URL 또는 로컬 파일 선택, STT/LLM 엔진 선택 |
-| **진행 카드** | 5단계 뱃지 (dim→보라→초록) + 진행 바 + **ETA (경과/남은 시간)** |
-| **결과 카드** | Summary / Korean / English / Log 탭 + Save .md / Save PDF / → Obsidian / → Notion |
-| **히스토리** | 과거 작업 그리드 + **우측 4-facet 트리 내비** (주제/인물/제목/태그) + 마크다운 재다운로드 |
-| **노트 편집** | 마크다운 분할 프리뷰 (좌: raw, 우: 렌더링) + 인덱스 자동 갱신 |
-| **대시보드** | 분야/업로더/태그/월별 통계 + 의미 검색 인덱스 빌드 |
-| **중지** | ⏹ 버튼으로 안전한 지점에서 중단 |
+- pywebview 가 네이티브 윈도우를 띄우고 `gurunote/webui/index.html` 의 React 앱을 로드합니다.
+- 화면 구성: Main (생성 + 결과 4탭) / History (4-facet 트리 + 그리드) / Editor (마크다운 분할 프리뷰) / Dashboard (통계 + 의미 검색) / Settings (API 키 + STT/LLM 엔진 + Provider 조건부 필드).
+- ⌘K (또는 Ctrl+K) 로 SearchPalette 호출.
 
-### 웹 앱 (Streamlit)
+### 옛 진입점 — v0.8 호환 (유지)
 
+새 UI 가 동작하지 않거나 옛 인터페이스가 필요한 경우 아래 진입점이 그대로 동작합니다. 파이프라인 코어 (`gurunote/`) 는 셋 다 공유합니다.
+
+**CustomTkinter 데스크톱** (`gui.py` — React UI 가 `PipelineWorker` 클래스로 의존하는 코어 파일)
 ```bash
-# macOS / Linux
-bash run_web.sh
+# macOS — 백그라운드 실행, 로그는 ~/.gurunote/gui.log
+./run_gui.command
 
-# Windows
-run_web.bat
-
-# 또는 venv activate 후 직접 실행
-source .venv/bin/activate
-streamlit run app.py
+# macOS / Linux / Windows — 터미널 출력 보면서
+bash run_desktop.sh           # Windows: run_desktop.bat
+# 또는: .venv/bin/python gui.py
 ```
 
-브라우저에서 동일한 파이프라인을 실행합니다.
-⚙️ Settings 탭에서 API 키, 모델, Temperature 등을 저장/테스트할 수 있습니다.
+**Streamlit 웹** (`app.py`)
+```bash
+bash run_web.sh               # macOS / Linux  (Windows: run_web.bat)
+# 또는: .venv/bin/streamlit run app.py
+```
 
 ### 사용 흐름
 
@@ -450,18 +439,16 @@ GuruNote/
 ├── .env.example
 ├── README.md
 ├── CHANGELOG.md
-├── docs/                       # 설계 참조 및 문서 (Phase 2A 시점부터)
-│   └── design/
-│       ├── v2-reference.html   # Claude Design 기반 10 화면 참조 (Tailwind)
-│       ├── README.md           # design 폴더 구조 인덱스
-│       └── KICKOFF_PHASE_2A.md # Phase 2A Decision 1~4 + commit plan
+├── app_webview.py              # v1.0+ React/PyWebView 진입점 (권장)
+├── run_webview.command         # macOS React UI 런처
+├── docs/                       # 설계 참조, 연구 노트, 작업 일지 (legacy/journal/research/wip)
 ├── gurunote/
 │   ├── __init__.py
 │   ├── types.py                # Segment / Transcript 공통 데이터클래스
 │   ├── audio.py                # Step 1 — yt-dlp + 로컬 파일 오디오 추출
 │   ├── stt.py                  # Step 2 — WhisperX (NVIDIA) + AssemblyAI 폴백 라우터
-│   ├── stt_mlx.py              # Step 2 — MLX Whisper + pyannote (Apple Silicon)
-│   ├── llm.py                  # Step 3~4 — 번역 + 요약 (청크/재시도)
+│   ├── stt_mlx.py              # Step 2 — MLX Whisper + pyannote (Apple Silicon) + 의미 단위 재분할 (v1.0+)
+│   ├── llm.py                  # Step 3~4 — 번역 + 요약 (2-pass DCCD + entity_cache + CJK 차단 + 청크 분할)
 │   ├── exporter.py             # Step 4~5 — GuruNote 마크다운 조립
 │   ├── history.py              # 작업 히스토리 + 영속 로그 (~/.gurunote/)
 │   ├── settings.py             # `.env` 저장/로드 + 백업 유틸
@@ -476,7 +463,18 @@ GuruNote/
 │   ├── stats.py                # 대시보드 통계 (분야/업로더/태그/월별)
 │   ├── nav_tree.py             # 4-facet 트리 내비 (주제/인물/제목/태그)
 │   ├── ui_state.py             # UI 영속 상태 (트리 expand 등)
-│   └── app_icon.py             # 앱 아이콘 런타임 생성 (PIL "G" 모노그램)
+│   ├── app_icon.py             # 앱 아이콘 런타임 생성 (PIL "G" 모노그램)
+│   ├── data/
+│   │   └── loanword_orthography.md  # 외래어 표기법 (문화체육관광부고시 제2017-14호) — LLM 참조
+│   └── webui/                  # v1.0+ React/PyWebView UI
+│       ├── bridge.py           # PyWebView ↔ Python 브릿지 (Api 클래스)
+│       ├── session.py          # PipelineSession (gui.PipelineWorker 어댑터)
+│       ├── index.html          # React 진입 HTML (Babel standalone)
+│       ├── components/         # JSX 컴포넌트 (App / Sidebar / TopBar / 5 화면 + ResultPanel + SearchPalette)
+│       ├── styles/             # CSS (Material 3 톤 + Tailwind utility 일부)
+│       └── vendor/             # 번들 React/Babel/Tailwind (오프라인 로딩)
+├── gui.py                      # v0.8 호환 — CustomTkinter 진입점 (PipelineWorker 클래스 보유, React 가 의존)
+├── app.py                      # v0.8 호환 — Streamlit 웹 앱
 ├── scripts/
 │   ├── package_desktop.py      # Windows/macOS 배포 패키지 자동 생성
 │   ├── update_gurunote.py      # CLI 업데이트 진입점
@@ -491,13 +489,12 @@ GuruNote/
 
 | 영역 | 사용 기술 |
 |---|---|
-| 데스크톱 UI | [CustomTkinter](https://github.com/TomSchimansky/CustomTkinter) (사이드바 + 카드 레이아웃) |
-| 웹 UI | [Streamlit](https://streamlit.io/) |
+| UI (v1.0+ 권장) | [React](https://react.dev/) (Babel standalone) + Material 3 톤 CSS + [Tailwind CSS](https://tailwindcss.com/) utility + [PyWebView](https://pywebview.flowrl.com/) 4.x (macOS WKWebView / Windows WebView2 / Linux WebKitGTK) |
+| UI (v0.8 호환) | [CustomTkinter](https://github.com/TomSchimansky/CustomTkinter) 데스크톱 (`gui.py`) · [Streamlit](https://streamlit.io/) 웹 (`app.py`) |
 | 오디오 추출 | [yt-dlp](https://github.com/yt-dlp/yt-dlp) · ffmpeg |
-| STT + 화자 분리 | [WhisperX](https://github.com/m-bain/whisperX) (NVIDIA CUDA) · [mlx-whisper](https://github.com/ml-explore/mlx-examples/tree/main/whisper) + [pyannote.audio](https://github.com/pyannote/pyannote-audio) (Apple Silicon, Metal/MPS) · [AssemblyAI](https://www.assemblyai.com/) (Cloud fallback) |
-| 번역 / 요약 | [OpenAI](https://platform.openai.com/) `gpt-5.4` · [Anthropic](https://docs.anthropic.com/) `claude-sonnet-4-6` · [Google Gemini](https://aistudio.google.com/) `gemini-2.5-flash` · OpenAI-compatible (로컬 LLM) |
-| 환경 설정 | [python-dotenv](https://pypi.org/project/python-dotenv/) · 앱 내 ⚙️ 설정 다이얼로그 |
-| UI v2 (Phase 2A, 진행 중) | [Tailwind CSS](https://tailwindcss.com/) (CDN) + pywebview (기존 유지) · 참조: `docs/design/v2-reference.html` |
+| STT + 화자 분리 | [mlx-whisper](https://github.com/ml-explore/mlx-examples/tree/main/whisper) + [pyannote.audio](https://github.com/pyannote/pyannote-audio) `community-1` (Apple Silicon, Metal/MPS) · [WhisperX](https://github.com/m-bain/whisperX) (NVIDIA CUDA) · [AssemblyAI](https://www.assemblyai.com/) (Cloud fallback) · 의미 단위 재분할 (v1.0+) |
+| 번역 / 요약 | [OpenAI](https://platform.openai.com/) `gpt-5.4` · [Anthropic](https://docs.anthropic.com/) `claude-sonnet-4-6` · [Google Gemini](https://aistudio.google.com/) `gemini-2.5-flash` · OpenAI-compatible (로컬 LLM, oMLX / vLLM / LM Studio / llama.cpp 등) · 2-pass DCCD + entity_cache + 외래어 표기법 |
+| 환경 설정 | [python-dotenv](https://pypi.org/project/python-dotenv/) · 앱 내 Settings 화면 |
 
 ---
 
@@ -506,16 +503,15 @@ GuruNote/
 주요 변경 사항은 [CHANGELOG.md](./CHANGELOG.md) 에 [Keep a Changelog](https://keepachangelog.com/)
 형식으로 기록되며 버전은 [Semantic Versioning](https://semver.org/) 을 따릅니다.
 
-현재 버전: **v0.8.0.6** — macOS python.org 설치본에서 YouTube 썸네일/업데이트 체크가 SSL 인증서 오류로 실패하던 버그 수정 (certifi 번들 기반 SSL context 명시).
+현재 버전: **v1.0.0.0** — React/PyWebView UI 전면 도입, 백엔드 STT/번역 파이프라인 재구조, License Elastic 2.0 채택을 묶은 1.0 선언 릴리스. CLAUDE.md "1.0 전 MINOR 대체" 정책의 의식적 예외 (하위 호환성 깨지는 변경 묶음).
 
-### Phase 2A 진입 (2026-04-24)
+### v1.0.0.0 주요 변경 (요약)
 
-`redesign/tailwind-v2` 브랜치에서 Tailwind CSS 기반 UI 전면 리디자인 진행 중.
-10 화면 구조 (생성/히스토리/편집/대시보드/설정×6 탭) 를 Claude Design 참조로
-재구현. 기존 backend (`bridge.py`, `settings.py`, `history.py`, `llm.py`,
-`pipeline.py`) 재사용. 예상 소요 ~2주.
-
-참조: `docs/design/KICKOFF_PHASE_2A.md`
+- **UI**: CustomTkinter / Streamlit 양립 구조 → React + Material 3 + PyWebView 신축 (`gurunote/webui/`). 사이드바 + 5 화면 (Main / History / Editor / Dashboard / Settings) + ⌘K SearchPalette. 옛 진입점 (`gui.py` / `app.py`) 은 호환 유지.
+- **STT**: mlx-whisper + pyannote `community-1` (3.1 대비 speaker confusion 감소) + STT 직후 word-level **의미 단위 재분할** (Whisper 음성 경계 잘림 보완).
+- **번역**: 1-pass → **2-pass DCCD** (Draft-Conditioned Constrained Decoding), **entity_cache** 디스크 영속 (인명·지명 표기 일관성), 외래어 표기법 (문화체육관광부고시 제2017-14호) LLM 참조, 한자/일본어 차단 후처리.
+- **License**: MIT → **Elastic License 2.0**.
+- **환경변수 토글**: `GURUNOTE_SEGMENT_RESPLIT` / `GURUNOTE_TWO_PASS` / `PYANNOTE_DIARIZATION_MODEL` (기본 on, 자세한 내용은 위 🔑 환경변수 설정 참고).
 
 ---
 
@@ -526,19 +522,21 @@ GuruNote/
 | **`'git' 용어가 ... 인식되지 않습니다` (Windows)** | Git 이 설치되지 않았습니다. `winget install --id Git.Git -e` 실행 후 **새 PowerShell 창**을 열어 재시도하세요. winget 이 없는 구형 Windows 는 [git-scm.com/download/win](https://git-scm.com/download/win) 에서 인스톨러를 받아 설치. 자세한 내용은 위 [📦 선행 조건](#-선행-조건-필수-사전-설치) 참고. |
 | **`'&&' 토큰은 이 버전에서 올바른 문 구분 기호가 아닙니다` (Windows PowerShell)** | Windows 기본 탑재된 PowerShell 5.1 은 `&&` 를 지원하지 않습니다. 명령을 **한 줄에 하나씩** 실행하거나 (`git clone ...` 한 줄 → `cd GuruNote` 한 줄), PowerShell 7+ 로 업그레이드(`winget install Microsoft.PowerShell`) 또는 `cmd.exe` 를 사용하세요. |
 | **`python: command not found` / `'python' 용어가 인식되지 않습니다`** | Python 3.10+ 이 설치되지 않았거나 PATH 에 없습니다. Windows: `winget install --id Python.Python.3.12 -e` (설치 마법사의 "Add python.exe to PATH" 체크 필수). macOS 는 `python3` 명령을 사용하세요. Linux: `sudo apt install python3 python3-venv`. |
-| **`command not found: python` / `streamlit` (macOS)** | macOS 12+ 는 `python` 명령이 없고 `python3` 만 있으며, `streamlit` 은 venv 내부에만 설치됩니다. `bash run_desktop.sh` / `bash run_web.sh` 를 쓰면 venv activate 없이 실행됩니다. 직접 실행하려면 먼저 `source .venv/bin/activate` 로 venv 를 활성화하세요. |
+| **`command not found: python` (macOS)** | macOS 12+ 는 `python` 명령이 없고 `python3` 만 있습니다. `bash run_webview.command` 를 쓰면 venv 자동 감지로 동작합니다. 직접 실행하려면 `source .venv/bin/activate` 후 `python3 app_webview.py`. |
+| **`gui.py` 를 지워도 되나요?** | 부재 — React UI (`app_webview.py`) 가 `gui.py` 의 `PipelineWorker` 클래스를 import 합니다 (`gurunote/webui/session.py`). 옛 CustomTkinter UI 코드와 파이프라인 워커 로직이 같은 파일에 들어있어 분리 부재 상태입니다 (백로그 등록 — `docs/backlog.md` B09). 이 분리 작업 전까지는 `gui.py` 유지 필요. |
 | **GPU 없이 쓸 수 있나요?** | `.env` 에서 `GURUNOTE_STT_ENGINE=assemblyai` 로 설정하면 클라우드 API 로 동작합니다 (AssemblyAI 키 필요). |
 | **Apple Silicon Mac (M1~M5) 에서 GPU 로컬 STT 가 되나요?** | 네. v0.6.0 부터 `setup.sh` 가 Apple Silicon 을 자동 감지해 `mlx-whisper` + `pyannote.audio` 를 설치합니다. STT 엔진을 `auto` 로 두면 Metal/MPS GPU 가속으로 로컬 전사 + 화자 분리가 동작합니다. 화자 분리에는 `HUGGINGFACE_TOKEN` + [pyannote/speaker-diarization-community-1](https://huggingface.co/pyannote/speaker-diarization-community-1) 및 [pyannote/segmentation-3.0](https://huggingface.co/pyannote/segmentation-3.0) 모델 동의가 필요합니다. 위 🔑 환경변수 설정 섹션의 안내를 참고하세요. |
 | **1시간 넘는 영상은?** | WhisperX / MLX 모두 청크 분할 처리라 길이 제한이 없습니다. AssemblyAI 도 길이 제한 없음. |
 | **로컬 LLM 을 쓰고 싶어요** | `.env` 에서 `LLM_PROVIDER=openai_compatible` + `OPENAI_BASE_URL=http://127.0.0.1:8000/v1` 설정. Ollama, vLLM, LM Studio 등 OpenAI-compatible 서버라면 모두 가능합니다. |
 | **"ffmpeg not found" 에러** | Mac: `brew install ffmpeg` / Windows: `winget install ffmpeg` / Ubuntu: `sudo apt install ffmpeg` |
-| **모델 가중치 다운로드가 오래 걸려요** | WhisperX Distil-Whisper (~1.5GB) / MLX Whisper large-v3 (~3GB) 는 최초 1회만 다운로드됩니다. 이후는 로컬 캐시 (`~/.gurunote/models/` 또는 `~/.cache/huggingface/`) 를 사용합니다. |
+| **모델 가중치 다운로드가 오래 걸려요** | MLX Whisper large-v3 (~3GB) / WhisperX Distil-Whisper (~1.5GB) / pyannote community-1 (~수십 MB) 는 최초 1회만 다운로드됩니다. 이후는 로컬 캐시 (`~/.cache/huggingface/` 또는 `~/.gurunote/models/`) 를 사용합니다. |
 | **API 키를 어디에 넣나요?** | 앱 실행 후 Settings → 입력 → Save. `.env` 파일에 자동 기록됩니다. |
 | **CUDA Out of Memory 에러** | v0.3.0 부터 자동으로 토큰 수를 줄여 재시도합니다 (32768→16384→8192). 그래도 실패하면 모델을 자동 언로드하고 에러 메시지에 해결 방법을 안내합니다. |
 | **WhisperX 가 설치 안 됐다고 떠요** (NVIDIA) | "GuruNote 생성하기" 클릭 시 설치/AssemblyAI 전환 선택 다이얼로그가 뜹니다. Apple Silicon 에선 MLX 자동 사용. |
 | **PDF 출력 패키지가 없다고 떠요** | v0.7.0.4 부터 `Save PDF` 클릭 시 "지금 자동 설치할까요?" 확인 → 승인 시 `brew install cairo pango gdk-pixbuf libffi` + `pip install` 자동 실행 (macOS+Homebrew). Linux 는 sudo 가 필요해서 명령만 안내됨. Windows 는 pip 만 자동. |
 | **Obsidian vault 경로를 어떻게 설정하나요?** | v0.7.0.5 부터 `→ Obsidian` 클릭 시 자동 감지된 vault 후보 + "폴더 찾아보기" 다이얼로그가 뜹니다. Settings 다이얼로그에서도 "찾아보기" 버튼 + 실시간 유효성 chip (`✓ vault` 등) 으로 한 클릭 설정 가능. |
-| **터미널에 pyannote 다운로드 로그가 자꾸 뜹니다** (macOS) | v0.7.1.0 의 `./run_gui.command` 더블클릭으로 실행하면 터미널과 분리되어 로그는 `~/.gurunote/gui.log` 로만 갑니다. `tail -f ~/.gurunote/gui.log` 로 진단. |
+| **터미널에 pyannote 다운로드 로그가 자꾸 뜹니다** (macOS) | React UI (`run_webview.command`) 는 콘솔에 그대로 출력합니다 (디버깅 편의). 백그라운드 분리가 필요하면 옛 `./run_gui.command` 로 실행 — `nohup` + `disown` 으로 터미널과 분리되고 로그는 `~/.gurunote/gui.log` 로만 갑니다. `tail -f ~/.gurunote/gui.log` 로 진단. |
+| **React UI 가 뜨지 않습니다 (빈 창)** | `gurunote/webui/index.html` 누락 또는 `pywebview` 미설치일 가능성. `bash setup.sh` 재실행으로 의존성 재설치 후 `python3 app_webview.py`. macOS 에서 WebKit 자체 문제일 경우 옛 `gui.py` 진입점으로 일시 우회 가능. |
 | **앱 아이콘이 로켓 모양** | v0.7.1.0 부터 자체 "G" 모노그램 아이콘이 자동 생성됩니다. 캐시 위치: `~/.gurunote/app_icon.png`. |
 | **과거 작업을 다시 보고 싶어요** | 사이드바 History → 우측 트리 내비 (주제/인물/제목/태그) 로 필터, 카드에서 Save (마크다운 재다운로드) / PDF / Obsidian / Notion / Log. |
 

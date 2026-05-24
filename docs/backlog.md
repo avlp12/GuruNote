@@ -61,6 +61,24 @@
 - 상태: not_started
 - 우선순위: P3
 
+### B09: PipelineWorker 를 gui.py 에서 별도 모듈로 분리
+
+- 동작: 파이프라인 워커 로직 (`PipelineWorker` 클래스) 을 CustomTkinter UI 파일 (`gui.py`) 에서 떼어내 `gurunote/pipeline_worker.py` 신규 모듈로 이동
+- 배경: v1.0 React/PyWebView UI (`app_webview.py`) 가 `gurunote/webui/session.py:67` 에서 `from gui import PipelineWorker` 로 옛 CustomTkinter UI 파일에 의존. `gui.py` 를 legacy 로 정리 부재 — React 가 깨짐. 기술 부채.
+- 작업 범위: `gui.py` 안 `PipelineWorker` 클래스 추출, import 갱신 (`webui/session.py`, `gui.py` 자체), test 통과 확인
+- 재검토 조건: 옛 진입점 (`gui.py`/`app.py`) 폐기 시점 또는 React 진입점 단일화 결정 시
+- 상태: not_started
+- 우선순위: P3 (1.0 후 정리)
+- 비용: 중간 (~1 세션, 코드 이동 + import 갱신 + 회귀 테스트)
+
+### B10: setup.sh / setup.bat 안내 문구 갱신
+
+- 동작: setup 스크립트 종료 시 echo 안내가 옛 진입점 (`gui.py`, `streamlit run app.py`) 만 가리킴. v1.0 React 진입점 (`app_webview.py`, `run_webview.command`) 우선 안내로 갱신
+- 위치: `setup.sh:120~121`, `setup.bat:96~97`
+- 상태: not_started
+- 우선순위: P3 (사용자 경험 정합 — README 와 일관성)
+- 비용: 작음 (~0.1 세션, echo 문구 갱신)
+
 ### B03: Phase 1 fix-up #3 — schema text leak
 
 - 동작: xgrammar 0.2.0 description 누설 후처리 필터

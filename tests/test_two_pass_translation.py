@@ -125,9 +125,9 @@ class TestTwoPassIntegration:
 # 토글 — GURUNOTE_TWO_PASS 환경변수
 # =============================================================================
 class TestToggle:
-    def test_default_off_uses_one_pass(self, mock_cfg, sample_chunk, monkeypatch):
-        # 환경변수 부재 → 1-pass (기존 동작)
-        monkeypatch.delenv("GURUNOTE_TWO_PASS", raising=False)
+    def test_explicit_off_uses_one_pass(self, mock_cfg, sample_chunk, monkeypatch):
+        # GURUNOTE_TWO_PASS=0 명시 → 1-pass
+        monkeypatch.setenv("GURUNOTE_TWO_PASS", "0")
         outputs_json = json.dumps({"outputs": ["a", "b", "c"]}, ensure_ascii=False)
         with patch("gurunote.llm._call_llm") as mock_freeform, \
              patch("gurunote.llm._call_llm_with_continuation") as mock_one_pass:
@@ -137,7 +137,6 @@ class TestToggle:
         assert mock_freeform.call_count == 0
         # _call_llm_with_continuation 1회 (1-pass)
         assert mock_one_pass.call_count == 1
-        # client zip timestamp 부착 catch
         assert "[00:10]" in result and "[00:13]" in result and "[00:16]" in result
 
     def test_toggle_on_uses_two_pass(self, mock_cfg, sample_chunk, monkeypatch):

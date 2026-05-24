@@ -109,11 +109,13 @@ bash run_web.sh          # 웹 앱   (macOS/Linux)
   - **GPU 없음**: **AssemblyAI Cloud API** 자동 폴백
   - 화자(Who) + 타임스탬프(When) + 내용(What) 을 동시 추출
   - IT/AI 도메인 핫워드 64 개 (Sam Altman, RLHF, Mixture of Experts …) 를 `initial_prompt` 로 주입해 고유명사/약어 인식률 향상
+  - **의미 단위 재분할** — STT 직후 word-level 끝 검사로 Whisper 음성 경계 잘림을 보완. context leak 해소, 번역 정렬 drift 감소, 가독성 향상. 모델 비의존 방식으로 약한 로컬 LLM에서도 동일하게 작동.
 - 🌐 **IT/AI 전문 톤 한국어 번역** — OpenAI `gpt-5.4` / Anthropic `claude-sonnet-4-6` / Google Gemini `gemini-2.5-flash`
-  - 화자 실명(진행자/게스트) 자동 추론
+  - 화자 실명(진행자/게스트) 자동 추론 + **bootstrap entity cache** 로 인명·지명 표기 일관성 유지
   - LLM / RAG / Fine-tuning 등 전문 용어 영문 병기
   - 구어체 추임새 정리, 가독성 높은 인터뷰 톤
   - **청크 분할 번역**으로 장편(1 시간+) 영상의 토큰 한도 초과 방지
+  - **2-pass DCCD** (Draft-Conditioned Constrained Decoding) — 1단계 자유 번역 + 2단계 정렬. 약한 로컬 모델에서도 segment 수 정합 보장.
 - 📝 **GuruNote 스타일 마크다운 요약**
   - 📌 영상 제목 및 핵심 주제 요약
   - 💡 Guru's Insights (3~5 개)
@@ -285,6 +287,33 @@ GURUNOTE_STT_ENGINE=auto
 ```
 
 > `.env` 는 `.gitignore` 에 의해 절대 커밋되지 않습니다.
+
+### 파이프라인 동작 제어 (선택 환경변수)
+
+아래 변수는 `.env` 에 추가하거나 실행 전 셸에서 설정합니다. 미설정 시 괄호 안 값이 기본값입니다.
+
+| 변수 | 기본값 | 설명 |
+|---|---|---|
+| `GURUNOTE_SEGMENT_RESPLIT` | `1` (on) | STT 직후 word-level 의미 단위 재분할. Whisper 음성 경계 잘림을 보완해 번역 정합·가독성 향상. `0` 으로 끄면 기존 Whisper segment 그대로 사용. |
+| `GURUNOTE_TWO_PASS` | `1` (on) | 2-pass DCCD 번역. 1단계 자유 번역 → 2단계 정렬로 segment 수 정합 보장. `0` 으로 끄면 기존 1-pass. |
+| `PYANNOTE_DIARIZATION_MODEL` | `pyannote/speaker-diarization-community-1` | 화자 분리 모델 (Apple Silicon). community-1 은 speaker confusion 마킹이 3.1 대비 감소. |
+
+### Hugging Face 토큰 + pyannote community-1 권한 설정
+
+pyannote 모델은 Hugging Face 계정 동의 후 비공개 접근이 가능합니다.
+
+1. [huggingface.co](https://huggingface.co/) 계정 생성
+2. 아래 두 모델 페이지에서 각각 **"Agree and access repository"** 클릭
+   - `pyannote/speaker-diarization-community-1`
+   - `pyannote/segmentation-3.0`
+3. Hugging Face → Settings → Access Tokens 에서 `read` 권한 토큰 발급
+4. `.env` 에 추가:
+
+```env
+HUGGINGFACE_TOKEN=hf_...
+```
+
+> `HF_TOKEN` 변수명도 동일하게 인식됩니다. 토큰은 최초 모델 다운로드 시 1회만 필요하며 이후는 로컬 캐시를 사용합니다.
 
 ---
 
@@ -499,7 +528,7 @@ GuruNote/
 | **`python: command not found` / `'python' 용어가 인식되지 않습니다`** | Python 3.10+ 이 설치되지 않았거나 PATH 에 없습니다. Windows: `winget install --id Python.Python.3.12 -e` (설치 마법사의 "Add python.exe to PATH" 체크 필수). macOS 는 `python3` 명령을 사용하세요. Linux: `sudo apt install python3 python3-venv`. |
 | **`command not found: python` / `streamlit` (macOS)** | macOS 12+ 는 `python` 명령이 없고 `python3` 만 있으며, `streamlit` 은 venv 내부에만 설치됩니다. `bash run_desktop.sh` / `bash run_web.sh` 를 쓰면 venv activate 없이 실행됩니다. 직접 실행하려면 먼저 `source .venv/bin/activate` 로 venv 를 활성화하세요. |
 | **GPU 없이 쓸 수 있나요?** | `.env` 에서 `GURUNOTE_STT_ENGINE=assemblyai` 로 설정하면 클라우드 API 로 동작합니다 (AssemblyAI 키 필요). |
-| **Apple Silicon Mac (M1~M5) 에서 GPU 로컬 STT 가 되나요?** | 네. v0.6.0 부터 `setup.sh` 가 Apple Silicon 을 자동 감지해 `mlx-whisper` + `pyannote.audio` 를 설치합니다. STT 엔진을 `auto` 로 두면 Metal/MPS GPU 가속으로 로컬 전사 + 화자 분리가 동작합니다. 화자 분리에는 `HUGGINGFACE_TOKEN` + [pyannote 모델 동의](https://huggingface.co/pyannote/speaker-diarization-3.1) 가 필요합니다. |
+| **Apple Silicon Mac (M1~M5) 에서 GPU 로컬 STT 가 되나요?** | 네. v0.6.0 부터 `setup.sh` 가 Apple Silicon 을 자동 감지해 `mlx-whisper` + `pyannote.audio` 를 설치합니다. STT 엔진을 `auto` 로 두면 Metal/MPS GPU 가속으로 로컬 전사 + 화자 분리가 동작합니다. 화자 분리에는 `HUGGINGFACE_TOKEN` + [pyannote/speaker-diarization-community-1](https://huggingface.co/pyannote/speaker-diarization-community-1) 및 [pyannote/segmentation-3.0](https://huggingface.co/pyannote/segmentation-3.0) 모델 동의가 필요합니다. 위 🔑 환경변수 설정 섹션의 안내를 참고하세요. |
 | **1시간 넘는 영상은?** | WhisperX / MLX 모두 청크 분할 처리라 길이 제한이 없습니다. AssemblyAI 도 길이 제한 없음. |
 | **로컬 LLM 을 쓰고 싶어요** | `.env` 에서 `LLM_PROVIDER=openai_compatible` + `OPENAI_BASE_URL=http://127.0.0.1:8000/v1` 설정. Ollama, vLLM, LM Studio 등 OpenAI-compatible 서버라면 모두 가능합니다. |
 | **"ffmpeg not found" 에러** | Mac: `brew install ffmpeg` / Windows: `winget install ffmpeg` / Ubuntu: `sudo apt install ffmpeg` |

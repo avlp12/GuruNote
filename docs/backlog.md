@@ -1,6 +1,6 @@
 # GuruNote Backlog
 
-마지막 갱신: 2026-05-22 (보완 verify)
+마지막 갱신: 2026-05-24 (Phase 5 default on)
 운영 규칙: WIP=1 (동시 active 작업 1개 제한)
 상태 정의: not_started / active / blocked / passing
 
@@ -9,6 +9,12 @@
 없음
 
 ## 대기 중
+
+### Phase 5: STT 의미 단위 재분할 + 2-pass default on
+
+- 상태: **완료** (5/24, commit `527d2ea` + default on `feat: Phase 5 재분할 + 2-pass default on`)
+- 요약: GURUNOTE_SEGMENT_RESPLIT + GURUNOTE_TWO_PASS 기본값을 on으로 전환. daily 검증 2개 영상 통과 (영상1 96→49 segments, 영상2 586→294 segments, timeout 0, CJK 0, 화자 이름 정상 부착).
+- 토글 off 안전망 유지: GURUNOTE_SEGMENT_RESPLIT=0 / GURUNOTE_TWO_PASS=0 으로 기존 동작 복원 가능.
 
 ### B01: Phase 2 — entity cache + 화자 cache
 
@@ -38,6 +44,22 @@
 - 참고: 5/17 A-3 timeout 시도 실패 (httpx read timeout 이 wall-clock 강제 부재)
 - 한계: production 에서 slow chunk 자연 발생 시까지 wall-clock timeout 발동 검증 부재
 - 비용: 중간 (~1 세션)
+
+### B07: D segment 단독 번역 재평가
+
+- 동작: context leak 의 원인이 된 D segment를 청크에서 분리해 단독 번역하는 방안
+- 배경: Phase 5 의미 단위 재분할이 D leak 동기(Whisper 경계 잘림)를 간접 차단함. 현재 D 단독 번역 경로는 별도로 만들지 않음.
+- 재검토 조건: 정합이 낮은 영상에서 SHIFT 재발 시. 재분할만으로 해소 여부 영상 수 누적 후 판단.
+- 상태: not_started
+- 우선순위: P3 (Phase 5 이후 대기)
+
+### B08: 화자 bootstrap 식별 한계 후속
+
+- 동작: 메타데이터 기반 bootstrap 화자 식별이 영상 내 전체 화자를 커버하지 못하는 경우 처리
+- 배경: Phase 5 daily 검증 영상1 (Boston Dynamics) — 5명 화자 중 3명만 bootstrap 식별. 나머지는 "화자 N" fallback. 메타데이터에 이름이 부재한 화자가 있는 구조적 한계.
+- 재검토 조건: 식별 이름 수 < 전체 화자 수인 영상 빈도 증가 시. B01 entity cache 와 연계 가능성 검토.
+- 상태: not_started
+- 우선순위: P3
 
 ### B03: Phase 1 fix-up #3 — schema text leak
 

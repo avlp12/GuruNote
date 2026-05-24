@@ -195,12 +195,12 @@ class TestSegmentResplitEnv:
     def test_env_name(self):
         assert SEGMENT_RESPLIT_ENV == "GURUNOTE_SEGMENT_RESPLIT"
 
-    def test_env_default_off(self, monkeypatch):
-        """env 부재 시 default off 처리 (== '0')."""
+    def test_env_default_on(self, monkeypatch):
+        """env 부재 시 default on 처리 (== '1')."""
         monkeypatch.delenv(SEGMENT_RESPLIT_ENV, raising=False)
-        # stt_mlx.py 안 토글 catch — env 부재 시 "0" default.
-        val = os.environ.get(SEGMENT_RESPLIT_ENV, "0").strip()
-        assert val == "0"
+        # stt_mlx.py 안 토글 — env 부재 시 "1" default (5/24 default on 전환).
+        val = os.environ.get(SEGMENT_RESPLIT_ENV, "1").strip()
+        assert val == "1"
 
     def test_env_on_value(self, monkeypatch):
         monkeypatch.setenv(SEGMENT_RESPLIT_ENV, "1")

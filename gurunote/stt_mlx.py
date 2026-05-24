@@ -324,11 +324,11 @@ def transcribe_mlx(
             "  에서 모델 사용에 동의하세요."
         )
 
-    # 5/24 — 의미 단위 재분할 (GURUNOTE_SEGMENT_RESPLIT=1 토글, 기본 off).
+    # 5/24 — 의미 단위 재분할 (GURUNOTE_SEGMENT_RESPLIT 토글, 기본 on).
     # Whisper segment 경계는 음성 신호 기반이라 의미 단위 부재. 재분할 on 시
     # word-level 끝 검사로 미완 segment 를 다음과 병합 → D leak 해소, 2-pass
-    # SHIFT/합침 감소, 정합 향상. 기본 off — daily 1-pass 동작 보존.
-    resplit_on = os.environ.get(SEGMENT_RESPLIT_ENV, "0").strip() == "1"
+    # SHIFT/합침 감소, 정합 향상. off 강제: GURUNOTE_SEGMENT_RESPLIT=0.
+    resplit_on = os.environ.get(SEGMENT_RESPLIT_ENV, "1").strip() == "1"
     raw_segments_for_norm = raw_segments
     if resplit_on:
         before_count = len(raw_segments)

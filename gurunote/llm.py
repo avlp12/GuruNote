@@ -2695,13 +2695,13 @@ def translate_chunk_index_mapping_v2(
     체크포인트 3 시 translate_transcript 영역 통합 결정.
 
     (가) 옵션 A prototype 토글 (5/23):
-        GURUNOTE_TWO_PASS=1 환경변수 시 2-pass 분리 (자유 번역 → 정렬).
-        기본 (off) 시 기존 1-pass 보존 — daily 환경 영향 부재.
+        GURUNOTE_TWO_PASS 환경변수 (기본 on). off 강제: GURUNOTE_TWO_PASS=0.
+        2-pass 분리 (자유 번역 → 정렬). off 시 기존 1-pass 보존.
 
     5/23 — speaker_cache + seen_speakers 인자 추가 (2-pass 화자 라벨 코드 부착).
         1-pass path 영향 부재 (인자 사용 부재).
     """
-    is_two_pass = os.environ.get("GURUNOTE_TWO_PASS", "0") == "1"
+    is_two_pass = os.environ.get("GURUNOTE_TWO_PASS", "1") == "1"
 
     if is_two_pass:
         # 2-pass — 입력 본문만 (speaker prefix 부재), 화자 라벨은 client zip 코드 부착.

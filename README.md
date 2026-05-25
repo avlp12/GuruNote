@@ -506,7 +506,7 @@ GuruNote/
 주요 변경 사항은 [CHANGELOG.md](./CHANGELOG.md) 에 [Keep a Changelog](https://keepachangelog.com/)
 형식으로 기록되며 버전은 [Semantic Versioning](https://semver.org/) 을 따릅니다.
 
-현재 버전: **v1.0.0.4** — 라이브러리에서 노트 삭제 시 Obsidian vault 사본도 자동 삭제 (내보낼 때 frontmatter 에 남긴 `gurunote_job_id` 표식으로 매칭 — 표식 없는 기존 파일은 보존). v1.0.0.3 은 Obsidian 내보내기 + RAG 유사 노트 `[[wikilink]]` 그래프 연결. v1.0.0.2 는 의미 검색(RAG) React UI 재배선. v1.0.0.1 은 노트 상세 출처 링크(클릭/복사) + 라이브러리 다운로드 버튼 실동작 연결. 1.0 선언 릴리스(v1.0.0.0)는 React/PyWebView UI 전면 도입, 백엔드 STT/번역 파이프라인 재구조, License Elastic 2.0 채택을 묶은 하위 호환성 깨지는 변경.
+현재 버전: **v1.0.0.5** — Obsidian 내보내기 파일명에서 `GuruNote_` 접두사 제거 (파일명 = 작업물 제목). 출처 구분은 frontmatter `gurunote_job_id` 표식 + `Gurunote/` 하위 폴더가 담당. wikilink stem 도 같이 정합돼 그래프 연결 유지. v1.0.0.4 는 라이브러리 삭제 시 Obsidian vault 사본 자동 삭제 (`gurunote_job_id` 표식 매칭, 표식 없는 기존 파일은 보존). v1.0.0.3 은 Obsidian 내보내기 + RAG 유사 노트 `[[wikilink]]` 그래프 연결. v1.0.0.2 는 의미 검색(RAG) React UI 재배선. v1.0.0.1 은 노트 상세 출처 링크(클릭/복사) + 라이브러리 다운로드 버튼 실동작 연결. 1.0 선언 릴리스(v1.0.0.0)는 React/PyWebView UI 전면 도입, 백엔드 STT/번역 파이프라인 재구조, License Elastic 2.0 채택을 묶은 하위 호환성 깨지는 변경.
 
 ### v1.0.0.0 주요 변경 (요약)
 

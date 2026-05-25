@@ -118,6 +118,7 @@
   - 카드 hub → Obsidian 내보내기 (중복 "열기" 제거). 노트 상세에 Obsidian 버튼 추가, RAG "연관 노트"는 `device_hub` 아이콘으로 유지.
 - 검증: 임시 vault 로 end-to-end 확인 — 파일 생성 + ## 연관 노트 섹션 + frontmatter related + wikilink alias, related_count=5, 자기 제외. NO_VAULT 경로 확인. (사용자 vault 무관)
 - 역할 구분: 다운로드(.md 로컬 저장) / Obsidian(vault 내보내기 + wikilink) / 연관 노트(앱 내 RAG 검색).
+- 후속 (v1.0.0.5): vault 파일명 `GuruNote_` 접두사 제거 → 파일명 = `<sanitize(title)>.md`. `_obsidian_note_stem` 을 파일명·wikilink 단일 출처로 통합 (그래프 연결 유지). 출처 구분은 `gurunote_job_id` 표식 + `Gurunote/` 폴더가 담당. 기존 접두사 파일은 수동 정리.
 - 잔여(별도): bridge `save_pdf` / `send_notion` 은 여전히 stub (이번 범위 밖). 사용자 vault 에 OBSIDIAN_VAULT_PATH 설정 시 실 그래프 검증은 본인 GUI.
 
 ### B14: 라이브러리 삭제 시 Obsidian 사본 자동 삭제 (표식 기반)

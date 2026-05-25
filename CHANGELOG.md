@@ -7,6 +7,18 @@
 
 ## [Unreleased]
 
+## [1.0.0.5] - 2026-05-25
+
+### Changed
+- **Obsidian 내보내기 파일명에서 `GuruNote_` 접두사 제거** — 파일명이 작업물 제목
+  (`<sanitize(title)>.md`) 으로만 구성돼 Vault 그래프에서 제목 가독성이 좋아진다.
+  출처 구분은 frontmatter `gurunote_job_id` 표식 + `Gurunote/` 하위 폴더가 담당하므로
+  접두사가 불필요. 파일명과 `## 연관 노트` wikilink stem 이 같은 helper
+  (`_obsidian_note_stem`) 를 거쳐 항상 일치 — 그래프 연결 유지.
+  - 삭제 동기화는 frontmatter 표식 기반이라 영향 없음.
+  - **이미 내보낸 `GuruNote_` 접두사 파일은 그대로** (앞으로 내보내는 노트부터 적용) —
+    필요 시 사용자가 수동 정리.
+
 ## [1.0.0.4] - 2026-05-25
 
 ### Added
@@ -1412,7 +1424,8 @@ bash run_desktop.sh
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v1.0.0.4...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v1.0.0.5...HEAD
+[1.0.0.5]: https://github.com/avlp12/GuruNote/compare/v1.0.0.4...v1.0.0.5
 [1.0.0.4]: https://github.com/avlp12/GuruNote/compare/v1.0.0.3...v1.0.0.4
 [1.0.0.3]: https://github.com/avlp12/GuruNote/compare/v1.0.0.2...v1.0.0.3
 [1.0.0.2]: https://github.com/avlp12/GuruNote/compare/v1.0.0.1...v1.0.0.2

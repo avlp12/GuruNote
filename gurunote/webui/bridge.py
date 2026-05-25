@@ -204,10 +204,14 @@ def _parse_frontmatter(markdown: str) -> dict:
 
 
 def _obsidian_note_stem(title: str) -> str:
-    """Obsidian 노트 파일명 stem (확장자 제외). save_to_vault 가 저장하는 파일명과
-    동일 규칙 — wikilink 대상이 실제 파일과 일치해야 그래프가 연결되기 때문."""
+    """Obsidian 노트 파일명 stem (확장자 제외) — 작업물 제목만으로 구성.
+
+    send_obsidian 의 저장 파일명과 wikilink 대상이 모두 이 helper 를 거치므로,
+    파일명과 링크 stem 이 항상 일치한다 (그래프 연결 보장). 출처 구분은 파일명
+    접두사 대신 frontmatter ``gurunote_job_id`` 표식 + 하위 폴더(``Gurunote/``)가
+    담당하므로 접두사를 붙이지 않는다."""
     from gurunote.exporter import sanitize_filename  # noqa: PLC0415
-    return f"GuruNote_{sanitize_filename(title)}"
+    return sanitize_filename(title)
 
 
 def _inject_frontmatter_field(md: str, key: str, value: str) -> str:
@@ -1313,7 +1317,6 @@ class Api:
         """
         from gurunote import obsidian, semantic  # noqa: PLC0415
         from gurunote.history import get_job_markdown, load_index  # noqa: PLC0415
-        from gurunote.exporter import sanitize_filename  # noqa: PLC0415
 
         if isinstance(job_id, dict):
             job_id = job_id.get("job_id")
@@ -1352,7 +1355,7 @@ class Api:
 
         try:
             out = obsidian.save_to_vault(
-                md_out, filename=f"GuruNote_{sanitize_filename(title)}.md",
+                md_out, filename=f"{_obsidian_note_stem(title)}.md",
             )
         except (RuntimeError, ValueError) as exc:
             return self._err("OBSIDIAN_FAILED", str(exc))

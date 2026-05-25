@@ -234,3 +234,5 @@ verify_results/**/segments.json
 verify_results/*_segments.json
 verify_results/**/resplit.json
 verify_results/*_resplit.json
+CLAUDE.md
+CLAUDE.legacy.md

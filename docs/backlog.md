@@ -135,6 +135,12 @@
 - 검증: 임시 vault end-to-end — 표식 삽입/매칭 삭제/표식 없는 파일 보존/무관 job_id 안전(0)/중복 방지. `delete_history` 직접 호출은 실제 job 삭제라 미실행(분류기 차단 정상) — vault 측 `delete_from_vault` 독립 검증으로 대체.
 - 잔여(별도): 표식 없는 기존 vault 파일은 자동 삭제 대상 아님 (설계 의도). bridge `save_pdf` / `send_notion` 은 여전히 stub.
 
+### B15: 인명/고유명사 번역 품질 — 통용 표기 + 영문 병기 오타
+
+- 배경: 통용 표기 dict 미수록 인명을 LLM 이 외래어 규칙으로 철자 추정 → 통용과 어긋남 (팰머 러커이/리크 리더). entity_cache 가 첫 표기를 고정해 "일관되게 틀림". 별개로 영문 병기 철자 오염 (Anduril→Danduril, 제목 포함).
+- **A (음차) — 완료 (v1.0.0.6)**: 번역 프롬프트 Rule 10 + 공통 룰에 "통용 표기 우선 + 철자 아닌 발음 기준 음차, 외래어 규칙은 fallback" 지시 추가. 짧은 테스트 — Palmer Luckey→팔머 럭키, Rick Rieder→릭 리더 (오표기 0). **로컬 모델이 통용 표기를 알고 있어 프롬프트만으로 끌어냄 → dict 일괄 보강 불필요.** 실제 영상 재처리 최종 확인은 본인 GUI.
+- **B (영문 병기 오타) — not_started (다음 차례)**: LLM 이 영문 원어 병기 시 철자 오염 (소스에 Anduril 정답 있어도 Danduril 출력). 영문 병기를 원본(제목/메타/transcript) 실재 철자로 제약하는 방향. STT 아님 — 번역 단계 (원본 제목·다운로드 로그는 Anduril 정확, LLM 생성 organized_title 이 Danduril).
+
 ### B03: Phase 1 fix-up #3 — schema text leak
 
 - 동작: xgrammar 0.2.0 description 누설 후처리 필터

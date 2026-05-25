@@ -7,6 +7,18 @@
 
 ## [Unreleased]
 
+## [1.0.0.6] - 2026-05-25
+
+### Changed
+- **인명 음차 — 통용 표기 우선 (번역 프롬프트 강화)**. 통용 표기 dict 에 없는 유명
+  인물·기업을 LLM 이 외래어 표기법 규칙으로 **철자 기반** 추정해 통용과 어긋나던 문제
+  (예: Palmer Luckey→"팰머 러커이", Rick Rieder→"리크 리더") 개선:
+  - Rule 10 머리에 표기 결정 우선순위 명시 — ① 통용 표기(철자 아닌 **발음** 기준 음차)
+    ② 통용 표기 목록 ③ 외래어 표기법 규칙은 모르는 이름의 fallback (통용을 덮어쓰지 않음).
+  - 공통 룰의 통용 표기 dict 에도 발음 우선 안내 미러링.
+  - 짧은 테스트 확인: Palmer Luckey→**팔머 럭키**, Rick Rieder→**릭 리더** (오표기 0).
+  - dict 수정·외래어 규칙·entity_cache 로직 변경 없음 (프롬프트 지시만).
+
 ## [1.0.0.5] - 2026-05-25
 
 ### Changed
@@ -1424,7 +1436,8 @@ bash run_desktop.sh
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v1.0.0.5...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v1.0.0.6...HEAD
+[1.0.0.6]: https://github.com/avlp12/GuruNote/compare/v1.0.0.5...v1.0.0.6
 [1.0.0.5]: https://github.com/avlp12/GuruNote/compare/v1.0.0.4...v1.0.0.5
 [1.0.0.4]: https://github.com/avlp12/GuruNote/compare/v1.0.0.3...v1.0.0.4
 [1.0.0.3]: https://github.com/avlp12/GuruNote/compare/v1.0.0.2...v1.0.0.3

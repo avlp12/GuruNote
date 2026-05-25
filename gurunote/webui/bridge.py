@@ -992,9 +992,92 @@ class Api:
         except Exception as exc:  # noqa: BLE001
             return self._err("DELETE_FAILED", f"{type(exc).__name__}: {exc}")
 
+    # ----- semantic search (의미 검색 / RAG) — gurunote.semantic 재사용 ------
+    # semantic.py 는 sentence-transformers 임베딩 + 코사인 유사도로 이미 완성돼
+    # 있다 (옛 gui.py/app.py 에서 동작). 여기서는 호출만 — 로직 변경 없음.
+    # 선택 의존성 (requirements-search.txt) 미설치 시 is_available() False.
+
+    def semantic_available(self) -> dict:
+        """의미 검색 의존성 설치 여부 + 인덱스 빌드 여부. Dashboard 카드용."""
+        from gurunote import semantic  # noqa: PLC0415
+        return {
+            "ok": True,
+            "available": semantic.is_available(),
+            "built": semantic.is_index_built(),
+            "hint": semantic.missing_packages_hint(),
+        }
+
+    def semantic_index_stats(self) -> dict:
+        """현재 인덱스 요약 (모델 / chunk 수 / 작업 수 / 빌드 시각)."""
+        from gurunote import semantic  # noqa: PLC0415
+        stats = semantic.index_stats()  # {"built": False} 또는 {"built": True, ...}
+        return {"ok": True, "available": semantic.is_available(), **stats}
+
     def rebuild_index(self) -> dict:
-        """Rebuild the semantic index. Long-running → returns job_id."""
-        raise NotImplementedError("rebuild_index: wired in Phase 2")
+        """저장된 전체 작업으로 의미 검색 인덱스를 (재)빌드한다.
+
+        블로킹 호출 — pywebview 가 JS→Python 호출을 워커 스레드에 dispatch 하므로
+        모델이 임베딩하는 동안 UI 는 멈추지 않는다 (save_result_as 와 동일 패턴).
+        첫 실행 시 임베딩 모델 (~117MB) 을 다운로드한다. 빌드 요약 + 갱신된
+        통계를 반환.
+        """
+        from gurunote import semantic  # noqa: PLC0415
+        from gurunote.history import load_index  # noqa: PLC0415
+        if not semantic.is_available():
+            return self._err("SEMANTIC_UNAVAILABLE", semantic.missing_packages_hint())
+        try:
+            jobs = load_index()
+            result = semantic.build_index(jobs)
+        except RuntimeError as exc:
+            return self._err("REBUILD_FAILED", str(exc))
+        except Exception as exc:  # noqa: BLE001 — encode/IO 오류 정규화
+            return self._err("REBUILD_FAILED", f"{type(exc).__name__}: {exc}")
+        return {"ok": True, **result, "stats": semantic.index_stats()}
+
+    def semantic_search(self, payload: Any = None, *, query: Optional[str] = None,
+                        job_id: Optional[str] = None, top_k: int = 10) -> dict:
+        """의미 유사도 검색. 두 진입점:
+
+          - "의미 검색" 칩: ``api.semantic_search({query})`` — 자유 텍스트 쿼리.
+          - "연관 노트" 버튼: ``api.semantic_search({job_id})`` — 해당 노트 본문을
+            쿼리로 쓰고 자기 자신은 결과에서 제외.
+        """
+        from gurunote import semantic  # noqa: PLC0415
+        if isinstance(payload, dict):
+            query = payload.get("query", query)
+            job_id = payload.get("job_id", job_id)
+            top_k = payload.get("top_k", top_k)
+        elif isinstance(payload, str):
+            query = payload
+
+        if not semantic.is_available():
+            return self._err("SEMANTIC_UNAVAILABLE", semantic.missing_packages_hint())
+        if not semantic.is_index_built():
+            return self._err(
+                "INDEX_NOT_BUILT",
+                "의미 검색 인덱스가 없습니다. 대시보드에서 'Semantic Rebuild' 를 먼저 실행하세요.",
+            )
+
+        # 연관 노트: 노트 본문을 쿼리로 사용.
+        if job_id and not query:
+            from gurunote.history import get_job_markdown  # noqa: PLC0415
+            md = get_job_markdown(job_id)
+            if not md:
+                return self._err("HISTORY_NOT_FOUND", f"no result.md for job {job_id}")
+            query = md
+        if not isinstance(query, str) or not query.strip():
+            return self._err("INVALID_QUERY", "query must be a non-empty string")
+
+        try:
+            k = int(top_k) + (1 if job_id else 0)  # 자기 제외 보정
+            results = semantic.search(query, top_k=k)
+        except RuntimeError as exc:
+            return self._err("SEARCH_FAILED", str(exc))
+        except Exception as exc:  # noqa: BLE001
+            return self._err("SEARCH_FAILED", f"{type(exc).__name__}: {exc}")
+        if job_id:
+            results = [r for r in results if r.get("job_id") != job_id][: int(top_k)]
+        return {"ok": True, "results": results}
 
     # ============================================================ note edit (TODO)
 

@@ -354,7 +354,50 @@ function ActiveFilters({ search, activeFacets, onClearSearch, onResetFacet, onCl
 }
 
 /* === DetailPanel (Phase 2B-3d) — slide-in modal === */
-function DetailPanel({ item, onClose, onEdit }) {
+/* 의미 검색 결과 리스트 — 연관 노트(상세 패널) + "의미 검색" 칩(오버레이) 공용.
+   results: [{job_id, score, title, preview, chunk_idx}], onSelect(job_id). (B12) */
+function HistoryRelatedList({ results, loading, error, onSelect }) {
+  if (loading) {
+    return <div style={{ fontSize: 13, color: 'var(--gn-on-surface-muted)', padding: '8px 0' }}>의미 검색 중…</div>;
+  }
+  if (error) {
+    return <div style={{ fontSize: 13, color: 'var(--gn-danger)', padding: '8px 0', whiteSpace: 'pre-wrap' }}>{error}</div>;
+  }
+  if (!results || results.length === 0) {
+    return <div style={{ fontSize: 13, color: 'var(--gn-on-surface-muted)', padding: '8px 0' }}>연관 노트가 없습니다.</div>;
+  }
+  return (
+    <div className="related-notes" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {results.map((r) => (
+        <button
+          key={`${r.job_id}-${r.chunk_idx}`}
+          type="button"
+          className="related-note"
+          onClick={() => onSelect?.(r.job_id)}
+          style={{
+            textAlign: 'left', background: 'var(--gn-surface-2, rgba(255,255,255,0.04))',
+            border: '1px solid var(--gn-border, rgba(255,255,255,0.08))', borderRadius: 8,
+            padding: '8px 10px', cursor: 'pointer', font: 'inherit', color: 'inherit',
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+            <span style={{ fontWeight: 600, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {r.title || '제목 없음'}
+            </span>
+            <span style={{ fontSize: 12, color: 'var(--gn-primary, #3b82f6)', flexShrink: 0 }}>
+              유사도 {Math.round((r.score || 0) * 100)}%
+            </span>
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--gn-on-surface-muted, #888)', marginTop: 4, lineHeight: 1.5, maxHeight: 40, overflow: 'hidden' }}>
+            {r.preview}
+          </div>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function DetailPanel({ item, onClose, onEdit, onOpenRelated }) {
   useEffect(() => {
     const onEsc = (e) => { if (e.key === 'Escape') onClose(); };
     document.addEventListener('keydown', onEsc);
@@ -397,6 +440,26 @@ function DetailPanel({ item, onClose, onEdit }) {
     })();
     return () => { cancelled = true; };
   }, [item?.job_id]);
+
+  // B12: 연관 노트 (의미 검색) — 버튼 클릭 시 현재 노트 본문으로 top-K 유사 검색.
+  const [related, setRelated] = useState({ open: false, loading: false, results: null, error: '' });
+  // item 이 바뀌면 연관 노트 패널 닫기 (stale 결과 방지).
+  useEffect(() => { setRelated({ open: false, loading: false, results: null, error: '' }); }, [item?.job_id]);
+
+  const handleRelated = async () => {
+    if (!item?.job_id) return;
+    setRelated({ open: true, loading: true, results: null, error: '' });
+    try {
+      const r = await window.pywebview.api.semantic_search({ job_id: item.job_id });
+      if (r?.ok) {
+        setRelated({ open: true, loading: false, results: r.results || [], error: '' });
+      } else {
+        setRelated({ open: true, loading: false, results: null, error: r?.error || '연관 노트 검색 실패' });
+      }
+    } catch (e) {
+      setRelated({ open: true, loading: false, results: null, error: `오류: ${e.message || e}` });
+    }
+  };
 
   if (!item) return null;
 
@@ -500,6 +563,18 @@ function DetailPanel({ item, onClose, onEdit }) {
           {detail && (
             <ResultPanel result={detail} log={logText} />
           )}
+
+          {related.open && (
+            <>
+              <div className="detail-section-title">연관 노트</div>
+              <HistoryRelatedList
+                results={related.results}
+                loading={related.loading}
+                error={related.error}
+                onSelect={(jid) => { if (onOpenRelated) onOpenRelated(jid); }}
+              />
+            </>
+          )}
         </div>
 
         <div className="detail-actions-bar">
@@ -511,9 +586,9 @@ function DetailPanel({ item, onClose, onEdit }) {
             <span className="msi">download</span>
             다운로드
           </button>
-          <button type="button" className="btn btn--ghost" onClick={() => window.showToast?.('Phase 3A (RAG) 에서 활성화')}>
+          <button type="button" className="btn btn--ghost" onClick={handleRelated} disabled={related.loading}>
             <span className="msi">hub</span>
-            연관 노트
+            {related.loading ? '검색 중…' : '연관 노트'}
           </button>
         </div>
       </div>
@@ -649,8 +724,8 @@ function JobCard({ item, onClick, onEdit, onDelete }) {
         <button
           type="button"
           className="job-action"
-          title="연관 노트"
-          onClick={() => window.showToast?.('Phase 3A (RAG) 에서 활성화')}
+          title="연관 노트 (상세에서 검색)"
+          onClick={() => onClick && onClick(item)}
         >
           <span className="msi">hub</span>
         </button>
@@ -766,6 +841,9 @@ function HistoryScreen({
   // Phase 2B-3d: detail view state
   const [detailItem, setDetailItem] = useState(null);
 
+  // B12: "의미 검색" 칩 → semantic_search 오버레이 결과.
+  const [semantic, setSemantic] = useState({ open: false, loading: false, results: null, error: '', query: '' });
+
   // Phase 2B-3-backend Step 3b-2: delete confirm dialog state
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
@@ -805,6 +883,37 @@ function HistoryScreen({
     setDetailItem(item);
   };
 
+  // B12: 연관 노트 결과에서 노트 선택 → 해당 노트 상세 열기.
+  const handleOpenRelated = (jid) => {
+    const found = items.find((it) => it.job_id === jid);
+    if (found) {
+      setSemantic((s) => ({ ...s, open: false }));
+      setDetailItem(found);
+    } else {
+      window.showToast?.('해당 노트를 목록에서 찾을 수 없습니다.', 'error');
+    }
+  };
+
+  // B12: "의미 검색" 칩 → 현재 검색어로 semantic_search, 오버레이에 결과 표시.
+  const handleSemanticSearch = async () => {
+    const q = searchInput.trim();
+    if (!q) {
+      window.showToast?.('검색어를 입력한 뒤 의미 검색을 누르세요.', 'info');
+      return;
+    }
+    setSemantic({ open: true, loading: true, results: null, error: '', query: q });
+    try {
+      const r = await window.pywebview.api.semantic_search({ query: q, top_k: 20 });
+      if (r?.ok) {
+        setSemantic({ open: true, loading: false, results: r.results || [], error: '', query: q });
+      } else {
+        setSemantic({ open: true, loading: false, results: null, error: r?.error || '의미 검색 실패', query: q });
+      }
+    } catch (e) {
+      setSemantic({ open: true, loading: false, results: null, error: `오류: ${e.message || e}`, query: q });
+    }
+  };
+
   return (
     <div className="history-screen">
       <div className="history-toolbar">
@@ -842,7 +951,8 @@ function HistoryScreen({
           <button
             type="button"
             className="filter-chip"
-            onClick={() => handleChipClick('의미 검색')}
+            onClick={handleSemanticSearch}
+            title="검색어로 의미 유사 노트 찾기 (RAG)"
           >
             <span className="filter-chip__icon msi">psychology</span>
             의미 검색
@@ -945,7 +1055,41 @@ function HistoryScreen({
           item={detailItem}
           onClose={() => setDetailItem(null)}
           onEdit={(it) => onEditNote && onEditNote(it.job_id)}
+          onOpenRelated={handleOpenRelated}
         />
+      )}
+
+      {semantic.open && (
+        <div
+          className="detail-overlay"
+          onClick={() => setSemantic((s) => ({ ...s, open: false }))}
+        >
+          <div
+            className="detail-panel"
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: 560 }}
+          >
+            <div className="detail-panel__header">
+              <h2 className="detail-panel__title">의미 검색: “{semantic.query}”</h2>
+              <button
+                type="button"
+                className="detail-panel__close"
+                onClick={() => setSemantic((s) => ({ ...s, open: false }))}
+                aria-label="닫기"
+              >
+                <span className="msi">close</span>
+              </button>
+            </div>
+            <div className="detail-panel__body">
+              <HistoryRelatedList
+                results={semantic.results}
+                loading={semantic.loading}
+                error={semantic.error}
+                onSelect={handleOpenRelated}
+              />
+            </div>
+          </div>
+        </div>
       )}
 
       <DeleteConfirmDialog

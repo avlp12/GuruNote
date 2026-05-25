@@ -7,6 +7,19 @@
 
 ## [Unreleased]
 
+## [1.0.0.2] - 2026-05-25
+
+### Added
+- **의미 검색 (RAG) React UI 재배선** (백로그 B12) — 기존 `gurunote/semantic.py`
+  (sentence-transformers 임베딩 + 코사인 유사도) 를 React UI 에 연결:
+  - 대시보드 "의미 검색 인덱스" 카드 — 모델 / chunk 수 / 작업 수 / 빌드 시각 실데이터
+    표시 + "Semantic Rebuild" 버튼으로 인덱스 빌드.
+  - History "의미 검색" 칩 — 검색어로 의미 유사 노트를 찾아 결과 오버레이 표시.
+  - 노트 상세 "연관 노트" 버튼 — 현재 노트와 의미가 유사한 노트 top-K 표시.
+  - 선택 의존성 (`requirements-search.txt`) 미설치 시 대시보드 카드에 설치 안내.
+  - bridge: `rebuild_index` / `semantic_index_stats` / `semantic_search` /
+    `semantic_available` 구현 (semantic.py 호출만, 로직 변경 없음).
+
 ## [1.0.0.1] - 2026-05-25
 
 ### Added
@@ -1369,7 +1382,8 @@ bash run_desktop.sh
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v1.0.0.1...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v1.0.0.2...HEAD
+[1.0.0.2]: https://github.com/avlp12/GuruNote/compare/v1.0.0.1...v1.0.0.2
 [1.0.0.1]: https://github.com/avlp12/GuruNote/compare/v1.0.0.0...v1.0.0.1
 [1.0.0.0]: https://github.com/avlp12/GuruNote/compare/v0.8.0.6...v1.0.0.0
 [0.8.0.6]: https://github.com/avlp12/GuruNote/compare/v0.8.0.5...v0.8.0.6

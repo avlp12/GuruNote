@@ -129,7 +129,10 @@ bash run_web.sh              # Streamlit (macOS/Linux), Windows 는 run_web.bat
   제목(첫글자)/태그로 노트 자동 분류. 클릭 한 번에 직교 필터링.
 - 📝 **노트 인-앱 편집** — 마크다운 분할 프리뷰 (좌: raw 편집, 우: 실시간 렌더링).
   저장 시 의미 검색 인덱스 자동 갱신.
-- 🔍 **검색** — 키워드 substring + **의미 기반 (sentence-transformers, Korean 지원)**
+- 🔍 **검색** — 키워드 substring + **의미 기반 (sentence-transformers, Korean 지원)**.
+  의미 검색은 선택 의존성 — `pip install -r requirements-search.txt` 설치 후
+  대시보드 "의미 검색 인덱스" 패널의 빌드 버튼으로 인덱스를 만들면, History 의
+  "의미 검색" 칩과 노트 상세의 "연관 노트" 가 활성화된다. 미설치 시 패널에 설치 안내 표시.
 - 📊 **대시보드** — 분야/업로더/태그/월별 통계 + 의미 검색 인덱스 빌드 패널
 - ⏱ **실시간 진행 표시** — 5단계 뱃지 인디케이터 + ETA (경과 시간 + 남은 예상 시간)
 - 🎨 **Material 3 React UI** (v1.0+) — `gurunote/webui/` 의 React + Tailwind CSS 구성. PyWebView 가 네이티브 윈도우 (macOS WKWebView / Windows WebView2 / Linux WebKitGTK) 를 띄움. 사이드바 + 5개 화면 (Main / History / Editor / Dashboard / Settings).
@@ -503,7 +506,7 @@ GuruNote/
 주요 변경 사항은 [CHANGELOG.md](./CHANGELOG.md) 에 [Keep a Changelog](https://keepachangelog.com/)
 형식으로 기록되며 버전은 [Semantic Versioning](https://semver.org/) 을 따릅니다.
 
-현재 버전: **v1.0.0.1** — 노트 상세 화면 출처 링크(클릭/복사) + 라이브러리 다운로드 버튼 실동작 연결. 1.0 선언 릴리스(v1.0.0.0)는 React/PyWebView UI 전면 도입, 백엔드 STT/번역 파이프라인 재구조, License Elastic 2.0 채택을 묶은 하위 호환성 깨지는 변경.
+현재 버전: **v1.0.0.2** — 의미 검색(RAG) React UI 재배선: 대시보드 인덱스 빌드 패널 + History "의미 검색" 칩 + 노트 상세 "연관 노트" 활성화 (선택 의존성 `requirements-search.txt`). v1.0.0.1 은 노트 상세 출처 링크(클릭/복사) + 라이브러리 다운로드 버튼 실동작 연결. 1.0 선언 릴리스(v1.0.0.0)는 React/PyWebView UI 전면 도입, 백엔드 STT/번역 파이프라인 재구조, License Elastic 2.0 채택을 묶은 하위 호환성 깨지는 변경.
 
 ### v1.0.0.0 주요 변경 (요약)
 

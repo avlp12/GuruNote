@@ -95,9 +95,15 @@
 - 동작: 기존 `gurunote/semantic.py` (413행, sentence-transformers 임베딩 + 코사인 유사도 + 인덱스 빌드, 옛 gui.py/app.py 에서 동작) 을 React UI 에 재연결
 - 배경: 백엔드는 완성돼 있으나 React 전환 (Phase 2B) 때 포팅 부재. 현재 비활성 — `bridge.py:995` `rebuild_index` → `NotImplementedError`, DashboardScreen "의미 검색 인덱스" 카드 placeholder, HistoryScreen "연관 노트" 버튼 toast.
 - 작업 범위: `bridge.py` `rebuild_index` 구현 + 검색 메서드 노출 → DashboardScreen 카드 + "연관 노트" 연결. 선택 의존성 (`requirements-search.txt`) 미설치 시 `is_available()` False 안내. **신규 알고리즘 부재 — 배선 작업.**
-- 재검토 조건: **dmg 배포 후.** 선택 의존성 뒤에 있고 "Phase 3A (RAG)" 라벨이 명시돼 미완성 오인 여지 작음.
-- 상태: not_started
-- 우선순위: P2/P3 (dmg 후)
+- 상태: **완료** (5/25)
+- 우선순위: P2
+- 완료 내용:
+  - bridge.py 4개 메서드 구현 (`rebuild_index` / `semantic_index_stats` / `semantic_search` / `semantic_available`) — semantic.py 호출만, 로직 불변
+  - DashboardScreen "의미 검색 인덱스" 카드 실데이터 연결 + Semantic Rebuild 버튼
+  - HistoryScreen "의미 검색" 칩 (쿼리 검색 오버레이) + 노트 상세 "연관 노트" (top-K 유사)
+  - 의존성 미설치 시 카드 자체에 설치 안내, README 선택 의존성 안내 추가
+- 검증 한계: sentence-transformers 가 개발 환경에 미설치 → 미설치 경로(에러 안내)만 검증. 실제 임베딩/검색 경로는 deps 설치 후 본인 GUI 확인 필요.
+- 잔여(별도): History 툴바 "본문 포함" 칩은 substring full-text 검색으로 RAG 와 별개 — 미구현 유지 (이번 범위 밖).
 
 ### B03: Phase 1 fix-up #3 — schema text leak
 

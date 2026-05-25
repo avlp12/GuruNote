@@ -210,6 +210,23 @@ def _obsidian_note_stem(title: str) -> str:
     return f"GuruNote_{sanitize_filename(title)}"
 
 
+def _inject_frontmatter_field(md: str, key: str, value: str) -> str:
+    """frontmatter 닫는 ``---`` 직전에 ``key: "value"`` 한 줄을 삽입.
+
+    이미 같은 key 가 있으면 중복 삽입하지 않는다 (재내보내기 대비). frontmatter 가
+    없으면 원본 그대로 반환. ``_inject_related_notes`` 와 같은 정규식 패턴 — 기존
+    필드는 보존하고 vault 사본에만 적용된다.
+    """
+    fm_match = re.match(r"^(---\n.*?\n)(---\n)", md, re.DOTALL)
+    if not fm_match:
+        return md
+    head, close = fm_match.group(1), fm_match.group(2)
+    if re.search(rf"^{re.escape(key)}:", head, re.MULTILINE):
+        return md
+    line = f'{key}: "{value}"\n'
+    return head + line + close + md[fm_match.end():]
+
+
 def _inject_related_notes(md: str, related: list) -> str:
     """vault 로 내보낼 마크다운에 RAG 유사 노트를 wikilink 로 삽입.
 
@@ -1032,9 +1049,34 @@ class Api:
         try:
             from gurunote.history import delete_job  # noqa: PLC0415
             delete_job(job_id)
-            return {"ok": True, "job_id": job_id}
         except Exception as exc:  # noqa: BLE001
             return self._err("DELETE_FAILED", f"{type(exc).__name__}: {exc}")
+
+        # best-effort: Obsidian vault 사본 삭제 (gurunote_job_id 표식 매칭).
+        # 라이브러리 삭제는 이미 성공 — vault 삭제 실패는 막지 않고 결과에만 기록.
+        result = {"ok": True, "job_id": job_id, "vault_deleted": 0}
+        try:
+            from gurunote.obsidian import delete_from_vault  # noqa: PLC0415
+            result["vault_deleted"] = len(delete_from_vault(job_id))
+        except Exception as exc:  # noqa: BLE001
+            result["vault_error"] = f"{type(exc).__name__}: {exc}"
+        return result
+
+    def has_vault_copy(self, job_id: Any = None) -> dict:
+        """삭제 확인 다이얼로그용 — vault 에 이 job 의 표식 사본이 있는지.
+
+        ``{ok, has_copy: bool, count: int}``. 확인 실패 시 has_copy=False (안내만 생략).
+        """
+        if isinstance(job_id, dict):
+            job_id = job_id.get("job_id")
+        if not isinstance(job_id, str) or not job_id:
+            return {"ok": True, "has_copy": False, "count": 0}
+        try:
+            from gurunote.obsidian import find_vault_copies  # noqa: PLC0415
+            n = len(find_vault_copies(job_id))
+        except Exception:  # noqa: BLE001
+            n = 0
+        return {"ok": True, "has_copy": n > 0, "count": n}
 
     # ----- semantic search (의미 검색 / RAG) — gurunote.semantic 재사용 ------
     # semantic.py 는 sentence-transformers 임베딩 + 코사인 유사도로 이미 완성돼
@@ -1297,6 +1339,8 @@ class Api:
                 related = []
 
         md_out = _inject_related_notes(md, related)
+        # 라이브러리 삭제 시 vault 사본 동기화용 표식 (vault 사본에만, result.md 불변).
+        md_out = _inject_frontmatter_field(md_out, "gurunote_job_id", job_id)
 
         # Vault 경로 확인 (미설정 → 안내).
         vault = obsidian.resolve_vault_path()

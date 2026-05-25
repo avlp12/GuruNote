@@ -120,6 +120,20 @@
 - 역할 구분: 다운로드(.md 로컬 저장) / Obsidian(vault 내보내기 + wikilink) / 연관 노트(앱 내 RAG 검색).
 - 잔여(별도): bridge `save_pdf` / `send_notion` 은 여전히 stub (이번 범위 밖). 사용자 vault 에 OBSIDIAN_VAULT_PATH 설정 시 실 그래프 검증은 본인 GUI.
 
+### B14: 라이브러리 삭제 시 Obsidian 사본 자동 삭제 (표식 기반)
+
+- 동작: History 에서 노트 삭제 시 내보냈던 Obsidian vault 사본도 함께 삭제. "라이브러리에서 지움 = 그 노트가 잘못됨 → vault 에서도 빠져야" 라는 논리.
+- 설계 확정: `send_obsidian` 이 내보낼 때 frontmatter 에 `gurunote_job_id` 표식 삽입 → 삭제 시 vault 스캔해 표식 일치 파일만 삭제. 앞으로 내보내는 것만 동기화 (표식 없는 기존 파일은 사용자 수동 정리). best-effort (라이브러리 삭제는 무조건 진행). 사본 있을 때만 확인 문구.
+- 상태: **완료** (5/25)
+- 우선순위: P2
+- 완료 내용:
+  - `bridge.send_obsidian`: `_inject_frontmatter_field(md_out, "gurunote_job_id", job_id)` — vault 사본에만, result.md 불변.
+  - `obsidian.py` 신규 `find_vault_copies` / `delete_from_vault` (표식 매칭 스캔/삭제, save_to_vault 로직 불변). `import re` 추가.
+  - `bridge.delete_history`: `delete_job` 후 `delete_from_vault` best-effort 호출 (try/except, `vault_deleted` 반환). `has_vault_copy` 메서드 신규 (확인 문구용).
+  - `HistoryScreen` DeleteConfirmDialog: 사본 있을 때만 안내, 완료 토스트에 삭제 수.
+- 검증: 임시 vault end-to-end — 표식 삽입/매칭 삭제/표식 없는 파일 보존/무관 job_id 안전(0)/중복 방지. `delete_history` 직접 호출은 실제 job 삭제라 미실행(분류기 차단 정상) — vault 측 `delete_from_vault` 독립 검증으로 대체.
+- 잔여(별도): 표식 없는 기존 vault 파일은 자동 삭제 대상 아님 (설계 의도). bridge `save_pdf` / `send_notion` 은 여전히 stub.
+
 ### B03: Phase 1 fix-up #3 — schema text leak
 
 - 동작: xgrammar 0.2.0 description 누설 후처리 필터

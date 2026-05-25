@@ -7,6 +7,18 @@
 
 ## [Unreleased]
 
+## [1.0.0.4] - 2026-05-25
+
+### Added
+- **라이브러리 삭제 ↔ Obsidian vault 동기화** — History 에서 노트를 삭제하면
+  내보냈던 Obsidian 사본도 함께 삭제된다. `send_obsidian` 이 내보낼 때 frontmatter 에
+  남기는 `gurunote_job_id` 표식으로 정확히 그 파일만 매칭 (`obsidian.delete_from_vault`).
+  - 표식이 없는 (이번 버전 이전에 내보낸) vault 파일은 매칭되지 않아 **삭제되지 않는다**
+    — 사용자가 수동 정리. 앞으로 내보내는 노트부터 동기화.
+  - best-effort: vault 삭제가 실패해도 라이브러리 삭제는 진행되고 결과만 알린다.
+  - 삭제 확인 다이얼로그는 vault 에 표식 사본이 실제 있을 때만 "Obsidian 사본도 함께
+    삭제됩니다" 안내 (`has_vault_copy`). 완료 토스트에 삭제한 사본 수 표시.
+
 ## [1.0.0.3] - 2026-05-25
 
 ### Added
@@ -1400,7 +1412,8 @@ bash run_desktop.sh
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v1.0.0.3...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v1.0.0.4...HEAD
+[1.0.0.4]: https://github.com/avlp12/GuruNote/compare/v1.0.0.3...v1.0.0.4
 [1.0.0.3]: https://github.com/avlp12/GuruNote/compare/v1.0.0.2...v1.0.0.3
 [1.0.0.2]: https://github.com/avlp12/GuruNote/compare/v1.0.0.1...v1.0.0.2
 [1.0.0.1]: https://github.com/avlp12/GuruNote/compare/v1.0.0.0...v1.0.0.1

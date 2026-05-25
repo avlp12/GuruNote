@@ -651,6 +651,22 @@ function DeleteConfirmDialog({ item, onCancel, onConfirm, loading }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [item, onCancel, loading]);
 
+  // B14: vault 에 이 노트의 Obsidian 사본(표식)이 있나 — 있을 때만 안내 표시.
+  const [vaultCopy, setVaultCopy] = useState({ has: false, count: 0 });
+  useEffect(() => {
+    if (!item?.job_id) { setVaultCopy({ has: false, count: 0 }); return undefined; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await window.pywebview?.api?.has_vault_copy(item.job_id);
+        if (!cancelled && r?.ok) setVaultCopy({ has: !!r.has_copy, count: r.count || 0 });
+      } catch (e) {
+        /* 확인 실패 — 안내만 생략, 삭제는 정상 진행 */
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [item?.job_id]);
+
   if (!item) return null;
   const title = item.title || '(제목 없음)';
   const createdAt = item.created_at || '(생성일 부재)';
@@ -666,6 +682,18 @@ function DeleteConfirmDialog({ item, onCancel, onConfirm, loading }) {
           <div><strong>화자 수</strong><span>{numSpeakers}</span></div>
           <div><strong>분야</strong><span>{field}</span></div>
         </div>
+        {vaultCopy.has && (
+          <div
+            className="gn-confirm-warn"
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6, marginTop: 10,
+              fontSize: 13, color: 'var(--gn-on-surface-muted, #888)',
+            }}
+          >
+            <span className="msi" style={{ fontSize: 16 }}>hub</span>
+            Obsidian 사본도 함께 삭제됩니다{vaultCopy.count > 1 ? ` (${vaultCopy.count}개)` : ''}.
+          </div>
+        )}
         <div className="gn-confirm-actions">
           <button type="button" className="btn btn--ghost" onClick={onCancel} disabled={loading}>
             취소
@@ -882,7 +910,12 @@ function HistoryScreen({
       const result = await window.pywebview.api.delete_history(deleteTarget.job_id);
       if (result?.ok) {
         const label = deleteTarget.title || deleteTarget.job_id;
-        if (window.showToast) window.showToast(`삭제됨: ${label}`);
+        const vd = result.vault_deleted || 0;
+        const suffix = vd > 0 ? ` (Obsidian 사본 ${vd}개 포함)` : '';
+        if (window.showToast) window.showToast(`삭제됨: ${label}${suffix}`);
+        if (result.vault_error && window.showToast) {
+          window.showToast('Obsidian 사본 삭제 실패 — 라이브러리는 삭제됨', 'warning');
+        }
         setDeleteTarget(null);
         if (onHistoryRefresh) onHistoryRefresh();
       } else {

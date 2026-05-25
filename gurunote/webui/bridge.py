@@ -1145,6 +1145,35 @@ class Api:
 
     # ============================================================ misc
 
+    def open_external(self, url: Any = None) -> dict:
+        """Open ``url`` in the user's default system browser (not in-app).
+
+        pywebview renders links inside the app webview by default, which would
+        replace the GuruNote UI. The History detail "출처" link calls this so
+        the source video opens in the real browser instead.
+
+        Accepts ``api.open_external("https://…")`` and ``api.open_external({url})``
+        (pywebview marshals a JS object as a single positional dict). Only
+        ``http``/``https`` URLs are honored — other schemes (``file:``,
+        ``javascript:``, …) are rejected to avoid local-path / scheme injection.
+        """
+        import webbrowser  # noqa: PLC0415
+
+        if isinstance(url, dict):
+            url = url.get("url")
+        if not isinstance(url, str) or not url.strip():
+            return self._err("INVALID_URL", "url must be a non-empty string")
+        url = url.strip()
+        if not (url.startswith("http://") or url.startswith("https://")):
+            return self._err("INVALID_URL", "only http(s) URLs are allowed")
+        try:
+            opened = webbrowser.open(url)
+        except Exception as exc:  # noqa: BLE001 — browser launch errors are opaque
+            return self._err("OPEN_FAILED", f"{type(exc).__name__}: {exc}")
+        if not opened:
+            return self._err("OPEN_FAILED", "no browser available")
+        return {"ok": True, "url": url}
+
     def show_message(self, title: str, body: str, kind: str = "info") -> dict:
         """Show a simple modal. ``kind`` ∈ {info, warning, error}.
 

@@ -12,6 +12,86 @@
 
 const { useState, useEffect, useMemo, useRef } = React;
 
+/* === 출처 링크 / 다운로드 helpers (Phase 2B-4 wiring, B11) ===
+   top-level 함수는 Babel standalone 에서 전역에 노출되므로 history 접두사로
+   다른 컴포넌트 파일과의 충돌을 피한다. */
+
+/* 출처 URL 을 시스템 브라우저로 연다 (bridge.open_external → webbrowser.open).
+   pywebview 는 기본적으로 앱 webview 안에서 링크를 열어 UI 를 덮으므로 bridge 경유. */
+async function historyOpenExternal(url) {
+  if (!url) return;
+  try {
+    const r = await window.pywebview?.api?.open_external(url);
+    if (r && r.ok === false) {
+      window.showToast?.(`링크 열기 실패: ${r.error || '알 수 없는 오류'}`, 'error');
+    }
+  } catch (e) {
+    window.showToast?.(`링크 열기 오류: ${e.message || e}`, 'error');
+  }
+}
+
+/* 텍스트를 클립보드로 복사. navigator.clipboard 우선, 미지원 webview 는
+   execCommand fallback (보안 컨텍스트 / user-gesture 제약 회피). */
+async function historyCopyText(text) {
+  if (!text) return;
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      window.showToast?.('출처 URL을 복사했습니다.', 'success');
+      return;
+    }
+  } catch (e) {
+    /* navigator.clipboard 실패 → execCommand fallback 으로 진행 */
+  }
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    window.showToast?.('출처 URL을 복사했습니다.', 'success');
+  } catch (e) {
+    window.showToast?.(`복사 실패: ${text}`, 'error');
+  }
+}
+
+/* 노트 본문을 .md 파일로 저장. EditorScreen.handleDownload 와 동일하게
+   이미 동작하는 bridge.save_result_as(네이티브 저장 다이얼로그) 를 재사용한다.
+   - 상세 패널: 이미 로드된 detail.markdown 을 preloadedMarkdown 으로 전달
+   - 목록 카드: 본문 미보유 → get_history_detail 로 먼저 로드 */
+async function historyDownloadJob(item, preloadedMarkdown) {
+  if (!item) return;
+  const title = item.organized_title || item.title || 'GuruNote';
+  const safeTitle = title.replace(/[\\/:*?"<>|]/g, '_').slice(0, 80) || 'GuruNote';
+  try {
+    let markdown = preloadedMarkdown;
+    if (!markdown) {
+      const d = await window.pywebview?.api?.get_history_detail({ job_id: item.job_id });
+      if (!d?.ok || !d.markdown) {
+        window.showToast?.(`다운로드 실패: ${d?.error || '본문을 불러올 수 없습니다'}`, 'error');
+        return;
+      }
+      markdown = d.markdown;
+    }
+    const result = await window.pywebview.api.save_result_as({
+      markdown,
+      default_filename: `${safeTitle}.md`,
+    });
+    if (result?.cancelled) return;
+    if (result?.path) {
+      window.showToast?.(`저장됨: ${result.path}`, 'success');
+    } else {
+      window.showToast?.(`다운로드 실패: ${result?.error || '알 수 없는 오류'}`, 'error');
+    }
+  } catch (e) {
+    console.error('[HistoryScreen] download:', e);
+    window.showToast?.(`다운로드 오류: ${e.message || e}`, 'error');
+  }
+}
+
 /* === Search helpers (Phase 2B-3b) === */
 function useDebounced(value, delay) {
   const [debouncedValue, setDebouncedValue] = useState(value);
@@ -350,7 +430,40 @@ function DetailPanel({ item, onClose, onEdit }) {
             {item.stt_engine   && (<><dt>STT</dt><dd>{item.stt_engine}</dd></>)}
             {item.llm_provider && (<><dt>LLM</dt><dd>{item.llm_provider}</dd></>)}
             {item.status       && (<><dt>상태</dt><dd>{item.status}</dd></>)}
-            {item.source_url   && (<><dt>출처</dt><dd>{item.source_url}</dd></>)}
+            {item.source_url   && (
+              <>
+                <dt>출처</dt>
+                <dd className="detail-source">
+                  <button
+                    type="button"
+                    className="detail-source__link"
+                    title="브라우저에서 열기"
+                    onClick={() => historyOpenExternal(item.source_url)}
+                    style={{
+                      background: 'none', border: 'none', padding: 0,
+                      color: 'var(--gn-primary, #3b82f6)', textDecoration: 'underline',
+                      cursor: 'pointer', font: 'inherit', textAlign: 'left',
+                      wordBreak: 'break-all',
+                    }}
+                  >
+                    {item.source_url}
+                  </button>
+                  <button
+                    type="button"
+                    className="detail-source__copy"
+                    title="URL 복사"
+                    onClick={() => historyCopyText(item.source_url)}
+                    style={{
+                      background: 'none', border: 'none', padding: '0 0 0 6px',
+                      color: 'var(--gn-on-surface-muted, #888)', cursor: 'pointer',
+                      verticalAlign: 'middle',
+                    }}
+                  >
+                    <span className="msi" style={{ fontSize: 16 }}>content_copy</span>
+                  </button>
+                </dd>
+              </>
+            )}
           </dl>
 
           {item.tags && item.tags.length > 0 && (
@@ -394,7 +507,7 @@ function DetailPanel({ item, onClose, onEdit }) {
             <span className="msi">edit</span>
             편집
           </button>
-          <button type="button" className="btn btn--ghost" onClick={() => window.showToast?.('Phase 2B-4 다운로드 wiring 예정')}>
+          <button type="button" className="btn btn--ghost" onClick={() => historyDownloadJob(item, detail?.markdown)}>
             <span className="msi">download</span>
             다운로드
           </button>
@@ -529,7 +642,7 @@ function JobCard({ item, onClick, onEdit, onDelete }) {
           type="button"
           className="job-action"
           title="다운로드"
-          onClick={() => window.showToast?.('Phase 2B-4 다운로드 wiring 예정')}
+          onClick={() => historyDownloadJob(item, null)}
         >
           <span className="msi">download</span>
         </button>

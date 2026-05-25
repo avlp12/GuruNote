@@ -1,6 +1,6 @@
 # GuruNote Backlog
 
-마지막 갱신: 2026-05-24 (Phase 5 default on)
+마지막 갱신: 2026-05-25 (B11 다운로드 wiring + 출처 링크 완료, B12 등록)
 운영 규칙: WIP=1 (동시 active 작업 1개 제한)
 상태 정의: not_started / active / blocked / passing
 
@@ -78,6 +78,26 @@
 - 상태: not_started
 - 우선순위: P3 (사용자 경험 정합 — README 와 일관성)
 - 비용: 작음 (~0.1 세션, echo 문구 갱신)
+
+### B11: HistoryScreen 다운로드 wiring + 노트 상세 출처 링크
+
+- 동작: 노트 상세 화면 두 가지 불편 해소 — (1) HistoryScreen 다운로드 버튼이 stub (`showToast('Phase 2B-4 다운로드 wiring 예정')`) 이라 동작 부재, (2) 출처 URL 이 텍스트만이라 클릭/복사 불가
+- 배경: v1.0 daily 사용에서 발견. EditorScreen 다운로드는 `save_result_as` 로 이미 동작했으나 HistoryScreen (목록 카드 + 상세 패널) 다운로드 버튼 2개는 Phase 2B-4 화면 신축 때 stub 로 남았음 (조사 obs 817).
+- 작업 범위:
+  - `bridge.py` — `open_external(url)` 신규 (webbrowser.open, http(s) 만 허용). save_result_as 는 재사용 (로직 불변).
+  - `HistoryScreen.jsx` — top-level helper 3개 (`historyOpenExternal`, `historyCopyText`, `historyDownloadJob`). 다운로드 stub 2곳 → 실저장 연결 (상세 패널은 로드된 `detail.markdown` 재사용, 목록 카드는 `get_history_detail` 로 본문 로드 후 저장). 출처 행 → 클릭(브라우저) + 복사 버튼.
+- 검증: 전체 test 통과 (회귀 부재). 수동 확인은 본인 GUI.
+- 상태: **완료** (5/25)
+- 우선순위: P2 (v1.0 사용성 — 다운로드 미동작이 미완성으로 보임)
+
+### B12: semantic.py React 재배선 (RAG / 의미 검색)
+
+- 동작: 기존 `gurunote/semantic.py` (413행, sentence-transformers 임베딩 + 코사인 유사도 + 인덱스 빌드, 옛 gui.py/app.py 에서 동작) 을 React UI 에 재연결
+- 배경: 백엔드는 완성돼 있으나 React 전환 (Phase 2B) 때 포팅 부재. 현재 비활성 — `bridge.py:995` `rebuild_index` → `NotImplementedError`, DashboardScreen "의미 검색 인덱스" 카드 placeholder, HistoryScreen "연관 노트" 버튼 toast.
+- 작업 범위: `bridge.py` `rebuild_index` 구현 + 검색 메서드 노출 → DashboardScreen 카드 + "연관 노트" 연결. 선택 의존성 (`requirements-search.txt`) 미설치 시 `is_available()` False 안내. **신규 알고리즘 부재 — 배선 작업.**
+- 재검토 조건: **dmg 배포 후.** 선택 의존성 뒤에 있고 "Phase 3A (RAG)" 라벨이 명시돼 미완성 오인 여지 작음.
+- 상태: not_started
+- 우선순위: P2/P3 (dmg 후)
 
 ### B03: Phase 1 fix-up #3 — schema text leak
 

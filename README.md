@@ -503,7 +503,7 @@ GuruNote/
 주요 변경 사항은 [CHANGELOG.md](./CHANGELOG.md) 에 [Keep a Changelog](https://keepachangelog.com/)
 형식으로 기록되며 버전은 [Semantic Versioning](https://semver.org/) 을 따릅니다.
 
-현재 버전: **v1.0.0.0** — React/PyWebView UI 전면 도입, 백엔드 STT/번역 파이프라인 재구조, License Elastic 2.0 채택을 묶은 1.0 선언 릴리스. CLAUDE.md "1.0 전 MINOR 대체" 정책의 의식적 예외 (하위 호환성 깨지는 변경 묶음).
+현재 버전: **v1.0.0.1** — 노트 상세 화면 출처 링크(클릭/복사) + 라이브러리 다운로드 버튼 실동작 연결. 1.0 선언 릴리스(v1.0.0.0)는 React/PyWebView UI 전면 도입, 백엔드 STT/번역 파이프라인 재구조, License Elastic 2.0 채택을 묶은 하위 호환성 깨지는 변경.
 
 ### v1.0.0.0 주요 변경 (요약)
 

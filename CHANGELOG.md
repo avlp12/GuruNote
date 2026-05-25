@@ -7,6 +7,17 @@
 
 ## [Unreleased]
 
+## [1.0.0.1] - 2026-05-25
+
+### Added
+- 노트 상세 화면 "출처" URL 을 클릭 가능한 링크로 변경 — 클릭 시 시스템 브라우저로 열림
+  (`bridge.open_external`, http/https 만 허용). 옆에 URL 복사 버튼 추가.
+
+### Fixed
+- HistoryScreen (라이브러리) 다운로드 버튼이 동작하지 않던 문제 — 목록 카드·상세 패널
+  양쪽 모두 실제 마크다운 저장(`save_result_as`, 네이티브 저장 다이얼로그)에 연결.
+  기존에는 "Phase 2B-4 다운로드 wiring 예정" 안내만 표시됨 (백로그 B11).
+
 ## [1.0.0.0] - 2026-05-24
 
 > **1.0 선언 릴리스.** `redesign/tailwind-v2` 브랜치에서 누적된 4월 24일 이후의
@@ -1358,7 +1369,8 @@ bash run_desktop.sh
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v0.8.0.6...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v1.0.0.1...HEAD
+[1.0.0.1]: https://github.com/avlp12/GuruNote/compare/v1.0.0.0...v1.0.0.1
 [1.0.0.0]: https://github.com/avlp12/GuruNote/compare/v0.8.0.6...v1.0.0.0
 [0.8.0.6]: https://github.com/avlp12/GuruNote/compare/v0.8.0.5...v0.8.0.6
 [0.8.0.5]: https://github.com/avlp12/GuruNote/compare/v0.8.0.4...v0.8.0.5

@@ -141,6 +141,12 @@
 - **A (음차) — 완료 (v1.0.0.6)**: 번역 프롬프트 Rule 10 + 공통 룰에 "통용 표기 우선 + 철자 아닌 발음 기준 음차, 외래어 규칙은 fallback" 지시 추가. 짧은 테스트 — Palmer Luckey→팔머 럭키, Rick Rieder→릭 리더 (오표기 0). **로컬 모델이 통용 표기를 알고 있어 프롬프트만으로 끌어냄 → dict 일괄 보강 불필요.** 실제 영상 재처리 최종 확인은 본인 GUI.
 - **B (영문 병기 오타) — 완료 (v1.0.0.7)**: `_correct_english_annotations` — `한국어(English)` 병기 영문을 소스(transcript 전문 + 제목)로 결정론적 검증. 정확히 있으면 케이싱 정규화 / 단일 토큰 오타는 보수적 최근접(difflib cutoff 0.84, 대소문자 무시) 교정 / 근거 없으면 병기 생략. 적용: 번역 본문(translate_transcript) + organized_title(extract_metadata, entity_cache 미참조라 별도). LLM 무관 순수 함수, 한국어 음차·화자·timestamp 불변. tests 8건. end-to-end — 팔머 럭키/릭 리더(A) + Anduril 정확/Danduril 0(B) 동시 확인. 실제 영상 최종 확인은 본인 GUI.
 
+### B16: 설정 화면 처리 옵션 + 자동 내보내기 토글
+
+- 배경: 환경변수로만 조절하던 처리 옵션을 앱 UI 에서 켜고 끄기. 작업 완료 시 Obsidian 자동 내보내기.
+- **1단계 (처리 옵션 토글) — 완료 (v1.0.0.8)**: 재사용 `SettingsSwitch` 컴포넌트 신규. 설정 "고급"에 2-pass 번역(`GURUNOTE_TWO_PASS`) + STT 재분할(`GURUNOTE_SEGMENT_RESPLIT`) 토글. `_KNOWN_SETTINGS` 두 키 추가 → get_settings/save_settings 연동. 백엔드 env 읽기 로직 무변. 기본값 보존 — 미설정(빈 값)은 ON 표시, 저장 시 "1"/"0" 만 기록 (빈 값 저장 함정 회피). 격리 .env 검증 + 전체 191 passed.
+- **2단계 (자동 내보내기) — not_started**: 설정-Obsidian 에 on/off 토글 (기본 꺼짐), 작업 완료 직후 자동 `send_obsidian`. 끼울 지점 = `PipelineSession._poll` 종료 시 (result.md 이미 디스크 — gui.py save_job@354 → result_queue.put@392). 트리거 A(JS result 핸들러, 비침습) vs B(Python session). RAG 없으면 wikilink 없이 현재 인덱스로 내보내고 갱신은 나중.
+
 ### B03: Phase 1 fix-up #3 — schema text leak
 
 - 동작: xgrammar 0.2.0 description 누설 후처리 필터

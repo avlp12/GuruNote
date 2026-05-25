@@ -60,6 +60,10 @@ _KNOWN_SETTINGS: tuple[str, ...] = (
     # Integrations (Obsidian, Notion)
     "OBSIDIAN_VAULT_PATH", "OBSIDIAN_SUBFOLDER",
     "NOTION_TOKEN", "NOTION_PARENT_ID", "NOTION_PARENT_TYPE",
+    # Processing options (불리언 토글 — "1"=on / "0"=off, 미설정 시 백엔드 default on).
+    # llm.py:2811(GURUNOTE_TWO_PASS) / stt_mlx.py(GURUNOTE_SEGMENT_RESPLIT) 가
+    # os.environ 을 읽으므로 키 추가만으로 저장/로드/반영 (백엔드 로직 무변).
+    "GURUNOTE_TWO_PASS", "GURUNOTE_SEGMENT_RESPLIT",
 )
 
 _SECRET_KEYS: frozenset[str] = frozenset({

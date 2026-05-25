@@ -7,6 +7,19 @@
 
 ## [Unreleased]
 
+## [1.0.0.8] - 2026-05-26
+
+### Added
+- **설정 "고급"에 처리 옵션 토글** — 그동안 환경변수로만 조절하던 처리 옵션 2개를
+  앱에서 켜고 끌 수 있다:
+  - **2-pass 번역** (`GURUNOTE_TWO_PASS`) — 자유 번역 후 정렬하는 2단계 (정확도↑ 시간↑).
+  - **STT 의미 단위 재분할** (`GURUNOTE_SEGMENT_RESPLIT`) — 가독성·화자 정합↑.
+  - 재사용 `SettingsSwitch` 컴포넌트 신규. 두 키를 `_KNOWN_SETTINGS` 에 추가 →
+    `get_settings`/`save_settings`(.env + os.environ) 로 저장/로드. 백엔드 읽기 로직
+    (`llm.py` / `stt_mlx.py`) 은 그대로 — 키 추가 + UI 만.
+  - **기본값 보존**: 둘 다 기본 켜짐. 미설정(빈 값)은 ON 으로 표시하고 저장 시 항상
+    `"1"`/`"0"` 만 기록해, 기존 동작이 바뀌지 않는다.
+
 ## [1.0.0.7] - 2026-05-26
 
 ### Fixed
@@ -1449,7 +1462,8 @@ bash run_desktop.sh
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v1.0.0.7...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v1.0.0.8...HEAD
+[1.0.0.8]: https://github.com/avlp12/GuruNote/compare/v1.0.0.7...v1.0.0.8
 [1.0.0.7]: https://github.com/avlp12/GuruNote/compare/v1.0.0.6...v1.0.0.7
 [1.0.0.6]: https://github.com/avlp12/GuruNote/compare/v1.0.0.5...v1.0.0.6
 [1.0.0.5]: https://github.com/avlp12/GuruNote/compare/v1.0.0.4...v1.0.0.5

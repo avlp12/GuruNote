@@ -55,6 +55,48 @@ function SecretInput({ value, onChange, isSet, placeholder, mono }) {
   );
 }
 
+/* === SettingsSwitch — 불리언 on/off 스위치 (재사용) ===
+   Babel standalone 전역 노출 — 다른 컴포넌트 파일과 충돌 회피 위해 Settings 접두사.
+   inline 스타일로 CSS 파일 무변경 (--gn-* 토큰 + fallback). */
+function SettingsSwitch({ label, hint, checked, onChange, disabled }) {
+  return (
+    <div
+      className="settings-switch-row"
+      style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, padding: '10px 0' }}
+    >
+      <div>
+        <div style={{ fontSize: 14, color: 'var(--gn-on-surface, inherit)' }}>{label}</div>
+        {hint && (
+          <div style={{ fontSize: 12, color: 'var(--gn-on-surface-muted, #888)', marginTop: 2 }}>{hint}</div>
+        )}
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        aria-label={label}
+        disabled={disabled}
+        onClick={() => !disabled && onChange(!checked)}
+        style={{
+          width: 42, height: 24, borderRadius: 12, border: 'none', padding: 0,
+          flexShrink: 0, cursor: disabled ? 'default' : 'pointer',
+          opacity: disabled ? 0.5 : 1, position: 'relative',
+          background: checked ? 'var(--gn-primary, #3b82f6)' : 'var(--gn-surface-3, #5a5a5a)',
+          transition: 'background 0.15s',
+        }}
+      >
+        <span
+          style={{
+            position: 'absolute', top: 2, left: checked ? 20 : 2,
+            width: 20, height: 20, borderRadius: '50%', background: '#fff',
+            transition: 'left 0.15s',
+          }}
+        />
+      </button>
+    </div>
+  );
+}
+
 /* === Field — label + input wrapper === */
 function Field({ label, help, children }) {
   return (
@@ -562,9 +604,27 @@ function SettingsAdvanced({ values, secretsSet, onChange, onSave, dirty }) {
           </div>
           <div>
             <div className="settings-content__title">고급</div>
-            <div className="settings-content__sub">전문가용 설정 — 다른 LLM provider 키 + WhisperX (NVIDIA)</div>
+            <div className="settings-content__sub">처리 옵션 + 다른 LLM provider 키 + WhisperX (NVIDIA)</div>
           </div>
         </div>
+      </div>
+
+      {/* === 처리 옵션 (토글) === */}
+      <div className="settings-group">
+        <div className="settings-group__title">처리 옵션</div>
+        <div className="settings-group__sub">번역 품질 / 처리 시간 trade-off. 둘 다 기본 켜짐 — 끄면 기존보다 빠르지만 품질이 낮아질 수 있습니다.</div>
+        <SettingsSwitch
+          label="2-pass 번역"
+          hint="자유 번역 후 정렬하는 2단계 방식 — 정확도·정합 향상, 처리 시간 증가. 끄면 1-pass."
+          checked={(values.GURUNOTE_TWO_PASS ?? '') !== '0'}
+          onChange={(on) => onChange('GURUNOTE_TWO_PASS', on ? '1' : '0')}
+        />
+        <SettingsSwitch
+          label="STT 의미 단위 재분할"
+          hint="음성 인식 결과를 의미 단위로 다시 나눠 가독성·화자 정합을 높입니다. 끄면 원본 세그먼트 사용."
+          checked={(values.GURUNOTE_SEGMENT_RESPLIT ?? '') !== '0'}
+          onChange={(on) => onChange('GURUNOTE_SEGMENT_RESPLIT', on ? '1' : '0')}
+        />
       </div>
 
       {/* === Anthropic === */}
@@ -718,7 +778,7 @@ function SettingsAbout() {
         </div>
         <div className="settings-about__name">GuruNote</div>
         <div className="settings-about__version">
-          v{appInfo?.version || '1.0.0.7'}
+          v{appInfo?.version || '1.0.0.8'}
         </div>
         <div className="settings-about__desc">
           유튜브 링크 한 줄로 한국어 요약본을 생성합니다.

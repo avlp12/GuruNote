@@ -92,6 +92,27 @@ async function historyDownloadJob(item, preloadedMarkdown) {
   }
 }
 
+/* 노트를 Obsidian vault 로 내보낸다 (bridge.send_obsidian — RAG 유사 노트 wikilink 포함).
+   카드 hub 아이콘 + 상세 패널 Obsidian 버튼 공용. (방향 3) */
+async function historyExportObsidian(item) {
+  if (!item?.job_id) return;
+  window.showToast?.('Obsidian 으로 내보내는 중…', 'info');
+  try {
+    const r = await window.pywebview?.api?.send_obsidian(item.job_id);
+    if (r?.ok) {
+      const rc = r.related_count || 0;
+      const link = rc ? ` (연관 노트 ${rc}개 링크)` : '';
+      window.showToast?.(`Obsidian 저장됨: ${r.path}${link}`, 'success');
+    } else if (r?.code === 'NO_VAULT') {
+      window.showToast?.('Obsidian Vault 경로 미설정 — 설정 → Obsidian 에서 지정하세요.', 'error');
+    } else {
+      window.showToast?.(`Obsidian 내보내기 실패: ${r?.error || '알 수 없는 오류'}`, 'error');
+    }
+  } catch (e) {
+    window.showToast?.(`Obsidian 오류: ${e.message || e}`, 'error');
+  }
+}
+
 /* === Search helpers (Phase 2B-3b) === */
 function useDebounced(value, delay) {
   const [debouncedValue, setDebouncedValue] = useState(value);
@@ -586,8 +607,12 @@ function DetailPanel({ item, onClose, onEdit, onOpenRelated }) {
             <span className="msi">download</span>
             다운로드
           </button>
-          <button type="button" className="btn btn--ghost" onClick={handleRelated} disabled={related.loading}>
+          <button type="button" className="btn btn--ghost" onClick={() => historyExportObsidian(item)}>
             <span className="msi">hub</span>
+            Obsidian
+          </button>
+          <button type="button" className="btn btn--ghost" onClick={handleRelated} disabled={related.loading}>
+            <span className="msi">device_hub</span>
             {related.loading ? '검색 중…' : '연관 노트'}
           </button>
         </div>
@@ -724,8 +749,8 @@ function JobCard({ item, onClick, onEdit, onDelete }) {
         <button
           type="button"
           className="job-action"
-          title="연관 노트 (상세에서 검색)"
-          onClick={() => onClick && onClick(item)}
+          title="Obsidian 으로 내보내기"
+          onClick={() => historyExportObsidian(item)}
         >
           <span className="msi">hub</span>
         </button>

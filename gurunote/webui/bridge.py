@@ -203,6 +203,50 @@ def _parse_frontmatter(markdown: str) -> dict:
     return out
 
 
+def _obsidian_note_stem(title: str) -> str:
+    """Obsidian 노트 파일명 stem (확장자 제외). save_to_vault 가 저장하는 파일명과
+    동일 규칙 — wikilink 대상이 실제 파일과 일치해야 그래프가 연결되기 때문."""
+    from gurunote.exporter import sanitize_filename  # noqa: PLC0415
+    return f"GuruNote_{sanitize_filename(title)}"
+
+
+def _inject_related_notes(md: str, related: list) -> str:
+    """vault 로 내보낼 마크다운에 RAG 유사 노트를 wikilink 로 삽입.
+
+    - 본문 끝 ``## 연관 노트`` 섹션: ``- [[stem|제목]] (78%)`` (Obsidian 읽기뷰에서
+      "제목 (78%)" 로 보이고, 상대 노트가 vault 에 있으면 그래프로 연결).
+    - frontmatter ``related: ["[[stem]]", …]`` (Dataview / 그래프용).
+
+    ``related`` 가 비면 원본 그대로 반환 (RAG 미설치/인덱스 없음/유사 노트 없음 시
+    내보내기가 깨지지 않게). 저장된 result.md 는 손대지 않고 vault 사본만 수정한다.
+    """
+    if not related:
+        return md
+
+    body_lines = ["", "## 연관 노트", ""]
+    fm_links = []
+    for r in related:
+        t = (r.get("title") or r.get("job_id") or "").strip()
+        if not t:
+            continue
+        stem = _obsidian_note_stem(t)
+        pct = round((r.get("score") or 0) * 100)
+        body_lines.append(f"- [[{stem}|{t}]] ({pct}%)")
+        fm_links.append(f'"[[{stem}]]"')
+    if len(body_lines) <= 3:  # 유효 항목 없음
+        return md
+    body_section = "\n".join(body_lines) + "\n"
+
+    # frontmatter 닫는 --- 직전에 related: 한 줄 삽입 (기존 필드 보존).
+    fm_match = re.match(r"^(---\n.*?\n)(---\n)", md, re.DOTALL)
+    if fm_match and fm_links:
+        head, close = fm_match.group(1), fm_match.group(2)
+        related_line = f"related: [{', '.join(fm_links)}]\n"
+        md = head + related_line + close + md[fm_match.end():]
+
+    return md.rstrip() + "\n" + body_section
+
+
 class Api:
     """JavaScript-facing bridge.
 
@@ -1214,8 +1258,68 @@ class Api:
     def save_pdf(self, job_id: str, target_path: Optional[str] = None) -> dict:
         raise NotImplementedError("save_pdf: wired in Phase 2-B")
 
-    def send_obsidian(self, job_id: str) -> dict:
-        raise NotImplementedError("send_obsidian: wired in Phase 2-B")
+    def send_obsidian(self, job_id: Any = None) -> dict:
+        """저장된 노트를 Obsidian vault 로 내보낸다 (RAG 유사 노트 wikilink 포함).
+
+        흐름: result.md 로드 → 의미 검색(설치+인덱스 시)으로 유사 노트 top5(≥0.5)
+        → ``## 연관 노트`` 섹션 + frontmatter ``related`` wikilink 삽입
+        → ``obsidian.save_to_vault`` (OBSIDIAN_VAULT_PATH). obsidian.py / semantic.py
+        로직은 호출만 — 변경 없음. vault 사본만 수정, 저장된 result.md 는 불변.
+
+        Vault 미설정 시 ``code=NO_VAULT`` 로 안내 (Settings → Obsidian 으로 유도).
+        RAG 미설치/인덱스 없음/유사 노트 없음이면 연관 노트 없이 그대로 내보낸다.
+        """
+        from gurunote import obsidian, semantic  # noqa: PLC0415
+        from gurunote.history import get_job_markdown, load_index  # noqa: PLC0415
+        from gurunote.exporter import sanitize_filename  # noqa: PLC0415
+
+        if isinstance(job_id, dict):
+            job_id = job_id.get("job_id")
+        if not isinstance(job_id, str) or not job_id:
+            return self._err("INVALID_ID", "job_id must be a non-empty string")
+        if "/" in job_id or "\\" in job_id or ".." in job_id:
+            return self._err("INVALID_ID", "job_id contains path separators")
+
+        md = get_job_markdown(job_id)
+        if md is None:
+            return self._err("HISTORY_NOT_FOUND", f"no result.md for job {job_id}")
+
+        meta = next((e for e in load_index() if e.get("job_id") == job_id), {})
+        title = meta.get("organized_title") or meta.get("title") or job_id
+
+        # RAG 유사 노트 (best-effort — 실패해도 내보내기는 진행).
+        related: list = []
+        if semantic.is_available() and semantic.is_index_built():
+            try:
+                hits = semantic.search(md, top_k=6, min_score=0.5)
+                related = [h for h in hits if h.get("job_id") != job_id][:5]
+            except Exception:  # noqa: BLE001 — 검색 실패는 내보내기를 막지 않음
+                related = []
+
+        md_out = _inject_related_notes(md, related)
+
+        # Vault 경로 확인 (미설정 → 안내).
+        vault = obsidian.resolve_vault_path()
+        if vault is None:
+            return self._err(
+                "NO_VAULT",
+                "Obsidian Vault 경로가 설정되지 않았습니다. 설정 → Obsidian 에서 지정하세요.",
+            )
+
+        try:
+            out = obsidian.save_to_vault(
+                md_out, filename=f"GuruNote_{sanitize_filename(title)}.md",
+            )
+        except (RuntimeError, ValueError) as exc:
+            return self._err("OBSIDIAN_FAILED", str(exc))
+        except OSError as exc:
+            return self._err("OBSIDIAN_FAILED", f"{type(exc).__name__}: {exc}")
+        return {
+            "ok": True,
+            "path": str(out),
+            "vault": str(vault),
+            "related_count": len(related),
+        }
 
     def send_notion(self, job_id: str) -> dict:
         """Long-running → returns job_id; result via ``notion_progress`` event."""

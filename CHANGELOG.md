@@ -7,6 +7,24 @@
 
 ## [Unreleased]
 
+## [1.0.0.3] - 2026-05-25
+
+### Added
+- **Obsidian 내보내기 활성화** — History 카드 hub 아이콘과 노트 상세 "Obsidian"
+  버튼이 저장된 노트를 Obsidian Vault 로 내보낸다 (`bridge.send_obsidian`,
+  기존 `gurunote/obsidian.py` `save_to_vault` 재사용). Vault 경로는 설정 → Obsidian
+  에서 지정 (`OBSIDIAN_VAULT_PATH`), 미설정 시 안내.
+- **RAG 유사 노트 wikilink** — 내보낼 때 의미 검색으로 유사 노트 top 5 (유사도 ≥ 0.5)
+  를 본문 끝 `## 연관 노트` 섹션 (`- [[GuruNote_<제목>|제목]] (78%)`) + frontmatter
+  `related` 로 삽입. Obsidian 그래프에서 노트끼리 연결된다 (상대 노트도 내보내면
+  링크 연결; 미내보낸 노트는 미래 링크로 허용). RAG 미설치/인덱스 없으면 연관 노트
+  없이 내보낸다. 저장된 `result.md` 는 손대지 않고 Vault 사본에만 삽입.
+
+### Changed
+- History 카드 hub 아이콘이 "상세 열기" 중복 동작이던 것을 "Obsidian 으로 내보내기"
+  로 교체 (hub = Obsidian, 설정 화면 Obsidian 섹션 아이콘과 정합). 노트 상세의
+  RAG "연관 노트" (앱 내 검색) 는 별도 아이콘 (`device_hub`) 으로 유지.
+
 ## [1.0.0.2] - 2026-05-25
 
 ### Added
@@ -1382,7 +1400,8 @@ bash run_desktop.sh
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v1.0.0.2...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v1.0.0.3...HEAD
+[1.0.0.3]: https://github.com/avlp12/GuruNote/compare/v1.0.0.2...v1.0.0.3
 [1.0.0.2]: https://github.com/avlp12/GuruNote/compare/v1.0.0.1...v1.0.0.2
 [1.0.0.1]: https://github.com/avlp12/GuruNote/compare/v1.0.0.0...v1.0.0.1
 [1.0.0.0]: https://github.com/avlp12/GuruNote/compare/v0.8.0.6...v1.0.0.0

@@ -105,6 +105,21 @@
 - 검증 한계: sentence-transformers 가 개발 환경에 미설치 → 미설치 경로(에러 안내)만 검증. 실제 임베딩/검색 경로는 deps 설치 후 본인 GUI 확인 필요.
 - 잔여(별도): History 툴바 "본문 포함" 칩은 substring full-text 검색으로 RAG 와 별개 — 미구현 유지 (이번 범위 밖).
 
+### B13: Obsidian 내보내기 + RAG 유사 노트 wikilink (방향 3)
+
+- 동작: 기존 `gurunote/obsidian.py` (`save_to_vault`, 옛 gui.py 에서 동작) 을 React 에 재연결 + 내보낼 때 RAG 유사 노트를 wikilink 로 삽입해 Obsidian 그래프 연결
+- 배경: 카드 hub 아이콘이 B12 때 "상세 열기" 중복으로 잘못 배선됨. 본인 의도 = Obsidian 내보내기 (hub = Obsidian, 설정 화면 Obsidian 섹션 아이콘과 정합). `bridge.send_obsidian(1217)` 은 `NotImplementedError` stub 이었음.
+- 설계 확정: 유사 노트 top5 + 유사도 ≥ 0.5 / 본문 "## 연관 노트" 섹션 + frontmatter `related` 둘 다 / 표시 `[[GuruNote_<제목>|제목]] (78%)` (alias 로 그래프 연결 + 제목 표시) / 미내보낸 노트는 미래 링크 허용
+- 상태: **완료** (5/25)
+- 우선순위: P2
+- 완료 내용:
+  - `bridge.send_obsidian` 구현 (obsidian.py `save_to_vault` + semantic.py `search` 호출만, 로직 불변). vault 미설정 시 `NO_VAULT` 안내.
+  - module helper `_inject_related_notes` / `_obsidian_note_stem` — vault 사본에만 wikilink 삽입, 저장된 result.md 불변 (기존 frontmatter 필드 보존).
+  - 카드 hub → Obsidian 내보내기 (중복 "열기" 제거). 노트 상세에 Obsidian 버튼 추가, RAG "연관 노트"는 `device_hub` 아이콘으로 유지.
+- 검증: 임시 vault 로 end-to-end 확인 — 파일 생성 + ## 연관 노트 섹션 + frontmatter related + wikilink alias, related_count=5, 자기 제외. NO_VAULT 경로 확인. (사용자 vault 무관)
+- 역할 구분: 다운로드(.md 로컬 저장) / Obsidian(vault 내보내기 + wikilink) / 연관 노트(앱 내 RAG 검색).
+- 잔여(별도): bridge `save_pdf` / `send_notion` 은 여전히 stub (이번 범위 밖). 사용자 vault 에 OBSIDIAN_VAULT_PATH 설정 시 실 그래프 검증은 본인 GUI.
+
 ### B03: Phase 1 fix-up #3 — schema text leak
 
 - 동작: xgrammar 0.2.0 description 누설 후처리 필터

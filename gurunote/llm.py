@@ -8,6 +8,7 @@ Step 3 & 4: LLM 기반 한국어 번역 + GuruNote 스타일 마크다운 요약
 
 from __future__ import annotations
 
+import difflib
 import hashlib
 import json
 import logging
@@ -1017,6 +1018,86 @@ _SPEAKER_LINE_RE = re.compile(
 _ENGLISH_NAME_RE = re.compile(r"^[A-Za-z][A-Za-z\s\.\-']*$")
 
 
+# 병기 패턴: 한국어 문자 바로 뒤의 `(English)` — 괄호 안이 ASCII 영문만 (한글 부재).
+# "OpenAI(오픈AI)" 처럼 괄호 안에 한글이 있으면 매칭 부재 (영문 원어 병기만 대상).
+_ENGLISH_ANNOT_RE = re.compile(r"(?<=[가-힣])\(([A-Za-z][A-Za-z0-9\s.\-']*)\)")
+
+
+def _correct_english_annotations(
+    text: str, source_corpus: str, log: Optional[ProgressFn] = None
+) -> str:
+    """`한국어(English)` 병기의 영문 철자를 **소스에 실재하는 철자**로 결정론적 검증.
+
+    LLM 이 영문 원어를 자유 생성하다 철자를 오염시키는 문제(예: Anduril→Danduril,
+    제목 포함) 차단. 소스(transcript 전문 + 제목)는 정답 철자의 근거.
+
+    각 병기 영문에 대해:
+      1. 소스에 (대소문자 무시) 그대로 있으면 → 소스 철자/케이싱으로 정규화.
+      2. 단일 토큰이 소스에 없으면 → 소스 단어 중 충분히 가까운 것(보수적 cutoff)으로 교정.
+      3. 다단어는 모든 토큰이 소스 근거를 가질 때만 채택, 아니면 생략.
+      4. 소스에 근거 없음 → 병기 삭제 (한국어만 남김, 틀린 철자 박지 않음).
+
+    LLM 무관 순수 함수. 한국어 표기·화자 라벨·timestamp 는 건드리지 않는다.
+    """
+    if not text or not source_corpus:
+        return text
+
+    corpus_lower = source_corpus.lower()
+    # 소스 영문 단어 풀 + 케이싱 복원 맵 (lower → 첫 등장 원본 케이싱).
+    # 순수 알파벳 토큰으로 분리 — 소유격/문장부호 (예: "Anduril's", "U.S.") 가
+    # 매칭을 가리지 않도록 ("Anduril's" → "Anduril" + "s").
+    case_map: dict = {}
+    for w in re.findall(r"[A-Za-z]+", source_corpus):
+        case_map.setdefault(w.lower(), w)
+    pool_lower = list(case_map.keys())  # 대소문자 무시 fuzzy 매칭용
+
+    stats = {"corrected": 0, "dropped": 0}
+
+    def _restore_case(tokens: list) -> str:
+        return " ".join(case_map.get(t.lower(), t) for t in tokens)
+
+    def _fix(eng: str):
+        e = eng.strip()
+        toks = e.split()
+        # 1) 전체 구가 소스에 그대로 → 케이싱만 소스 정규화 (과교정 부재).
+        if e.lower() in corpus_lower:
+            return _restore_case(toks)
+        # 2) 단일 토큰 → 소스 단어 중 보수적 최근접 교정 (대소문자 무시 비교).
+        if len(toks) == 1:
+            m = difflib.get_close_matches(e.lower(), pool_lower, n=1, cutoff=0.84)
+            if m:
+                stats["corrected"] += 1
+                return case_map[m[0]]
+            stats["dropped"] += 1
+            return None
+        # 3) 다단어 → 토큰별 소스 근거(정확/최근접) 전부 확보 시만 채택.
+        fixed = []
+        for t in toks:
+            if t.lower() in corpus_lower:
+                fixed.append(case_map[t.lower()])
+            else:
+                mm = difflib.get_close_matches(t.lower(), pool_lower, n=1, cutoff=0.84)
+                if not mm:
+                    stats["dropped"] += 1
+                    return None
+                fixed.append(case_map[mm[0]])
+        if fixed != toks:
+            stats["corrected"] += 1
+        return " ".join(fixed)
+
+    def _repl(m: "re.Match") -> str:
+        fixed = _fix(m.group(1))
+        return "" if fixed is None else f"({fixed})"
+
+    out = _ENGLISH_ANNOT_RE.sub(_repl, text)
+    if log and (stats["corrected"] or stats["dropped"]):
+        log(
+            f"   🔧 영문 병기 소스 검증: 교정 {stats['corrected']}건 / "
+            f"생략 {stats['dropped']}건"
+        )
+    return out
+
+
 def _extract_entities(translated_chunk: str) -> dict:
     """chunk 출력의 speaker line prefix 에서 entity 추출.
 
@@ -1676,9 +1757,14 @@ def translate_transcript(
     # entity_cache 의 canonical 표기 + 외래어 표기법 short version 으로 chunk drift 통일.
     if config.enable_phase2:
         result = _canonicalize_entity_names(result, entity_cache, config, log)
-    # Q2 영역 — 영상 단위 영문 병기 첫 등장 catch (Layer 13 정합).
-    # chunk 단위 영역 부재 — chunk 경계 memory 부재로 매 chunk 첫 등장 catch
-    # 영역 패턴 영역 dedup.
+    # B (5/26) — 영문 병기 철자를 소스(transcript 전문 + 제목)로 결정론적 검증.
+    #   LLM 이 영문 원어를 자유 생성하다 오염(Anduril→Danduril)시키는 것 차단.
+    _src_title = (video_context or {}).get("title", "") if video_context else ""
+    source_corpus = " ".join(s.text for s in transcript.segments)
+    if _src_title:
+        source_corpus = f"{source_corpus} {_src_title}"
+    result = _correct_english_annotations(result, source_corpus, log)
+    # 영상 단위 영문 병기 첫 등장만 남기고 반복 병기 dedup (Layer 13 정합).
     return _strip_repeated_annotations(result)
 
 
@@ -1877,7 +1963,15 @@ def extract_metadata(
             user=user,
             max_tokens=metadata_max_tokens,
         )
-        return _parse_metadata_json(raw)
+        meta = _parse_metadata_json(raw)
+        # B (5/26) — organized_title 영문 병기도 소스(원본 제목 + 번역 본문)로 검증.
+        #   summarize/extract 는 entity_cache 미참조 → 제목 오타(Danduril)는 별도 차단.
+        if meta.get("organized_title"):
+            title_corpus = f"{youtube_title} {translated_text}"
+            meta["organized_title"] = _correct_english_annotations(
+                meta["organized_title"], title_corpus
+            )
+        return meta
     except Exception as exc:  # noqa: BLE001
         log(f"  메타데이터 추출 실패 (무시하고 계속): {exc}")
         return {}

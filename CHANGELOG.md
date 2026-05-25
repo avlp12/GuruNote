@@ -7,6 +7,19 @@
 
 ## [Unreleased]
 
+## [1.0.0.7] - 2026-05-26
+
+### Fixed
+- **영문 병기 철자 오염 차단 (Anduril → Danduril 류)**. LLM 이 `한국어(English)`
+  병기의 영문 원어를 자유 생성하다 철자를 틀리던 문제 (제목 포함) 를 소스에 실재하는
+  철자로 결정론적 검증:
+  - `_correct_english_annotations` — 소스(transcript 전문 + 제목)에 정확히 있으면 케이싱
+    정규화, 단일 토큰 오타는 보수적 최근접(difflib, cutoff 0.84, 대소문자 무시)으로 교정,
+    근거 없으면 **병기 생략** (틀린 철자를 박지 않음). LLM 무관 순수 함수.
+  - 적용: 번역 본문 (`translate_transcript` 최종), organized_title (`extract_metadata`
+    — entity_cache 미참조라 별도 검증).
+  - 한국어 음차·화자 라벨·timestamp 는 건드리지 않음. `tests/test_english_annotation_source_check.py` 8건 추가.
+
 ## [1.0.0.6] - 2026-05-25
 
 ### Changed
@@ -1436,7 +1449,8 @@ bash run_desktop.sh
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v1.0.0.6...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v1.0.0.7...HEAD
+[1.0.0.7]: https://github.com/avlp12/GuruNote/compare/v1.0.0.6...v1.0.0.7
 [1.0.0.6]: https://github.com/avlp12/GuruNote/compare/v1.0.0.5...v1.0.0.6
 [1.0.0.5]: https://github.com/avlp12/GuruNote/compare/v1.0.0.4...v1.0.0.5
 [1.0.0.4]: https://github.com/avlp12/GuruNote/compare/v1.0.0.3...v1.0.0.4

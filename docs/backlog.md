@@ -145,7 +145,7 @@
 
 - 배경: 환경변수로만 조절하던 처리 옵션을 앱 UI 에서 켜고 끄기. 작업 완료 시 Obsidian 자동 내보내기.
 - **1단계 (처리 옵션 토글) — 완료 (v1.0.0.8)**: 재사용 `SettingsSwitch` 컴포넌트 신규. 설정 "고급"에 2-pass 번역(`GURUNOTE_TWO_PASS`) + STT 재분할(`GURUNOTE_SEGMENT_RESPLIT`) 토글. `_KNOWN_SETTINGS` 두 키 추가 → get_settings/save_settings 연동. 백엔드 env 읽기 로직 무변. 기본값 보존 — 미설정(빈 값)은 ON 표시, 저장 시 "1"/"0" 만 기록 (빈 값 저장 함정 회피). 격리 .env 검증 + 전체 191 passed.
-- **2단계 (자동 내보내기) — not_started**: 설정-Obsidian 에 on/off 토글 (기본 꺼짐), 작업 완료 직후 자동 `send_obsidian`. 끼울 지점 = `PipelineSession._poll` 종료 시 (result.md 이미 디스크 — gui.py save_job@354 → result_queue.put@392). 트리거 A(JS result 핸들러, 비침습) vs B(Python session). RAG 없으면 wikilink 없이 현재 인덱스로 내보내고 갱신은 나중.
+- **2단계 (자동 내보내기) — 완료 (v1.0.0.9)**: 설정-Obsidian 에 "작업 완료 후 자동 내보내기" 토글 (`GURUNOTE_OBSIDIAN_AUTOEXPORT`, 기본 꺼짐 — "1"만 on). 트리거 A 채택 — React `App.onResult`(작업 완료 이벤트)에서 토글 on 시 `api.send_obsidian(job_id)`. 백엔드 파이프라인·send_obsidian 무변(호출만). best-effort(작업 결과 이미 저장 → 내보내기 실패해도 완료 정상). 결과 toast(성공/NO_VAULT/실패). 격리 .env 검증 — 미설정→off, "1"→on. 191 passed. 1단계 자동 삭제 동기화(v1.0.0.4)와 함께 자동 동기화 완성. 실제 작업 자동 내보내기 최종 확인은 본인 GUI.
 
 ### B03: Phase 1 fix-up #3 — schema text leak
 

@@ -59,6 +59,9 @@ _KNOWN_SETTINGS: tuple[str, ...] = (
     "ASSEMBLYAI_API_KEY",
     # Integrations (Obsidian, Notion)
     "OBSIDIAN_VAULT_PATH", "OBSIDIAN_SUBFOLDER",
+    # 작업 완료 후 Obsidian 자동 내보내기 — "1"=on / 그 외=off (기본 꺼짐).
+    # React onResult 가 이 값을 읽어 send_obsidian 자동 호출 (백엔드 파이프라인 무변).
+    "GURUNOTE_OBSIDIAN_AUTOEXPORT",
     "NOTION_TOKEN", "NOTION_PARENT_ID", "NOTION_PARENT_TYPE",
     # Processing options (불리언 토글 — "1"=on / "0"=off, 미설정 시 백엔드 default on).
     # llm.py:2811(GURUNOTE_TWO_PASS) / stt_mlx.py(GURUNOTE_SEGMENT_RESPLIT) 가

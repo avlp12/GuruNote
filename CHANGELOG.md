@@ -7,6 +7,19 @@
 
 ## [Unreleased]
 
+## [1.0.0.9] - 2026-05-26
+
+### Added
+- **Obsidian 작업 완료 후 자동 내보내기** (설정 → Obsidian 토글, 기본 꺼짐) — 켜면
+  노트 생성이 끝날 때마다 자동으로 vault 에 내보낸다 (RAG 인덱스 있으면 연관 노트
+  wikilink 포함). 1단계 자동 삭제 동기화(v1.0.0.4)와 함께 자동 동기화 완성.
+  - `GURUNOTE_OBSIDIAN_AUTOEXPORT` 키 (`_KNOWN_SETTINGS`), **"1" 일 때만 on** (기본
+    꺼짐 — 미설정/"0" 은 off). 1단계 `SettingsSwitch` 재사용.
+  - 트리거 = React `App.onResult` (작업 완료 이벤트) 에서 토글 on 시
+    `api.send_obsidian(job_id)` 호출. **백엔드 파이프라인·`send_obsidian` 무변** (호출만).
+  - best-effort: 자동 내보내기 실패(또는 Vault 미설정)해도 작업 결과는 이미 저장돼
+    완료 흐름은 정상. 결과는 토스트로 알림.
+
 ## [1.0.0.8] - 2026-05-26
 
 ### Added
@@ -1462,7 +1475,8 @@ bash run_desktop.sh
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v1.0.0.8...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v1.0.0.9...HEAD
+[1.0.0.9]: https://github.com/avlp12/GuruNote/compare/v1.0.0.8...v1.0.0.9
 [1.0.0.8]: https://github.com/avlp12/GuruNote/compare/v1.0.0.7...v1.0.0.8
 [1.0.0.7]: https://github.com/avlp12/GuruNote/compare/v1.0.0.6...v1.0.0.7
 [1.0.0.6]: https://github.com/avlp12/GuruNote/compare/v1.0.0.5...v1.0.0.6

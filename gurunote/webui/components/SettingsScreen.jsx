@@ -502,6 +502,16 @@ function SettingsObsidian({ values, secretsSet, onChange, onSave, dirty }) {
         />
       </Field>
 
+      {/* 자동 내보내기 (B16-2) — 기본 꺼짐: "1" 일 때만 on */}
+      <div className="settings-group" style={{ marginTop: 'var(--sp-3)' }}>
+        <SettingsSwitch
+          label="작업 완료 후 자동 내보내기"
+          hint="노트 생성이 끝나면 자동으로 이 Vault 에 내보냅니다 (RAG 인덱스 있으면 연관 노트 wikilink 포함). Vault 경로 설정 필요."
+          checked={values.GURUNOTE_OBSIDIAN_AUTOEXPORT === '1'}
+          onChange={(on) => onChange('GURUNOTE_OBSIDIAN_AUTOEXPORT', on ? '1' : '0')}
+        />
+      </div>
+
       {/* Action bar */}
       <div className="settings-actions">
         <div className="settings-actions__spacer" />
@@ -778,7 +788,7 @@ function SettingsAbout() {
         </div>
         <div className="settings-about__name">GuruNote</div>
         <div className="settings-about__version">
-          v{appInfo?.version || '1.0.0.8'}
+          v{appInfo?.version || '1.0.0.9'}
         </div>
         <div className="settings-about__desc">
           유튜브 링크 한 줄로 한국어 요약본을 생성합니다.

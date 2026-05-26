@@ -1228,7 +1228,9 @@ def _bootstrap_entity_cache_from_metadata(
         "예: SPEAKER A => Pankaj Sharma | 판카즈 샤르마\n"
         "추론 불가 라벨 부재 시 해당 라벨 생략 (fallback 은 코드가 catch).\n\n"
         "**한국어 표기 우선순위 (Part 1, 2 공통, 위에서 아래로)**:\n"
-        "1. 한국에서 이미 통용되는 표기 (예: Schneider Electric → 슈나이더 일렉트릭 [company])\n"
+        "1. 한국에서 이미 통용되는 표기를 최우선. **철자가 아니라 발음**을 기준으로 음차하라\n"
+        "   (예: Schneider Electric → 슈나이더 일렉트릭 [company], "
+        "Palmer Luckey → 팔머 럭키 [person] (러커이 ✗), Rick Rieder → 릭 리더 [person] (리크 ✗)).\n"
         "2. 통용 표기 부재 시 아래 외래어 표기법 표준 적용 (예: Pankaj Sharma → 판카즈 샤르마 [person])\n"
         "3. 그 외는 영어 자모 한글 대조표 정합 자유 출력"
         f"{loanword_section}\n"
@@ -1612,6 +1614,82 @@ def _check_xgrammar_available(
 # =============================================================================
 # Step 3: 번역
 # =============================================================================
+# =============================================================================
+# 인명 통용 표기 결정론적 교정 (A 보완, 5/26)
+# =============================================================================
+# 원인: entity_cache / speaker_cache 의 한국어 표기가 bootstrap LLM(또는 디스크 캐시)
+# 의 first-seen 으로 고정 → 번역 프롬프트(A, Rule 10)가 우선순위상(캐시 1번) 못 이김.
+# 디스크 캐시 hit 시 LLM 자체 우회. → 캐시에 들어간 표기를 편집 가능한 통용 dict 로
+# **결정론적 교정** (B 의 _correct_english_annotations 와 같은 접근). dict 미수록 인명은
+# 건드리지 않는다 (과교정 부재).
+_CANONICAL_NAMES_PATH = Path.home() / ".gurunote" / "canonical_names.json"
+_CANONICAL_NAMES_DEFAULT = {
+    "Palmer Luckey": "팔머 럭키",
+    "Rick Rieder": "릭 리더",
+}
+
+
+def _load_canonical_names() -> dict:
+    """통용 표기 dict (English → 한국어) 로드 — 사용자 편집 가능 JSON.
+
+    `~/.gurunote/canonical_names.json` 없으면 기본값으로 생성, 손상/오류 시 기본값.
+    (2단계에서 설정 UI 편집 예정 — 코드는 읽기만.)
+    """
+    try:
+        if _CANONICAL_NAMES_PATH.exists():
+            data = json.loads(_CANONICAL_NAMES_PATH.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                return {str(k): str(v) for k, v in data.items() if k and v}
+        else:
+            _CANONICAL_NAMES_PATH.parent.mkdir(parents=True, exist_ok=True)
+            _CANONICAL_NAMES_PATH.write_text(
+                json.dumps(_CANONICAL_NAMES_DEFAULT, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+    except Exception:  # noqa: BLE001 — dict 부재/손상은 교정 생략으로 안전 degrade
+        pass
+    return dict(_CANONICAL_NAMES_DEFAULT)
+
+
+def _apply_canonical_to_entity_cache(entity_cache: dict, canonical: dict, log=None) -> int:
+    """entity_cache `{English: {korean,...}}` 의 English key 가 통용 dict 에 있으면
+    korean 을 강제 교정 (대소문자 무시). dict 미수록 key 는 불변. 교정 건수 반환."""
+    if not entity_cache or not canonical:
+        return 0
+    lower = {k.lower(): v for k, v in canonical.items()}
+    n = 0
+    for eng, meta in entity_cache.items():
+        if eng == "__speakers__" or not isinstance(meta, dict):
+            continue
+        canon = lower.get(eng.lower())
+        if canon and meta.get("korean") != canon:
+            meta["korean"] = canon
+            n += 1
+    if log and n:
+        log(f"   🔧 통용 표기 교정 (entity {n}건)")
+    return n
+
+
+def _apply_canonical_to_speaker_cache(speaker_cache: dict, canonical: dict, log=None) -> int:
+    """speaker_cache `{label: {english, korean}}` 의 english 가 통용 dict 에 있으면
+    korean 을 강제 교정. 화자 라벨이 본문 prefix 를 지배하므로 entity 와 함께 교정 필요."""
+    if not speaker_cache or not canonical:
+        return 0
+    lower = {k.lower(): v for k, v in canonical.items()}
+    n = 0
+    for _label, meta in speaker_cache.items():
+        if not isinstance(meta, dict):
+            continue
+        eng = (meta.get("english") or "").strip()
+        canon = lower.get(eng.lower())
+        if canon and meta.get("korean") != canon:
+            meta["korean"] = canon
+            n += 1
+    if log and n:
+        log(f"   🔧 통용 표기 교정 (speaker {n}건)")
+    return n
+
+
 def translate_transcript(
     transcript: Transcript,
     config: Optional[LLMConfig] = None,
@@ -1683,6 +1761,14 @@ def translate_transcript(
             if speaker_cache:
                 log(f"   🎤 speaker cache bootstrap — {len(speaker_cache)}명 식별")
 
+    # A 보완 (5/26) — 통용 표기 결정론적 교정. bootstrap(디스크 캐시 hit 포함) 직후·
+    #   chunk loop 전에 적용 → cache_block prepend + 화자 라벨이 교정된 표기로. 저장(아래)
+    #   은 이 뒤라 디스크 캐시도 self-heal (옛 "팰머 러커이" → "팔머 럭키").
+    canonical_names = _load_canonical_names() if config.enable_phase2 else {}
+    if config.enable_phase2:
+        _apply_canonical_to_entity_cache(entity_cache, canonical_names, log)
+        _apply_canonical_to_speaker_cache(speaker_cache, canonical_names, log)
+
     # 5/23 — 영상 단위 첫 등장 catch (화자 라벨 영문 병기 first-occurrence, 2-pass 전용).
     seen_speakers: set = set()
 
@@ -1719,6 +1805,8 @@ def translate_transcript(
                 added = {k: v for k, v in new_entities.items() if k not in entity_cache}
                 if added:
                     entity_cache.update(added)
+                    # A 보완 — chunk 신규 entity 도 통용 표기 교정.
+                    _apply_canonical_to_entity_cache(added, canonical_names, log)
                     log(f"   📚 entity cache 갱신: +{len(added)}건 (누적 {len(entity_cache)}건)")
 
     log("✅ 번역 완료")

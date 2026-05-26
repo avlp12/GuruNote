@@ -7,6 +7,23 @@
 
 ## [Unreleased]
 
+## [1.0.0.10] - 2026-05-26
+
+### Fixed
+- **인명 통용 표기 — 실제 영상에서 굳던 오표기 결정론적 교정 (A 보완)**. v1.0.0.6
+  프롬프트 강화 후에도 실제 영상은 "팰머 러커이"(Palmer Luckey) 가 굳던 문제. 재진단으로
+  3겹 원인 확정 — bootstrap 이 first-seen 표기 결정 / bootstrap 프롬프트에 발음-우선
+  지시 미반영 / **디스크 캐시 hit 시 옛 표기 로드(프롬프트 우회)**.
+  - 편집 가능한 통용 표기 dict `~/.gurunote/canonical_names.json` (English→한국어,
+    초기값 Palmer Luckey→팔머 럭키 / Rick Rieder→릭 리더) 신설. 2단계에서 설정 UI 편집 예정.
+  - `entity_cache` + `speaker_cache`(화자 라벨 — 본문 prefix 지배) 의 한국어 표기를 dict 로
+    **강제 교정** (대소문자 무시). dict 미수록 인명은 불변 (과교정 부재).
+  - 적용: bootstrap(디스크 캐시 hit 포함) 직후 + chunk 신규 entity — chunk loop 전 적용으로
+    프롬프트 context·화자 라벨이 교정된 표기 사용, 저장 시 디스크 캐시도 self-heal(재처리 시
+    옛 표기 교정).
+  - bootstrap LLM 프롬프트에도 발음-우선 지시·예시 추가 (dict 미수록 신규 인명용).
+  - `tests/test_canonical_name_correction.py` 7건. (B 영문 철자·화자·timestamp 회귀 부재.)
+
 ## [1.0.0.9] - 2026-05-26
 
 ### Added
@@ -1475,7 +1492,8 @@ bash run_desktop.sh
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v1.0.0.9...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v1.0.0.10...HEAD
+[1.0.0.10]: https://github.com/avlp12/GuruNote/compare/v1.0.0.9...v1.0.0.10
 [1.0.0.9]: https://github.com/avlp12/GuruNote/compare/v1.0.0.8...v1.0.0.9
 [1.0.0.8]: https://github.com/avlp12/GuruNote/compare/v1.0.0.7...v1.0.0.8
 [1.0.0.7]: https://github.com/avlp12/GuruNote/compare/v1.0.0.6...v1.0.0.7

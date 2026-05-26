@@ -138,7 +138,8 @@
 ### B15: 인명/고유명사 번역 품질 — 통용 표기 + 영문 병기 오타
 
 - 배경: 통용 표기 dict 미수록 인명을 LLM 이 외래어 규칙으로 철자 추정 → 통용과 어긋남 (팰머 러커이/리크 리더). entity_cache 가 첫 표기를 고정해 "일관되게 틀림". 별개로 영문 병기 철자 오염 (Anduril→Danduril, 제목 포함).
-- **A (음차) — 완료 (v1.0.0.6)**: 번역 프롬프트 Rule 10 + 공통 룰에 "통용 표기 우선 + 철자 아닌 발음 기준 음차, 외래어 규칙은 fallback" 지시 추가. 짧은 테스트 — Palmer Luckey→팔머 럭키, Rick Rieder→릭 리더 (오표기 0). **로컬 모델이 통용 표기를 알고 있어 프롬프트만으로 끌어냄 → dict 일괄 보강 불필요.** 실제 영상 재처리 최종 확인은 본인 GUI.
+- **A (음차) — 완료 (v1.0.0.6 프롬프트 + v1.0.0.10 결정론적 교정)**: v1.0.0.6 번역 Rule 10 우선순위 역전(통용 발음기반 > 목록 > 외래어 fallback). **단 실제 영상은 여전히 "팰머 러커이" 굳음** — 재진단 3겹 원인: bootstrap first-seen 결정 / bootstrap 프롬프트에 A 미반영 / **디스크 캐시 hit 옛 표기 로드**(프롬프트 우회). 캐시 증거 `{"english":"Palmer Luckey","korean":"팰머 러커이","source":"bootstrap"}`, Palmer Luckey 가 speaker A 라 335회는 화자 라벨.
+  - **A 보완 (v1.0.0.10)**: 편집 가능 통용 dict `~/.gurunote/canonical_names.json` 신설. `entity_cache` + `speaker_cache` 한국어 표기를 dict 로 결정론적 강제 교정 (대소문자 무시, 미수록 불변). bootstrap(디스크 캐시 hit 포함) 직후 + chunk loop 전 적용 → cache_block·화자 라벨 교정 + 저장 시 디스크 캐시 self-heal. bootstrap 프롬프트에도 발음-우선 지시 추가. tests 7건. 198 passed. **2단계 (dict 설정 UI 편집) not_started.** 실제 영상 재처리 최종 확인은 본인 GUI.
 - **B (영문 병기 오타) — 완료 (v1.0.0.7)**: `_correct_english_annotations` — `한국어(English)` 병기 영문을 소스(transcript 전문 + 제목)로 결정론적 검증. 정확히 있으면 케이싱 정규화 / 단일 토큰 오타는 보수적 최근접(difflib cutoff 0.84, 대소문자 무시) 교정 / 근거 없으면 병기 생략. 적용: 번역 본문(translate_transcript) + organized_title(extract_metadata, entity_cache 미참조라 별도). LLM 무관 순수 함수, 한국어 음차·화자·timestamp 불변. tests 8건. end-to-end — 팔머 럭키/릭 리더(A) + Anduril 정확/Danduril 0(B) 동시 확인. 실제 영상 최종 확인은 본인 GUI.
 
 ### B16: 설정 화면 처리 옵션 + 자동 내보내기 토글

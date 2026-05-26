@@ -7,6 +7,19 @@
 
 ## [Unreleased]
 
+## [1.0.0.12] - 2026-05-27
+
+### Added
+- **통용 표기 편집 UI (A-2 ②단계)** — 설정 → 고급에 "통용 표기" 그룹. GuruNote 가
+  자동으로 채운 표기(auto, 읽기 전용 회색)를 확인하고 틀린 것만 수정 표기(user)에
+  입력. 행 추가/삭제 + 전용 저장 버튼. user 가 있으면 user 우선 적용 (다음 작업부터,
+  재시작 불필요 — dict 는 작업마다 로드).
+  - bridge `get_canonical_names` / `save_canonical_names` 신규 — `llm.py` 의
+    `_load`/`_save_canonical_names` 호출만 (파일 I/O 단일 출처). `.env`
+    `get_settings`/`save_settings` 와 완전 별개 (별도 메서드·별도 state·별도 저장 버튼).
+  - 빈 영문/빈 항목은 저장 시 제외. 초기값 포함 전부 삭제 가능 (dict 비어도 정상).
+  - 노트 리프레시(③)는 다음 단계.
+
 ## [1.0.0.11] - 2026-05-26
 
 ### Added
@@ -1505,7 +1518,8 @@ bash run_desktop.sh
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v1.0.0.11...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v1.0.0.12...HEAD
+[1.0.0.12]: https://github.com/avlp12/GuruNote/compare/v1.0.0.11...v1.0.0.12
 [1.0.0.11]: https://github.com/avlp12/GuruNote/compare/v1.0.0.10...v1.0.0.11
 [1.0.0.10]: https://github.com/avlp12/GuruNote/compare/v1.0.0.9...v1.0.0.10
 [1.0.0.9]: https://github.com/avlp12/GuruNote/compare/v1.0.0.8...v1.0.0.9

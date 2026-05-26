@@ -604,6 +604,136 @@ function SettingsNotion({ values, secretsSet, onChange, onSave, dirty }) {
 }
 
 /* === Advanced Section === */
+/* === 통용 표기 편집 (A-2 ②) — canonical_names.json (.env 와 별개 state) ===
+   GuruNote 가 자동 채운 auto(읽기 전용) + 사용자 수정 user(편집). user 우선 적용.
+   자체 state·자체 저장 (get/save_canonical_names) — 설정 .env dirty 흐름과 무관. */
+function SettingsCanonicalNames() {
+  const [rows, setRows] = useState([]);   // [{english, auto, user}]
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  const _rowsFromNames = (names) =>
+    Object.keys(names || {}).sort().map((eng) => ({
+      english: eng,
+      auto: names[eng]?.auto || '',
+      user: names[eng]?.user || '',
+    }));
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        while (!window.pywebview?.api && !cancelled) {
+          await new Promise((r) => setTimeout(r, 50));
+        }
+        if (cancelled) return;
+        const r = await window.pywebview.api.get_canonical_names();
+        if (!cancelled && r?.ok) setRows(_rowsFromNames(r.names));
+      } catch (e) {
+        /* 로드 실패 — 빈 목록 */
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const updateRow = (i, field, val) =>
+    setRows((rs) => rs.map((r, idx) => (idx === i ? { ...r, [field]: val } : r)));
+  const removeRow = (i) => setRows((rs) => rs.filter((_, idx) => idx !== i));
+  const addRow = () => setRows((rs) => [...rs, { english: '', auto: '', user: '' }]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    const mapping = {};
+    for (const r of rows) {
+      const eng = (r.english || '').trim();
+      if (!eng) continue;
+      mapping[eng] = { auto: (r.auto || '').trim(), user: (r.user || '').trim() };
+    }
+    try {
+      const res = await window.pywebview.api.save_canonical_names(mapping);
+      if (res?.ok) {
+        window.showToast?.('통용 표기 저장됨 — 다음 작업부터 적용', 'success');
+        setRows(_rowsFromNames(res.names));
+      } else {
+        window.showToast?.(`저장 실패: ${res?.error || '알 수 없는 오류'}`, 'error');
+      }
+    } catch (e) {
+      window.showToast?.(`저장 오류: ${e.message || e}`, 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="settings-group">
+      <div className="settings-group__title">통용 표기 (인명·회사명)</div>
+      <div className="settings-group__sub">
+        GuruNote 가 자동으로 채운 표기(auto)를 확인하고, 틀리면 수정 표기(user)에 올바른 한국어를
+        입력하세요. 수정한 표기가 우선 적용됩니다 (다음 작업부터).
+      </div>
+      {loading ? (
+        <div style={{ fontSize: 13, color: 'var(--gn-on-surface-muted)' }}>불러오는 중…</div>
+      ) : (
+        <>
+          {rows.length === 0 && (
+            <div style={{ fontSize: 13, color: 'var(--gn-on-surface-muted)', padding: '6px 0' }}>
+              아직 기록된 표기가 없습니다. 작업을 실행하면 자동으로 채워집니다.
+            </div>
+          )}
+          {rows.map((r, i) => (
+            <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
+              <input
+                type="text"
+                className="settings-field__input settings-field__input--mono"
+                placeholder="English"
+                value={r.english}
+                onChange={(e) => updateRow(i, 'english', e.target.value)}
+                style={{ flex: 1.4 }}
+              />
+              <input
+                type="text"
+                className="settings-field__input"
+                value={r.auto}
+                readOnly
+                placeholder="(auto)"
+                title="GuruNote 자동 표기 (읽기 전용)"
+                style={{ flex: 1, color: 'var(--gn-on-surface-muted, #888)' }}
+              />
+              <input
+                type="text"
+                className="settings-field__input"
+                placeholder="수정 표기 (user)"
+                value={r.user}
+                onChange={(e) => updateRow(i, 'user', e.target.value)}
+                style={{ flex: 1 }}
+              />
+              <button
+                type="button"
+                className="btn btn--ghost"
+                onClick={() => removeRow(i)}
+                title="삭제"
+                style={{ flexShrink: 0 }}
+              >
+                <span className="msi">delete</span>
+              </button>
+            </div>
+          ))}
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}>
+            <button type="button" className="btn btn--ghost" onClick={addRow}>
+              <span className="msi">add</span> 추가
+            </button>
+            <button type="button" className="btn btn--primary" onClick={handleSave} disabled={saving}>
+              <span className="msi">save</span> {saving ? '저장 중…' : '통용 표기 저장'}
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function SettingsAdvanced({ values, secretsSet, onChange, onSave, dirty }) {
   return (
     <>
@@ -614,7 +744,7 @@ function SettingsAdvanced({ values, secretsSet, onChange, onSave, dirty }) {
           </div>
           <div>
             <div className="settings-content__title">고급</div>
-            <div className="settings-content__sub">처리 옵션 + 다른 LLM provider 키 + WhisperX (NVIDIA)</div>
+            <div className="settings-content__sub">처리 옵션 + 통용 표기 + 다른 LLM provider 키 + WhisperX (NVIDIA)</div>
           </div>
         </div>
       </div>
@@ -636,6 +766,9 @@ function SettingsAdvanced({ values, secretsSet, onChange, onSave, dirty }) {
           onChange={(on) => onChange('GURUNOTE_SEGMENT_RESPLIT', on ? '1' : '0')}
         />
       </div>
+
+      {/* === 통용 표기 (A-2 ②) — 자체 state/저장, .env 와 별개 === */}
+      <SettingsCanonicalNames />
 
       {/* === Anthropic === */}
       <div className="settings-group">
@@ -788,7 +921,7 @@ function SettingsAbout() {
         </div>
         <div className="settings-about__name">GuruNote</div>
         <div className="settings-about__version">
-          v{appInfo?.version || '1.0.0.11'}
+          v{appInfo?.version || '1.0.0.12'}
         </div>
         <div className="settings-about__desc">
           유튜브 링크 한 줄로 한국어 요약본을 생성합니다.

@@ -507,6 +507,43 @@ class Api:
                 "SETTINGS_LOAD_FAILED", f"{type(exc).__name__}: {exc}"
             )
 
+    # ----- 통용 표기 dict (canonical_names.json — .env 와 무관) -----------------
+    # 인명·회사명 한국어 표기 교정 dict. 구조 {English: {auto, user}}.
+    # 파일 I/O 는 llm.py 의 _load/_save 재사용 (단일 출처). get_settings/.env 와 별개.
+
+    def get_canonical_names(self) -> dict:
+        """통용 표기 dict 반환 — ``{English: {"auto": str, "user": str}}``."""
+        try:
+            from gurunote.llm import _load_canonical_names  # noqa: PLC0415
+            return {"ok": True, "names": _load_canonical_names()}
+        except Exception as exc:  # noqa: BLE001
+            return self._err("CANONICAL_LOAD_FAILED", f"{type(exc).__name__}: {exc}")
+
+    def save_canonical_names(self, payload: Any = None) -> dict:
+        """통용 표기 dict 저장. payload = ``{English: {auto, user}}`` (또는 값이 str 이면
+        user 로 간주). 빈 항목 제외 + atomic write 는 ``_save_canonical_names`` 가 처리.
+        저장 후 정규화된 dict 를 다시 반환 (UI 재로드용)."""
+        if not isinstance(payload, dict):
+            return self._err("INVALID_NAMES", f"payload must be dict, got {type(payload).__name__}")
+        clean: dict = {}
+        for k, v in payload.items():
+            eng = str(k).strip()
+            if not eng:
+                continue
+            if isinstance(v, dict):
+                clean[eng] = {
+                    "auto": str(v.get("auto") or "").strip(),
+                    "user": str(v.get("user") or "").strip(),
+                }
+            else:
+                clean[eng] = {"auto": "", "user": str(v or "").strip()}
+        try:
+            from gurunote.llm import _load_canonical_names, _save_canonical_names  # noqa: PLC0415
+            _save_canonical_names(clean)
+            return {"ok": True, "names": _load_canonical_names()}
+        except Exception as exc:  # noqa: BLE001
+            return self._err("CANONICAL_SAVE_FAILED", f"{type(exc).__name__}: {exc}")
+
     def save_settings(self, patch: dict) -> dict:
         """Persist a partial settings patch via gurunote.settings.save_settings.
 

@@ -190,7 +190,26 @@ ab86b9e  04-12 08:46  Codex review (hotwords, token budget, env mutation)
 | 5/24 | `2971939` | **release: v1.0.0.0** — 버전 0.8.0.6 → 1.0.0.0 (7 곳 갱신: `__init__.py`, `gui.py` 사이드바, `package_desktop.py` Inno Setup + pkgbuild, `SettingsScreen.jsx` fallback, README "현재 버전", CHANGELOG entry). CLAUDE.md 체크리스트 5-file → 6-file (React UI fallback 추가). 신규 `run_webview.command` (React/PyWebView 진입점 wrapper). README 약 60% 재작성 — 진입점 `app_webview.py` 권장 + 옛 진입점 호환 표기, React/Mac/MLX 위주. backlog B09 (PipelineWorker 분리) + B10 (setup 스크립트 echo 갱신) 신규. test 183 passed. |
 | 5/24 | (브랜치 작업) | **main 통합 — unrelated histories 처리**. 옛 main 트리 (root `4bcbee6`, HEAD `9b6c621` v0.8.0.6) 와 redesign 트리 (root `af50c2e`, HEAD `2971939` v1.0.0.0) 가 공통 조상 부재 사실 확인 (4/19 직후 웹 Claude → 로컬 CLI Claude Code 전환 시 별도 init 한 결과). 옛 main 211 commit 을 `archive/main-pre-cli` 로 origin 보존 → `git push origin main --force-with-lease` 로 redesign 트리를 main 으로 통일. origin/main: `9b6c621` → `2971939`. |
 
-## 5. 현재 (2026-05-24 22시 GMT+9 기준, HEAD 2971939, v1.0.0.0)
+### v1.0.0.1~0.7 — daily 사용성·인명 품질 개선 (5/25~26)
+
+> v1.0.0.0 이후 본인 daily 사용에서 발견한 불편을 차례로 수정. 각 항목 read-only 진단 → 외과적 구현 → 검증 → commit 흐름. 모두 REVISION 단위 (CLAUDE.md 정책 — updater 감지).
+
+| 버전 | commit | 내용 |
+|------|--------|-----|
+| v1.0.0.1 | `add66d2` | 노트 상세 **출처 링크**(클릭→시스템 브라우저 + URL 복사) + **HistoryScreen 다운로드 wiring** — 카드/상세 다운로드 버튼이 stub("Phase 2B-4 예정" toast)이던 것을 실저장(`save_result_as` 재사용) 연결. bridge `open_external`(http/https) 신규. (B11) |
+| v1.0.0.2 | `4615843` | **RAG 의미 검색 React 재배선** — 기존 `semantic.py`(완성·옛 UI 동작)를 React bridge 에 연결. 대시보드 "의미 검색 인덱스" 카드 실데이터 + Semantic Rebuild, History "의미 검색" 칩(오버레이), 노트 상세 "연관 노트"(top-K). bridge `rebuild_index`/`semantic_index_stats`/`semantic_search`/`semantic_available`. 선택 의존성 미설치 시 안내. (B12) |
+| (환경, commit 무) | — | **RAG 의존성 gesicht 설치 + 인덱스 빌드 + 검색 품질 검증**. `.venv` 에 sentence-transformers 5.5.1 추가(torch/numpy 불변), 모델 `paraphrase-multilingual-MiniLM-L12-v2`(~117MB). 28 노트 / 1698 chunk(`~/.gurunote/embeddings.npz`). 쿼리 검증 — 휴머노이드/AI 에너지/투자 주제가 관련 노트를 상위에. 연관 노트 자기 제외 동작 확인. |
+| v1.0.0.3 | `8eaa538` | **Obsidian 내보내기 + RAG wikilink** — 카드 hub 아이콘을 vault 내보내기로 배선(`send_obsidian`, 기존 `obsidian.py` `save_to_vault` 재사용). 내보낼 때 RAG 유사 노트 top5(≥0.5)를 본문 "## 연관 노트" + frontmatter `related` 로 `[[stem\|제목]]` alias wikilink 삽입 → Obsidian 그래프 연결. (B13) |
+| v1.0.0.4 | `ef4426d` | **라이브러리 삭제 ↔ Obsidian 사본 동기화** — 내보낼 때 frontmatter 에 `gurunote_job_id` 표식, 삭제 시 그 표식 일치 vault 파일만 제거(`delete_from_vault`). best-effort(라이브러리 삭제 우선), 사본 있을 때만 확인 문구. 표식 없는 기존 파일은 보존(설계 의도). (B14) |
+| v1.0.0.5 | `8b2125e` | **Obsidian 파일명 접두사 제거** — `GuruNote_<제목>.md` → `<제목>.md`. 파일명·wikilink stem 을 단일 helper(`_obsidian_note_stem`)로 통합해 그래프 연결 유지. 출처 구분은 `gurunote_job_id` 표식 + `Gurunote/` 폴더가 담당. |
+| v1.0.0.6 | `77dd6b0` | **인명 음차 통용 표기 우선 (A)** — 번역 프롬프트 Rule 10 우선순위 역전: 통용 표기(철자 아닌 발음 기준) > 통용 목록 > 외래어 규칙(fallback). "팰머 러커이/리크 리더" → 팔머 럭키/릭 리더. 로컬 모델이 통용 표기를 알고 있어 dict 일괄 보강 불필요로 확인. |
+| v1.0.0.7 | `8f836a0` | **영문 병기 철자 소스 검증 (B)** — `_correct_english_annotations`: `한국어(English)` 병기 영문을 소스(transcript 전문 + 제목)로 결정론적 대조. 정확 시 케이싱 정규화 / 단일 토큰 오타는 보수적 최근접(difflib 0.84, 대소문자 무시) 교정 / 근거 없으면 병기 생략. "Anduril→Danduril" 류 차단. 본문 + organized_title 적용. tests 8건. |
+
+(v1.0.0.8 `d6a5d12` — 설정 "고급" 처리 옵션 토글(2-pass / STT 재분할). 다음 journal 묶음에서 서술.)
+
+**트랙 B 요약** (2차 사료): 2026-05-14~17 Phase 1 Redesign 기간, 트랙 A(구현)와 병행해 트랙 B(read-only 검증 보조)가 9개 항목 독립 검증 + Phase 2 entity cache spec(449 줄) 사전 작성. 주요 결정 — `json_object` → `json_schema` strict 전환, chunk_size 6000 가설 기각(근본 원인은 chunk 당 segment 수로 판명 → `MAX_SEGMENTS_PER_CHUNK=15` 정정), Index Mapping helper 5 개 + finish_reason continuation. 잔존 한계 — tail attention drop (B04). 통합 commit `c68aab8`. [원본 트랙 B 로그는 렌더링 깨짐·단어 stuffing 다수 — 추후 `docs/legacy` 보관 예정, 본인이 원본 텍스트 제공 시.]
+
+## 5. 현재 (2026-05-26 11시 GMT+9 기준, HEAD d6a5d12, v1.0.0.8)
 
 ### 코드 상태
 - gurunote/ ~9100 line (llm.py 2700+ / stt_mlx.py 517 / stt.py 455 / updater.py 534 / 등)
@@ -208,10 +227,15 @@ ab86b9e  04-12 08:46  Codex review (hotwords, token budget, env mutation)
 | **CustomTkinter** (호환 유지) | `gui.py`, `run_gui.command`, `run_desktop.{sh,bat}` | `PipelineWorker` 클래스 보유 — React UI 가 의존 (B09 분리 작업 백로그) |
 | **Streamlit** (호환 유지) | `app.py`, `run_web.{sh,bat}` | 단독 사용 가능 |
 
+### backlog 완료 (5/25~26)
+
+B11 출처 링크+다운로드 wiring · B12 RAG 재배선 · B13 Obsidian 내보내기+wikilink · B14 삭제 동기화 · B15 인명 음차(A)+영문 병기(B) · B16-1단계 처리 옵션 토글 — 모두 완료 (v1.0.0.1~0.8).
+
 ### backlog 미해결
 
 | ID | 상태 | 내용 |
 |----|------|-----|
+| B16-2 | not_started | Obsidian 자동 내보내기 토글 — 작업 완료 직후 자동 `send_obsidian` (`PipelineSession._poll` 종료 지점), 기본 꺼짐 |
 | B03 | not_started | Phase 1 fix-up #3 schema text leak — xgrammar 외부 의존, 신 버전 대기 |
 | B04 | blocked | Phase 1 fix-up #2 tail attention drop — 정황 확인 필요 |
 | B05 | blocked | Phase 4 capability profile — 모델 교체 결정 후 진입 (5/24 "모델 비의존" 방향으로 본 전제 우회) |
@@ -220,13 +244,15 @@ ab86b9e  04-12 08:46  Codex review (hotwords, token budget, env mutation)
 | B09 | not_started | PipelineWorker 를 gui.py 에서 별도 모듈로 분리 — React 가 옛 CustomTkinter UI 파일에 의존하는 기술 부채 |
 | B10 | not_started | setup.sh / setup.bat echo 갱신 — README v1.0 진입점과 일관성 |
 
-## 6. 다음 — 본 문서 작성 시점 기준
+## 6. 다음 — 본 문서 작성 시점 기준 (5/26)
 
-- 역사 문서 주기적 갱신 (본 commit 이 첫 갱신 적용 사례).
-- `docs/wip/daily_verify_phase5.py` / `verify_results/daily_phase5/` 운명 (커밋 / .gitignore / 삭제).
-- GitHub release 태그 `v1.0.0.0` 생성 여부.
+- 역사 문서 주기적 갱신 (본 commit = v1.0.0.1~0.7 + 트랙 B 요약 반영). v1.0.0.8 토글은 다음 묶음.
+- **B16-2단계** Obsidian 자동 내보내기 토글 (작업 완료 직후 자동, 기본 꺼짐).
+- 트랙 B 원본 raw → `docs/legacy` 보관 (본인이 원본 텍스트 제공 시).
 - B07/B08/B09/B10 각 결정.
 - B03/B04/B05 각 결정.
+
+> 이미 처리됨 (5/25): verify 산출물 commit(`208f18a`) + GitHub release 태그 `v1.0.0.0` 발행.
 
 ---
 

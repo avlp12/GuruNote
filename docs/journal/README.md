@@ -8,7 +8,7 @@
 
 **정체성 진화**: "IT/AI 구루 요약 앱"(PRD, 4/11) → "24/7 지식 증류기 + Obsidian"(WORK_ORDER) → "**모델 비의존 한국어 지식 정리**"(5/24).
 
-## 현재 지점 (2026-05-24, HEAD 2971939, v1.0.0.0)
+## 현재 지점 (2026-05-26, HEAD d6a5d12, v1.0.0.8)
 
 ### 완료
 - **Phase 0~1 (v0.1.0 ~ v0.8.0.6)**: 5-step 파이프라인 → CustomTkinter GUI → openai_compatible local LLM → YouTube metadata → 모델 갱신 → SSL 인증서 fix
@@ -25,6 +25,7 @@
   - Phase 5 (`527d2ea`, 5/24): STT 의미 단위 재분할 + char_limit 자동 조정
 - **Phase 5 마무리 (`6dc9934`, 5/24)**: daily 검증 영상 2개 통과 (xKK5ze3FukQ 96→49 segments, zNuOOMM20Tk 586→294 segments, timeout 0, CJK 0, 화자 이름 정상 부착). `GURUNOTE_SEGMENT_RESPLIT` + `GURUNOTE_TWO_PASS` 기본값 on 전환. 토글 off 안전망 유지 (`=0` 명시 시 기존 동작).
 - **v1.0.0.0 선언 + main 통합 (`2971939`, 5/24)**: 버전 0.8.0.6 → 1.0.0.0 (7 곳 일치). 1.0 근거 — License MIT → Elastic 2.0, UI CustomTkinter/Streamlit → React/Material 3/PyWebView (`app_webview.py`), 번역 1-pass → 2-pass DCCD + entity_cache + CJK + STT 재분할. README 약 60% 재작성, `run_webview.command` 신규. **main 통합 (force-with-lease)**: origin/main `9b6c621`(v0.8.0.6) → `2971939`(v1.0.0.0), 옛 main 211 commit (root `4bcbee6`) 은 `origin/archive/main-pre-cli` 에 영구 보존.
+- **v1.0.0.1~0.8 daily 사용성·인명 품질 (5/25~26)**: 출처 링크+다운로드 wiring(`add66d2` B11) → RAG React 재배선(`4615843` B12, gesicht 의존성 설치+28노트 인덱스 검증) → Obsidian 내보내기+RAG wikilink(`8eaa538` B13) → 삭제↔사본 동기화(`ef4426d` B14, `gurunote_job_id` 표식) → 파일명 접두사 제거(`8b2125e`) → 인명 음차 통용 표기 우선(`77dd6b0` B15-A) → 영문 병기 철자 소스 검증(`8f836a0` B15-B, Danduril 차단) → 처리 옵션 토글(`d6a5d12` B16-1, 2-pass/재분할). 자세히 [HISTORY](./HISTORY.md) §4 + [DECISIONS](./DECISIONS.md) ADR-014~016.
 
 ### 진행 중 (없음 — WIP=1)
 
@@ -67,9 +68,11 @@
 
 ## 다음 할 일
 
-- 역사 문서 주기적 갱신 (본 commit).
-- ~~`docs/wip/daily_verify_phase5.py` / `verify_results/daily_phase5/` 운명 결정~~ → **commit 완료** (`208f18a`, 5/25). `docs/wip/` verify 스크립트 + `verify_results/` 추적 선례 일치. `.gitignore` 는 raw/segments/resplit 무거운 산출물 계속 비추적.
-- ~~GitHub release 태그 `v1.0.0.0` 생성 여부 결정~~ → **생성 완료** (5/25). annotated tag `v1.0.0.0` @ `2971939`(릴리스 커밋, origin/main) + GitHub release(latest) 발행.
+- 역사 문서 주기적 갱신 (본 commit = v1.0.0.1~0.7 + 트랙 B 요약 반영; v1.0.0.8 토글은 다음 묶음).
+- **B16-2** Obsidian 자동 내보내기 토글 — 작업 완료 직후 자동 `send_obsidian` (`PipelineSession._poll` 종료 지점), 기본 꺼짐.
+- 트랙 B 원본 raw → `docs/legacy` 보관 (본인이 원본 텍스트 제공 시).
+- ~~`docs/wip/daily_verify_phase5.py` / `verify_results/daily_phase5/` 운명 결정~~ → **commit 완료** (`208f18a`, 5/25).
+- ~~GitHub release 태그 `v1.0.0.0`~~ → **생성 완료** (5/25, `2971939` + GitHub release).
 - **B07** D segment 단독 번역 재평가 — 정합 낮은 영상에서 SHIFT 재발 시.
 - **B08** 화자 bootstrap 식별 한계 후속 — 영상 빈도 누적 후 B01 연계 검토.
 - **B09** PipelineWorker 를 gui.py 에서 별도 모듈로 분리 — 옛 진입점 폐기 시점 또는 React 단일화 결정 시.

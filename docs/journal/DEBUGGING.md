@@ -294,6 +294,20 @@
 - 5/24 [320.7] leak 부재 — 첫 보고 정정
 - 5/24 2-pass cs=12 process 중간 종료 보고 → 정상 완료 catch — 본인 정정
 
+## 6. v1.0.0.6~0.7 인명/고유명사 품질 (5/26)
+
+**진단 (read-only)**: daily 노트에서 두 종류 오류 — (A) 음차 방향 "팰머 러커이/리크 리더"(통용은 팔머 럭키/릭 리더), (B) 영문 병기 철자 "안두릴(Danduril)"(원문 Anduril). 코드 추적으로 원인 분리:
+- (A) 통용 dict 미수록 인명 → LLM 이 외래어 표기법 규칙(`llm.py:144`)으로 철자 추정 → `entity_cache` 가 그 첫 표기를 first-seen 고정(`_extract_entities` 가 LLM 출력 prefix 에서 harvest) → **"일관되게 틀림"** (340/280 회 변형 0 은 캐시가 일관성만 보장한 결과).
+- (B) 원본 제목·다운로드 로그는 Anduril 정확, **LLM 생성 organized_title 이 Danduril** → STT 아님, 번역 단계 자유 생성 오염. `summarize/extract_metadata` 가 원본 제목(정답)을 입력받고도 오염 → 소스를 프롬프트에 넣는 것만으론 부족, 능동 검증 필요.
+
+**B 구현 중 함정 2건** (검증으로 catch):
+1. **소유격 토큰화 함정** — 소스에서 영문 단어 풀을 `[A-Za-z][A-Za-z0-9.\-']*` 로 뽑으니 `Anduril's` 가 한 토큰 → standalone `Anduril` 부재 → "Danduril" 의 difflib 매칭 실패(생략). **순수 알파벳 `[A-Za-z]+` 분리**로 `Anduril's` → `Anduril`+`s` 해결.
+2. **difflib 대소문자 함정** — `get_close_matches` 가 대소문자 구분이라 "Danduril"(대문자 D) vs "Anduril"(대문자 A) 의 a/A 케이스 불일치로 ratio 0.8 < 0.84 → 매칭 실패. **소문자로 매칭 후 케이싱 복원** (case_map) → ratio 0.93, 교정 성공.
+
+**해결**: (A) `77dd6b0` 프롬프트 Rule 10 우선순위 역전. (B) `8f836a0` `_correct_english_annotations` 결정론적 소스 검증. 둘 다 end-to-end 동시 확인 (팔머 럭키/릭 리더 + Anduril 정확/Danduril 0).
+
+> 프로세스 메모: B14 삭제 동기화 검증 시 `delete_history`(실제 job 삭제) REPL 호출이 prod 데이터 보호 분류기에 차단됨 — vault 측 `delete_from_vault` 독립 검증(임시 vault)으로 대체. 정직 catch.
+
 ---
 
-**자료 출처**: 1.x는 본인 기억 2차 사료 + git/CHANGELOG. 2.x/3.x는 session_history_digest + git log + backlog.md 1차/혼합. 4/5는 본 세션 본인 catch.
+**자료 출처**: 1.x는 본인 기억 2차 사료 + git/CHANGELOG. 2.x/3.x는 session_history_digest + git log + backlog.md 1차/혼합. 4/5는 본 세션 본인 catch. 6은 5/26 본 세션 진단·구현 catch.

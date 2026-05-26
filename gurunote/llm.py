@@ -1630,33 +1630,127 @@ _CANONICAL_NAMES_DEFAULT = {
 
 
 def _load_canonical_names() -> dict:
-    """통용 표기 dict (English → 한국어) 로드 — 사용자 편집 가능 JSON.
+    """통용 표기 dict 로드 — 신 구조 `{English: {"auto": str, "user": str}}`.
 
-    `~/.gurunote/canonical_names.json` 없으면 기본값으로 생성, 손상/오류 시 기본값.
-    (2단계에서 설정 UI 편집 예정 — 코드는 읽기만.)
+    - auto = GuruNote 가 작업 중 자동 기록한 표기. user = 사용자가 수정한 표기.
+    - 옛 flat 구조 `{English: "한국어"}` 는 값을 **user 로 마이그레이션** (사용자가 넣은
+      초기값으로 간주). 파일 없음/손상 시 기본값(user)으로 생성.
     """
+    raw = None
     try:
         if _CANONICAL_NAMES_PATH.exists():
             data = json.loads(_CANONICAL_NAMES_PATH.read_text(encoding="utf-8"))
             if isinstance(data, dict):
-                return {str(k): str(v) for k, v in data.items() if k and v}
-        else:
-            _CANONICAL_NAMES_PATH.parent.mkdir(parents=True, exist_ok=True)
-            _CANONICAL_NAMES_PATH.write_text(
-                json.dumps(_CANONICAL_NAMES_DEFAULT, ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
-    except Exception:  # noqa: BLE001 — dict 부재/손상은 교정 생략으로 안전 degrade
+                raw = data
+    except Exception:  # noqa: BLE001 — 손상은 기본값으로 degrade
+        raw = None
+
+    if raw is None:
+        out = {k: {"auto": "", "user": v} for k, v in _CANONICAL_NAMES_DEFAULT.items()}
+        _save_canonical_names(out)  # 최초 생성
+        return out
+
+    out: dict = {}
+    for k, v in raw.items():
+        if not k:
+            continue
+        if isinstance(v, dict):  # 신 구조
+            out[str(k)] = {
+                "auto": str(v.get("auto") or ""),
+                "user": str(v.get("user") or ""),
+            }
+        elif v:  # 옛 flat → 값을 user 로 마이그레이션
+            out[str(k)] = {"auto": "", "user": str(v)}
+    return out
+
+
+def _save_canonical_names(canonical: dict) -> None:
+    """`{English: {auto, user}}` atomic 저장 (tmp → os.replace). auto/user 둘 다 빈
+    항목은 제외. 실패는 best-effort (다음 기회에 재저장)."""
+    clean: dict = {}
+    for k, v in canonical.items():
+        if not k:
+            continue
+        if isinstance(v, dict):
+            a, u = str(v.get("auto") or "").strip(), str(v.get("user") or "").strip()
+        else:  # 방어 — flat 잔존
+            a, u = "", str(v).strip()
+        if a or u:
+            clean[str(k)] = {"auto": a, "user": u}
+    try:
+        _CANONICAL_NAMES_PATH.parent.mkdir(parents=True, exist_ok=True)
+        tmp = _CANONICAL_NAMES_PATH.with_name(_CANONICAL_NAMES_PATH.name + ".tmp")
+        tmp.write_text(json.dumps(clean, ensure_ascii=False, indent=2), encoding="utf-8")
+        os.replace(tmp, _CANONICAL_NAMES_PATH)
+    except Exception:  # noqa: BLE001
         pass
-    return dict(_CANONICAL_NAMES_DEFAULT)
+
+
+def _canonical_effective(canonical: dict) -> dict:
+    """English.lower() → 적용할 한국어 (**user 우선**, 없으면 auto). 둘 다 없으면 제외.
+    신 구조·옛 flat 모두 수용 (호출부 호환)."""
+    out: dict = {}
+    for k, v in canonical.items():
+        if not k:
+            continue
+        if isinstance(v, dict):
+            kor = (v.get("user") or v.get("auto") or "").strip()
+        else:
+            kor = str(v).strip()
+        if kor:
+            out[str(k).lower()] = kor
+    return out
+
+
+def _record_auto_spellings(auto_acc: dict, cache: dict, kind: str) -> None:
+    """캐시의 **교정 전 raw** 한국어 표기를 auto 누적 dict 에 모은다 (English → korean).
+    kind="entity": `{Eng: {korean}}`, kind="speaker": `{label: {english, korean}}`."""
+    if not cache:
+        return
+    if kind == "entity":
+        for eng, meta in cache.items():
+            if eng == "__speakers__" or not isinstance(meta, dict):
+                continue
+            kor = (meta.get("korean") or "").strip()
+            if eng.strip() and kor:
+                auto_acc[eng.strip()] = kor
+    else:  # speaker
+        for _label, meta in cache.items():
+            if not isinstance(meta, dict):
+                continue
+            eng = (meta.get("english") or "").strip()
+            kor = (meta.get("korean") or "").strip()
+            if eng and kor:
+                auto_acc[eng] = kor
+
+
+def _persist_auto_spellings(auto_acc: dict) -> None:
+    """누적된 auto 표기를 dict 파일에 병합 저장 — **auto 만 갱신, user 불변**."""
+    if not auto_acc:
+        return
+    try:
+        canonical = _load_canonical_names()
+        changed = False
+        for eng, kor in auto_acc.items():
+            entry = canonical.get(eng)
+            if entry is None:
+                canonical[eng] = {"auto": kor, "user": ""}
+                changed = True
+            elif entry.get("auto") != kor:
+                entry["auto"] = kor  # user 는 건드리지 않음
+                changed = True
+        if changed:
+            _save_canonical_names(canonical)
+    except Exception:  # noqa: BLE001 — best-effort
+        pass
 
 
 def _apply_canonical_to_entity_cache(entity_cache: dict, canonical: dict, log=None) -> int:
     """entity_cache `{English: {korean,...}}` 의 English key 가 통용 dict 에 있으면
-    korean 을 강제 교정 (대소문자 무시). dict 미수록 key 는 불변. 교정 건수 반환."""
+    korean 을 강제 교정 (user 우선, 대소문자 무시). dict 미수록 key 는 불변."""
     if not entity_cache or not canonical:
         return 0
-    lower = {k.lower(): v for k, v in canonical.items()}
+    lower = _canonical_effective(canonical)
     n = 0
     for eng, meta in entity_cache.items():
         if eng == "__speakers__" or not isinstance(meta, dict):
@@ -1672,10 +1766,10 @@ def _apply_canonical_to_entity_cache(entity_cache: dict, canonical: dict, log=No
 
 def _apply_canonical_to_speaker_cache(speaker_cache: dict, canonical: dict, log=None) -> int:
     """speaker_cache `{label: {english, korean}}` 의 english 가 통용 dict 에 있으면
-    korean 을 강제 교정. 화자 라벨이 본문 prefix 를 지배하므로 entity 와 함께 교정 필요."""
+    korean 을 강제 교정 (user 우선). 화자 라벨이 본문 prefix 를 지배하므로 함께 교정."""
     if not speaker_cache or not canonical:
         return 0
-    lower = {k.lower(): v for k, v in canonical.items()}
+    lower = _canonical_effective(canonical)
     n = 0
     for _label, meta in speaker_cache.items():
         if not isinstance(meta, dict):
@@ -1765,7 +1859,11 @@ def translate_transcript(
     #   chunk loop 전에 적용 → cache_block prepend + 화자 라벨이 교정된 표기로. 저장(아래)
     #   은 이 뒤라 디스크 캐시도 self-heal (옛 "팰머 러커이" → "팔머 럭키").
     canonical_names = _load_canonical_names() if config.enable_phase2 else {}
+    auto_acc: dict = {}  # English → 교정 전 raw 표기 (작업 끝에 auto 로 누적 저장)
     if config.enable_phase2:
+        # 자동 채움 — 교정 전 raw 표기를 먼저 캡처 (user 가 auto 로 덮이지 않게).
+        _record_auto_spellings(auto_acc, entity_cache, "entity")
+        _record_auto_spellings(auto_acc, speaker_cache, "speaker")
         _apply_canonical_to_entity_cache(entity_cache, canonical_names, log)
         _apply_canonical_to_speaker_cache(speaker_cache, canonical_names, log)
 
@@ -1805,11 +1903,18 @@ def translate_transcript(
                 added = {k: v for k, v in new_entities.items() if k not in entity_cache}
                 if added:
                     entity_cache.update(added)
+                    # 자동 채움 — chunk 신규 entity 의 raw 표기 캡처 (교정 전).
+                    _record_auto_spellings(auto_acc, added, "entity")
                     # A 보완 — chunk 신규 entity 도 통용 표기 교정.
                     _apply_canonical_to_entity_cache(added, canonical_names, log)
                     log(f"   📚 entity cache 갱신: +{len(added)}건 (누적 {len(entity_cache)}건)")
 
     log("✅ 번역 완료")
+
+    # A-2 ① — 자동 채움: 작업 중 본 고유명사의 raw 표기를 통용 dict 의 auto 로 누적 저장.
+    #   user 는 불변. ②편집 UI 가 auto 를 보여주고 사용자가 user 로 수정 → 다음 작업부터 적용.
+    if config.enable_phase2 and auto_acc:
+        _persist_auto_spellings(auto_acc)
 
     # B06 — 영상 처리 완료 시 entity_cache 디스크 저장 (spec §4.4).
     # cache key 는 video_id 우선, 부재 시 video_title hash fallback.

@@ -7,6 +7,19 @@
 
 ## [Unreleased]
 
+## [1.0.0.11] - 2026-05-26
+
+### Added
+- **통용 표기 dict auto/user 구조 + 자동 채움 (A-2 ①단계, 백엔드 토대)**. 인명 통용
+  표기를 GuruNote 가 채우고 사용자는 틀린 것만 고치는 방식의 토대:
+  - dict 구조 `{English: {"auto": GuruNote 자동 표기, "user": 사용자 수정}}` 로 확장.
+    옛 flat `{English: "한국어"}` 는 값을 **user 로 자동 마이그레이션** (사용자 초기값으로 간주).
+  - **자동 채움**: 작업 중 본 고유명사의 **교정 전 raw 표기**를 `auto` 로 누적 저장
+    (`~/.gurunote/canonical_names.json`). `user` 는 절대 덮지 않음.
+  - **교정은 user 우선** (`user` 있으면 user, 없으면 auto) — entity/speaker 캐시 모두.
+  - atomic 저장(`tmp → os.replace`). 기존 교정 동작·하위 호환(flat dict 전달) 보존.
+  - 편집 UI(②)·노트 리프레시(③)는 다음 단계. `tests/test_canonical_auto_user.py` 7건.
+
 ## [1.0.0.10] - 2026-05-26
 
 ### Fixed
@@ -1492,7 +1505,8 @@ bash run_desktop.sh
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v1.0.0.10...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v1.0.0.11...HEAD
+[1.0.0.11]: https://github.com/avlp12/GuruNote/compare/v1.0.0.10...v1.0.0.11
 [1.0.0.10]: https://github.com/avlp12/GuruNote/compare/v1.0.0.9...v1.0.0.10
 [1.0.0.9]: https://github.com/avlp12/GuruNote/compare/v1.0.0.8...v1.0.0.9
 [1.0.0.8]: https://github.com/avlp12/GuruNote/compare/v1.0.0.7...v1.0.0.8

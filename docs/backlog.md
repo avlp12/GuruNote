@@ -135,6 +135,11 @@
 - 검증: 임시 vault end-to-end — 표식 삽입/매칭 삭제/표식 없는 파일 보존/무관 job_id 안전(0)/중복 방지. `delete_history` 직접 호출은 실제 job 삭제라 미실행(분류기 차단 정상) — vault 측 `delete_from_vault` 독립 검증으로 대체.
 - 잔여(별도): 표식 없는 기존 vault 파일은 자동 삭제 대상 아님 (설계 의도). bridge `save_pdf` / `send_notion` 은 여전히 stub.
 
+### B21: 본문 연속 반복 라인 — 더듬거림 회귀 축약 — 완료 (v1.0.0.19)
+
+- 배경: 충실도 강화(v1.0.0.18) 후 노출 — STT 가 더듬거림을 여러 segment 로 끊고 1단계 자유 번역이 1 line 압축 → 2-pass 2단계 strict N개 강제가 같은 문장 반복 채움 (실측 최대 16회). 진단: 2-pass 구조적 한계(1단계 line ≪ N), 후처리는 검출만. C 옵션 채택(B 옵션 — 함수 내 축약은 zip 1:1 제약으로 불가, STOP 후 재조정).
+- 해결: `_collapse_repeated_lines` 신규 — 같은 화자+텍스트 3회+ 연속 & 10자+ 이면 첫 라인만. 짧은 발화/다른 화자/marker 보존. translate_transcript 본문 조립 직후(1-pass·2-pass 공통). 2-pass 로직·프롬프트·_post_process_two_pass_outputs·충실도 강화 전부 무변. 임계는 실데이터 분포 근거(긴 17건 vs 짧은 6건, 9자/10자 경계). tests 9건, 235 passed.
+
 ### B20: 본문 번역 충실도 — 충실 의역 전환 — 완료 (v1.0.0.18)
 
 - 배경: Rule 5 "자연스럽게 다듬어"가 의역 유발 + 환각/누락/영어 leak 방지 규칙 부재. 실측(드러켄밀러) — 자조농담 정반대 해석 + 환각 "(而非 문화적 정체)" + "which is what I am" 누락 + "관세는acceptable하며" 영어 leak. 진단: 2-pass 1단계 "자유 번역"이 발원지, 2단계는 정렬만이라 오류 보존.

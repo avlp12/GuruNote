@@ -7,6 +7,21 @@
 
 ## [Unreleased]
 
+## [1.0.0.19] - 2026-05-28
+
+### Fixed
+- **본문 연속 반복 라인 축약** — 충실도 강화(v1.0.0.18) 후 노출된 회귀 차단. 더듬거림
+  구간(예: "I'm not I'm not…")을 STT 가 여러 짧은 segment 로 끊고, 1단계 자유 번역이 한
+  문장으로 압축하면, 2-pass 2단계가 segment 수(strict schema)에 맞춰 **같은 문장을 반복으로
+  채우던** 문제 (실측 — 같은 화자가 동일 긴 문장 최대 16회 연속).
+  - `_collapse_repeated_lines` 신규 — 같은 화자 + 같은 텍스트가 **3회 이상 연속**이고
+    텍스트가 **10자 이상**이면 첫 라인만 남기고 제거 (timestamp 는 첫 라인 것).
+  - **보존**: 짧은 발화(네./맞습니다. < 10자, 횟수 무관)·다른 화자 동일 발화·marker
+    ([번역 누락]/[⚠ timeout]/음성 인식 오류). 임계는 실데이터(노트 반복 분포) 근거.
+  - 적용: `translate_transcript` 본문 조립 직후 (1-pass·2-pass 공통). 2-pass 로직·정렬/
+    freeform 프롬프트·`_post_process_two_pass_outputs`·충실도 강화 프롬프트 전부 무변.
+  - `tests/test_collapse_repeated_lines.py` 9건.
+
 ## [1.0.0.18] - 2026-05-28
 
 ### Changed
@@ -1602,7 +1617,8 @@ bash run_desktop.sh
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v1.0.0.18...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v1.0.0.19...HEAD
+[1.0.0.19]: https://github.com/avlp12/GuruNote/compare/v1.0.0.18...v1.0.0.19
 [1.0.0.18]: https://github.com/avlp12/GuruNote/compare/v1.0.0.17...v1.0.0.18
 [1.0.0.17]: https://github.com/avlp12/GuruNote/compare/v1.0.0.16...v1.0.0.17
 [1.0.0.16]: https://github.com/avlp12/GuruNote/compare/v1.0.0.15...v1.0.0.16

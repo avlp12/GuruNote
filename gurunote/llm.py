@@ -2080,6 +2080,9 @@ def translate_transcript(
     # 정규화 영역 부재 (chunk join 만으로 충분).
     normalized_parts = translated_parts
     result = "\n\n".join(normalized_parts).strip()
+    # C (5/28) — 본문 라인 레벨 연속 반복 축약 (더듬거림 구간을 2-pass 가 같은 문장으로
+    #   채우는 회귀 차단). 1-pass·2-pass 공통 조립 직후, 다른 후처리 전.
+    result = _collapse_repeated_lines(result, log)
     # Phase 3 — 한자/일본어 잔재 후처리 (Sub-path A → B → C).
     # Sub-path A 사전 lookup → 미적중 시 Sub-path B LLM 재매핑 → 그래도 잔재 시
     # Sub-path C 영문 원문 fallback. 본 단계로 한자/일본어 0건 보장.
@@ -2909,6 +2912,53 @@ def _strip_input_speaker_prefix(text: str) -> str:
         prefix strip 후 text. 매치 부재 시 원본 그대로.
     """
     return _SPEAKER_PREFIX_RE.sub("", text)
+
+
+# 본문 라인 레벨 연속 반복 축약 (C, 5/28) — 더듬거림 구간을 2-pass 2단계가 같은
+# 문장으로 채우는 회귀 차단. 같은 화자 + 같은 텍스트가 연속 N회+ 이고 텍스트가 충분히
+# 길면 첫 라인만 남긴다. 짧은 발화(네./맞습니다.)·다른 화자 동일 발화·marker 는 보존.
+_DEDUP_LINE_RE = re.compile(r"^(\[\d{1,2}:\d{2}(?::\d{2})?\])\s+([^:]+):\s*(.*)$", re.DOTALL)
+_DEDUP_MIN_LEN = 10   # 텍스트 길이 < 이 값이면 횟수 무관 보존 (짧은 동의/감사/단어연상)
+_DEDUP_MIN_RUN = 3    # 연속 동일 라인이 이 횟수 이상이면 축약
+_DEDUP_SKIP_PREFIXES = ("[번역 누락]", "[⚠", "(음성 인식 오류")
+
+
+def _collapse_repeated_lines(text: str, log: Optional[ProgressFn] = None) -> str:
+    """같은 화자 + 같은 텍스트가 `_DEDUP_MIN_RUN` 회 이상 연속이고 텍스트가
+    `_DEDUP_MIN_LEN` 자 이상이면 **첫 라인만 남기고 제거** (timestamp 는 첫 라인 것).
+
+    1-pass·2-pass 공통 본문 조립 직후 적용. 짧은 발화(네./맞습니다.)·다른 화자 동일
+    발화·marker([번역 누락]/[⚠ timeout]/음성 인식 오류) 는 보존 (실데이터 임계 근거).
+    """
+    parts = text.split("\n\n")
+    out: List[str] = []
+    collapsed = 0
+    i, n = 0, len(parts)
+    while i < n:
+        m = _DEDUP_LINE_RE.match(parts[i].strip())
+        if not m:
+            out.append(parts[i])
+            i += 1
+            continue
+        sp, tx = m.group(2).strip(), m.group(3).strip()
+        # 연속 동일 (화자+텍스트) 그룹 길이 측정
+        j = i + 1
+        while j < n:
+            mj = _DEDUP_LINE_RE.match(parts[j].strip())
+            if not mj or mj.group(2).strip() != sp or mj.group(3).strip() != tx:
+                break
+            j += 1
+        run = j - i
+        is_marker = any(tx.startswith(p) for p in _DEDUP_SKIP_PREFIXES)
+        if run >= _DEDUP_MIN_RUN and len(tx) >= _DEDUP_MIN_LEN and not is_marker:
+            out.append(parts[i])  # 첫 라인만 유지
+            collapsed += run - 1
+        else:
+            out.extend(parts[i:j])
+        i = j
+    if log and collapsed:
+        log(f"   🔧 연속 반복 라인 축약 — {collapsed}줄 제거 (더듬거림 회귀 차단)")
+    return "\n\n".join(out)
 
 
 def _post_process_two_pass_outputs(

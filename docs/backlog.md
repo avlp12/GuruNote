@@ -140,6 +140,7 @@
 - 배경: 원본 제목("Bonus: I Say Economy, You Say…with Stan Druckenmiller")이 있는데 내용 요약 제목("스타니슬라프 드루킨밀러: 금리·관세…") 생성 + 인명 오음차(Stan→스타니슬라프). 진단: ①METADATA 프롬프트가 "광고/불명확이면 새로 작성" 재량 → LLM 요약 ②제목은 extract_metadata 독립 LLM 출력이라 본문 entity dict 교정 우회.
 - 해결: METADATA organized_title 규칙 강화(원본 있으면 직역, 요약 대체 금지, 접두사·형식 살림). extract_metadata 가 youtube_title 유무로 직역/요약 신호 분기. `_correct_korean_in_annotations` 신규 — 제목 `한국어(English)` 병기의 영문 key 로 통용 dict 조회 → 한국어 강제(user 우선). 영문 병기 없으면 매칭 불가(프롬프트가 병기 요구). dict 미수록 불변. tests 7건, 226 passed.
 - 본문 translate_transcript/summarize 변경 없음.
+- **B18 후속 (v1.0.0.16) — 제목 구조 직역 강화**: v1.0.0.15 "직역"이 모호해 형식 뭉갠 의역(게임 형식 손실) 지속 → organized_title 규칙에 "구조·형식·문답·말장난 살림, 형식 뭉개기·요약 금지" 명시 + 좋은/나쁜 예 교체(기존 ✓ 예가 의역이라 잘못 유도하던 것 수정). 실측 — "I Say Economy, You Say…" 게임 문답 구조 보존 확인. 프롬프트 레벨이라 완벽 통제 아님(노트 편집 보완).
 
 ### B17: 제목·요약 한자/일본어 혼입 (Phase 3 우회 경로) — 완료 (v1.0.0.14)
 

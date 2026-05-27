@@ -7,6 +7,19 @@
 
 ## [Unreleased]
 
+## [1.0.0.16] - 2026-05-27
+
+### Changed
+- **제목 — 구조 직역 강화**. v1.0.0.15 의 "직역 우선" 이 모호해 LLM 이 형식을 뭉갠 의역
+  (예: "I Say Economy, You Say…" → "경제 단어 연상")을 내던 것을 교정:
+  - `METADATA_SYSTEM_PROMPT` organized_title 규칙에 **원문의 구조·형식·문답·말장난을 살려
+    직역** (형식 뭉개기·내용 요약 금지) 명시 + 좋은/나쁜 예 보강. (기존 "✓ 좋은 예" 가
+    오히려 형식 뭉갠 의역이라 LLM 을 잘못 유도하던 것을 구조 보존형으로 교체.)
+  - 실측 확인: "Bonus: I Say Economy, You Say…with Stan Druckenmiller" →
+    "보너스: 내가 '경제'라고 하면 당신은? — 스탠 드러켄밀러(Stan Druckenmiller)" (게임 문답 구조 보존).
+  - 인명 dict 교정·영문 병기·한자 후처리·youtube_title 유무 분기는 변경 없음. 프롬프트
+    레벨이라 완벽 통제는 아님 (가끔 노트 편집 보완).
+
 ## [1.0.0.15] - 2026-05-27
 
 ### Changed
@@ -1563,7 +1576,8 @@ bash run_desktop.sh
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v1.0.0.15...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v1.0.0.16...HEAD
+[1.0.0.16]: https://github.com/avlp12/GuruNote/compare/v1.0.0.15...v1.0.0.16
 [1.0.0.15]: https://github.com/avlp12/GuruNote/compare/v1.0.0.14...v1.0.0.15
 [1.0.0.14]: https://github.com/avlp12/GuruNote/compare/v1.0.0.13...v1.0.0.14
 [1.0.0.13]: https://github.com/avlp12/GuruNote/compare/v1.0.0.12...v1.0.0.13

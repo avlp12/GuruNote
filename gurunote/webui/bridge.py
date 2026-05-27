@@ -544,6 +544,34 @@ class Api:
         except Exception as exc:  # noqa: BLE001
             return self._err("CANONICAL_SAVE_FAILED", f"{type(exc).__name__}: {exc}")
 
+    def refresh_job_canonical(self, job_id: Any = None) -> dict:
+        """기존 노트의 통용 표기 새로고침 (A-2 ③) — auto 표기를 user 표기로 텍스트 치환.
+
+        번역 재실행 없이 완성된 result.md 의 문자열만 교체 (auto·user 둘 다 있는 항목).
+        ``get_job_markdown`` → ``refresh_canonical_in_markdown`` → ``update_job_markdown``.
+        변경 0 이면 저장 생략. 갱신된 markdown 을 함께 반환 (UI 재렌더용)."""
+        if isinstance(job_id, dict):
+            job_id = job_id.get("job_id")
+        if not isinstance(job_id, str) or not job_id:
+            return self._err("INVALID_ID", "job_id must be a non-empty string")
+        if "/" in job_id or "\\" in job_id or ".." in job_id:
+            return self._err("INVALID_ID", "job_id contains path separators")
+        try:
+            from gurunote.history import get_job_markdown, update_job_markdown  # noqa: PLC0415
+            from gurunote.llm import (  # noqa: PLC0415
+                _load_canonical_names,
+                refresh_canonical_in_markdown,
+            )
+            md = get_job_markdown(job_id)
+            if md is None:
+                return self._err("HISTORY_NOT_FOUND", f"no result.md for job {job_id}")
+            new_md, changed = refresh_canonical_in_markdown(md, _load_canonical_names())
+            if changed and new_md != md:
+                update_job_markdown(job_id, new_md)
+            return {"ok": True, "changed": changed, "markdown": new_md}
+        except Exception as exc:  # noqa: BLE001
+            return self._err("CANONICAL_REFRESH_FAILED", f"{type(exc).__name__}: {exc}")
+
     def save_settings(self, patch: dict) -> dict:
         """Persist a partial settings patch via gurunote.settings.save_settings.
 

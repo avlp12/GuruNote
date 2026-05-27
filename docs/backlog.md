@@ -142,7 +142,8 @@
   - **A 보완 (v1.0.0.10)**: 편집 가능 통용 dict `~/.gurunote/canonical_names.json` 신설. `entity_cache` + `speaker_cache` 한국어 표기를 dict 로 결정론적 강제 교정 (대소문자 무시, 미수록 불변). bootstrap(디스크 캐시 hit 포함) 직후 + chunk loop 전 적용 → cache_block·화자 라벨 교정 + 저장 시 디스크 캐시 self-heal. bootstrap 프롬프트에도 발음-우선 지시 추가. tests 7건. 198 passed. 실제 영상 재처리 최종 확인은 본인 GUI.
   - **A-2 ①단계 (v1.0.0.11) — auto/user 구조 + 자동 채움**: dict 구조 `{English:{auto,user}}` 확장 (옛 flat → user 마이그레이션). 작업 중 raw 표기를 auto 로 자동 누적 (user 불변), 교정은 user 우선. atomic 저장. tests 7건, 205 passed.
   - **A-2 ②단계 (편집 UI) — 완료 (v1.0.0.12)**: 설정 "고급"에 "통용 표기" 그룹 — `SettingsCanonicalNames` 컴포넌트 (영문 | auto 읽기전용 | user 입력 | 삭제, 추가 버튼, 전용 저장). bridge `get_canonical_names`/`save_canonical_names` 신규 (llm `_load`/`_save` 호출만, .env 와 별개 state·저장). 빈 항목 제외, 전부 삭제 가능. per-job 로드라 저장 즉시 반영. 205 passed, 라운드트립 검증.
-  - **A-2 ③단계 (노트 리프레시) — not_started**: 라이브러리 노트의 auto 표기를 user 로 텍스트 치환 (`str.replace` 2형태[공백/언더스코어] + `update_job_markdown`). 영어 원문 섹션은 한국어 문자열 부재로 자동 회피 — read-only 확인 결과 가능(쉬운~중간).
+  - **A-2 ③단계 (노트 리프레시) — 완료 (v1.0.0.13)**: `refresh_canonical_in_markdown` (auto·user 둘 다 있는 항목만, 일반+태그 언더스코어 2형태, 단일 패스 정규식으로 연쇄 치환 없음, 영어 원문 자동 무영향). bridge `refresh_job_canonical(job_id)` (get_job_markdown → 치환 → update_job_markdown, 변경 0 시 저장 생략). HistoryScreen 노트 상세 "표기 새로고침" 버튼 + 본문 재로드. tests 8건, 213 passed.
+  - **A-2 전체 완료** (①auto/user 구조+자동채움 v1.0.0.11 / ②편집 UI v1.0.0.12 / ③노트 리프레시 v1.0.0.13). 인명 품질 자동화 완결.
 - **B (영문 병기 오타) — 완료 (v1.0.0.7)**: `_correct_english_annotations` — `한국어(English)` 병기 영문을 소스(transcript 전문 + 제목)로 결정론적 검증. 정확히 있으면 케이싱 정규화 / 단일 토큰 오타는 보수적 최근접(difflib cutoff 0.84, 대소문자 무시) 교정 / 근거 없으면 병기 생략. 적용: 번역 본문(translate_transcript) + organized_title(extract_metadata, entity_cache 미참조라 별도). LLM 무관 순수 함수, 한국어 음차·화자·timestamp 불변. tests 8건. end-to-end — 팔머 럭키/릭 리더(A) + Anduril 정확/Danduril 0(B) 동시 확인. 실제 영상 최종 확인은 본인 GUI.
 
 ### B16: 설정 화면 처리 옵션 + 자동 내보내기 토글

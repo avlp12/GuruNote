@@ -1784,6 +1784,46 @@ def _apply_canonical_to_speaker_cache(speaker_cache: dict, canonical: dict, log=
     return n
 
 
+def refresh_canonical_in_markdown(md: str, canonical: dict) -> tuple:
+    """완성된 노트(md)에서 auto 표기를 user 표기로 텍스트 치환 (A-2 ③ 리프레시).
+
+    - **auto·user 둘 다 있고 서로 다른 항목만** 대상 (옛 auto 표기를 user 로 교체).
+      user 만/auto 만인 항목은 바꿀 옛 표기가 없어 skip.
+    - 일반형(`팰머 러커이`) + 태그 언더스코어형(`팰머_러커이`) 둘 다 치환.
+    - **단일 패스 정규식**(긴 패턴 우선)으로 치환 — 삽입된 user 텍스트를 재검색하지 않아
+      연쇄 치환이 일어나지 않는다. auto 가 한국어라 영어 원문 섹션은 자동 무영향.
+
+    Returns: (new_md, 바뀐 항목 수).
+    """
+    if not md or not canonical:
+        return md, 0
+    repl_map: dict = {}
+    matched_autos: set = set()
+    for v in canonical.values():
+        if not isinstance(v, dict):
+            continue
+        auto = (v.get("auto") or "").strip()
+        user = (v.get("user") or "").strip()
+        if not (auto and user and auto != user):
+            continue
+        # 일반형
+        if auto in md:
+            repl_map[auto] = user
+            matched_autos.add(auto)
+        # 태그 언더스코어형
+        auto_tag, user_tag = auto.replace(" ", "_"), user.replace(" ", "_")
+        if auto_tag != auto and auto_tag in md:
+            repl_map[auto_tag] = user_tag
+            matched_autos.add(auto)
+    if not repl_map:
+        return md, 0
+    # 긴 검색어 우선 (substring 항목이 더 긴 항목 안에서 잘못 잡히는 것 방지).
+    keys = sorted(repl_map, key=len, reverse=True)
+    pattern = re.compile("|".join(re.escape(k) for k in keys))
+    new_md = pattern.sub(lambda m: repl_map[m.group(0)], md)
+    return new_md, len(matched_autos)
+
+
 def translate_transcript(
     transcript: Transcript,
     config: Optional[LLMConfig] = None,

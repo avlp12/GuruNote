@@ -7,6 +7,20 @@
 
 ## [Unreleased]
 
+## [1.0.0.13] - 2026-05-27
+
+### Added
+- **노트 통용 표기 새로고침 (A-2 ③단계)** — 노트 상세의 "표기 새로고침" 버튼으로
+  이미 만든 노트의 옛 인명 표기(auto)를 수정 표기(user)로 **텍스트 치환**. 번역 LLM
+  재실행 없이 완성된 `result.md` 의 문자열만 교체:
+  - `refresh_canonical_in_markdown` — auto·user 둘 다 있는 항목만 대상. 일반형 +
+    태그 언더스코어형(`팰머_러커이`) 둘 다. **단일 패스 정규식**(긴 패턴 우선)이라 연쇄
+    치환 없음. auto 가 한국어라 **영어 원문 섹션·영문 병기는 자동 무영향**.
+  - bridge `refresh_job_canonical(job_id)` — `get_job_markdown` → 치환 →
+    `update_job_markdown`. 변경 0 이면 저장 생략. 갱신 markdown 반환(UI 재렌더).
+  - HistoryScreen 노트 상세에 버튼 + 갱신 후 본문 자동 재로드. `tests/test_canonical_refresh.py` 8건.
+  - 이로써 인명 품질 자동화(A-2: auto/user 구조 → 자동 채움 → 편집 UI → 노트 리프레시) 완결.
+
 ## [1.0.0.12] - 2026-05-27
 
 ### Added
@@ -1518,7 +1532,8 @@ bash run_desktop.sh
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v1.0.0.12...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v1.0.0.13...HEAD
+[1.0.0.13]: https://github.com/avlp12/GuruNote/compare/v1.0.0.12...v1.0.0.13
 [1.0.0.12]: https://github.com/avlp12/GuruNote/compare/v1.0.0.11...v1.0.0.12
 [1.0.0.11]: https://github.com/avlp12/GuruNote/compare/v1.0.0.10...v1.0.0.11
 [1.0.0.10]: https://github.com/avlp12/GuruNote/compare/v1.0.0.9...v1.0.0.10

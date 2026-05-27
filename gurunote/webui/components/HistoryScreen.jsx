@@ -113,6 +113,27 @@ async function historyExportObsidian(item) {
   }
 }
 
+/* 통용 표기 새로고침 (A-2 ③) — 기존 노트의 auto 표기를 user 표기로 텍스트 치환.
+   bridge.refresh_job_canonical 호출. 갱신 markdown 을 반환해 호출부가 화면 재로드 판단. */
+async function historyRefreshCanonical(jobId) {
+  if (!jobId) return null;
+  try {
+    const r = await window.pywebview?.api?.refresh_job_canonical(jobId);
+    if (r?.ok) {
+      if (r.changed > 0) {
+        window.showToast?.(`통용 표기 ${r.changed}개 갱신됨`, 'success');
+      } else {
+        window.showToast?.('갱신할 표기 없음 (이미 최신)', 'info');
+      }
+      return r;
+    }
+    window.showToast?.(`새로고침 실패: ${r?.error || '알 수 없는 오류'}`, 'error');
+  } catch (e) {
+    window.showToast?.(`새로고침 오류: ${e.message || e}`, 'error');
+  }
+  return null;
+}
+
 /* === Search helpers (Phase 2B-3b) === */
 function useDebounced(value, delay) {
   const [debouncedValue, setDebouncedValue] = useState(value);
@@ -432,6 +453,8 @@ function DetailPanel({ item, onClose, onEdit, onOpenRelated }) {
   const [detail, setDetail] = useState(null);
   const [logText, setLogText] = useState('');
   const [detailLoading, setDetailLoading] = useState(false);
+  // A-2 ③ — 통용 표기 새로고침 후 본문 재로드 트리거.
+  const [detailReloadKey, setDetailReloadKey] = useState(0);
   useEffect(() => {
     if (!item?.job_id) {
       setDetail(null);
@@ -460,7 +483,14 @@ function DetailPanel({ item, onClose, onEdit, onOpenRelated }) {
       }
     })();
     return () => { cancelled = true; };
-  }, [item?.job_id]);
+  }, [item?.job_id, detailReloadKey]);
+
+  // A-2 ③ — 통용 표기 새로고침: auto→user 텍스트 치환 후 본문 재로드.
+  const handleRefreshCanonical = async () => {
+    if (!item?.job_id) return;
+    const r = await historyRefreshCanonical(item.job_id);
+    if (r?.ok && r.changed > 0) setDetailReloadKey((k) => k + 1);
+  };
 
   // B12: 연관 노트 (의미 검색) — 버튼 클릭 시 현재 노트 본문으로 top-K 유사 검색.
   const [related, setRelated] = useState({ open: false, loading: false, results: null, error: '' });
@@ -610,6 +640,10 @@ function DetailPanel({ item, onClose, onEdit, onOpenRelated }) {
           <button type="button" className="btn btn--ghost" onClick={() => historyExportObsidian(item)}>
             <span className="msi">hub</span>
             Obsidian
+          </button>
+          <button type="button" className="btn btn--ghost" onClick={handleRefreshCanonical} title="통용 표기(인명) 수정을 이 노트에 반영">
+            <span className="msi">sync</span>
+            표기 새로고침
           </button>
           <button type="button" className="btn btn--ghost" onClick={handleRelated} disabled={related.loading}>
             <span className="msi">device_hub</span>

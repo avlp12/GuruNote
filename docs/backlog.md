@@ -135,6 +135,12 @@
 - 검증: 임시 vault end-to-end — 표식 삽입/매칭 삭제/표식 없는 파일 보존/무관 job_id 안전(0)/중복 방지. `delete_history` 직접 호출은 실제 job 삭제라 미실행(분류기 차단 정상) — vault 측 `delete_from_vault` 독립 검증으로 대체.
 - 잔여(별도): 표식 없는 기존 vault 파일은 자동 삭제 대상 아님 (설계 의도). bridge `save_pdf` / `send_notion` 은 여전히 stub.
 
+### B18: 제목 품질 — 원본 직역 우선 + 인명 통용 표기 — 완료 (v1.0.0.15)
+
+- 배경: 원본 제목("Bonus: I Say Economy, You Say…with Stan Druckenmiller")이 있는데 내용 요약 제목("스타니슬라프 드루킨밀러: 금리·관세…") 생성 + 인명 오음차(Stan→스타니슬라프). 진단: ①METADATA 프롬프트가 "광고/불명확이면 새로 작성" 재량 → LLM 요약 ②제목은 extract_metadata 독립 LLM 출력이라 본문 entity dict 교정 우회.
+- 해결: METADATA organized_title 규칙 강화(원본 있으면 직역, 요약 대체 금지, 접두사·형식 살림). extract_metadata 가 youtube_title 유무로 직역/요약 신호 분기. `_correct_korean_in_annotations` 신규 — 제목 `한국어(English)` 병기의 영문 key 로 통용 dict 조회 → 한국어 강제(user 우선). 영문 병기 없으면 매칭 불가(프롬프트가 병기 요구). dict 미수록 불변. tests 7건, 226 passed.
+- 본문 translate_transcript/summarize 변경 없음.
+
 ### B17: 제목·요약 한자/일본어 혼입 (Phase 3 우회 경로) — 완료 (v1.0.0.14)
 
 - 배경: 한자 후처리(`post_process_cjk`)가 본문(translate_transcript:1988)에만 적용, 제목(`extract_metadata`)·요약(`summarize_translation`)은 우회. 실측 4건 leak — 직격谈话(간체) 제목 2건 + 設計/評価 요약 2건. 프롬프트에 한자 금지 룰 있어도 확률적 누출, cjk_lookup.yaml 에 해당 글자 없었음.

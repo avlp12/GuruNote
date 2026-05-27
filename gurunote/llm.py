@@ -1141,6 +1141,37 @@ def _correct_english_annotations(
     return out
 
 
+# `한국어 인명(English Name)` 병기 — 한국어 부분 + 영문 부분 둘 다 캡처.
+# 한국어 인명 = `(` 직전의 한글 단어 run (공백/가운뎃점 연결). 콜론·기타 문자는 경계.
+_KOREAN_ANNOT_RE = re.compile(
+    r"([가-힣]+(?:[ ·][가-힣]+)*)\(([A-Za-z][A-Za-z\s.\-']*)\)"
+)
+
+
+def _correct_korean_in_annotations(text: str, canonical: dict) -> str:
+    """`한국어(English)` 병기에서 **English key 가 통용 dict 에 있으면 한국어를 dict 표기로
+    강제 교정** (제목용). LLM 이 인명을 오음차해도(예: 스타니슬라프 드루킨밀러(Stan
+    Druckenmiller)) 영문 원어로 dict 조회 → 통용 표기(스탠 드러켄밀러)로 교체.
+
+    `_correct_english_annotations`(영문 철자 검증)와 방향이 반대 — 이쪽은 한국어를 고친다.
+    dict 미수록 영문은 불변 (과교정 부재). 영문 병기 없는 인명은 매칭 불가 → 그대로.
+    """
+    if not text or not canonical:
+        return text
+    eff = _canonical_effective(canonical)  # {english.lower(): 통용 한국어}
+    if not eff:
+        return text
+
+    def _repl(m: "re.Match") -> str:
+        korean, english = m.group(1), m.group(2)
+        canon = eff.get(english.strip().lower())
+        if canon and canon != korean:
+            return f"{canon}({english})"
+        return m.group(0)
+
+    return _KOREAN_ANNOT_RE.sub(_repl, text)
+
+
 def _extract_entities(translated_chunk: str) -> dict:
     """chunk 출력의 speaker line prefix 에서 entity 추출.
 
@@ -2149,8 +2180,13 @@ METADATA_SYSTEM_PROMPT = """당신은 IT/AI 컨텐츠 큐레이터입니다.
 
 추출 항목:
 1. organized_title: 사람이 보기 쉬운 한국어 제목 (60자 이내)
-   - ★ 우선순위: 원본 영상 제목이 충분히 명확하면 그대로 사용 또는 단순 한국어 번역.
-   - 영어/너무 김/광고문구 포함되어 있으면 핵심 주제로 새로 작성.
+   - ★★ 원본 영상 제목이 주어지면 (영상 메타의 '제목' 이 비어있지 않으면) → **원본 제목을
+     그대로 한국어로 직역**한다. 접두사(예: "Bonus:")·부제·게임/코너 형식도 **살려서 번역**
+     (사용자가 원본 맥락을 알고 있음). **내용 요약 제목으로 대체 절대 금지.**
+     예) "Bonus: I Say Economy, You Say…with Stan Druckenmiller"
+        → "보너스: 경제 단어 연상 — 스탠 드러켄밀러(Stan Druckenmiller)" (직역 + 인명 병기) ✓
+        → "스탠 드러켄밀러: 금리·관세·달러 전망" (내용 요약) ✗ 금지
+   - 원본 제목이 **비어있을 때만** (메타에 제목 부재) → 인물·주제 중심으로 새로 작성.
    - ★ title 등장 인물 룰 (Layer 15 fix-up #1 — hallucination 차단):
      * 영상의 실제 화자 + 영상의 핵심 주제만 포함.
      * 본문에서 단순 인용된 인물 (키노트 발표자, 언급된 학자, 화자가 인용한
@@ -2225,9 +2261,21 @@ def extract_metadata(
         f"\n원본 YouTube 태그: {', '.join(youtube_tags[:15])}" if youtube_tags else ""
     )
 
+    # 제목 지시 분기 — 원본 제목 유무에 따라 직역/요약 신호 명시.
+    if youtube_title.strip():
+        title_directive = (
+            f"- 제목: {youtube_title}\n"
+            f"  → organized_title: **위 원본 제목을 직역**하라 (접두사·형식 살림, 내용 요약 금지). "
+            f"인명은 첫 등장 영문 병기 `한국어(English)` 필수.\n"
+        )
+    else:
+        title_directive = (
+            "- 제목: (원본 제목 부재)\n"
+            "  → organized_title: 인물·주제 중심으로 새로 작성하라.\n"
+        )
     user = (
         f"### 영상 메타\n"
-        f"- 제목: {youtube_title}\n"
+        f"{title_directive}"
         f"- 업로더: {uploader}{youtube_tag_block}\n\n"
         f"### 한국어 번역 발췌\n{excerpt}\n"
     )
@@ -2250,6 +2298,11 @@ def extract_metadata(
             title_corpus = f"{youtube_title} {translated_text}"
             meta["organized_title"] = _correct_english_annotations(
                 meta["organized_title"], title_corpus
+            )
+            # 제목 품질 — 인명 병기의 영문 key 로 통용 dict 조회 → 한국어 강제 교정
+            #   (LLM 오음차 "스타니슬라프 드루킨밀러(Stan Druckenmiller)" → "스탠 드러켄밀러").
+            meta["organized_title"] = _correct_korean_in_annotations(
+                meta["organized_title"], _load_canonical_names()
             )
         # Phase 3 보완 — 제목/분야/태그 한자·일본어 후처리 (segment-less A+B).
         if meta.get("organized_title"):

@@ -7,6 +7,23 @@
 
 ## [Unreleased]
 
+## [1.0.0.15] - 2026-05-27
+
+### Changed
+- **제목 — 원본 영상 제목이 있으면 직역 우선** (내용 요약 제목 생성 금지). 그동안 프롬프트가
+  "광고/불명확이면 새로 작성" 재량을 줘 원본이 있어도 내용 요약 제목(예: "스타니슬라프
+  드루킨밀러: 금리·관세…")이 나오던 것을 교정:
+  - `METADATA_SYSTEM_PROMPT` organized_title 규칙 강화 — 원본 제목 있으면 접두사("Bonus:")·
+    게임/코너 형식까지 살려 직역, **요약 제목 대체 금지**. 원본 부재 시에만 인물·주제 요약.
+  - `extract_metadata` 가 `youtube_title` 유무로 user 프롬프트에 직역/요약 신호를 명시 분기.
+
+### Fixed
+- **제목 인명 통용 표기 불일치** (예: Stan → "스타니슬라프 드루킨밀러"). 제목은
+  `extract_metadata` 의 독립 LLM 출력이라 본문 entity dict 교정을 안 거쳐 인명이 매 작업
+  달랐음. `_correct_korean_in_annotations` 신규 — `한국어(English)` 병기의 **영문 key 로
+  통용 dict 조회 → 한국어를 통용 표기로 강제** (user 우선). LLM 오음차여도 영문 원어로 복원,
+  dict 미수록·병기 없는 인명은 불변. `tests/test_title_korean_correction.py` 7건.
+
 ## [1.0.0.14] - 2026-05-27
 
 ### Fixed
@@ -1546,7 +1563,8 @@ bash run_desktop.sh
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v1.0.0.14...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v1.0.0.15...HEAD
+[1.0.0.15]: https://github.com/avlp12/GuruNote/compare/v1.0.0.14...v1.0.0.15
 [1.0.0.14]: https://github.com/avlp12/GuruNote/compare/v1.0.0.13...v1.0.0.14
 [1.0.0.13]: https://github.com/avlp12/GuruNote/compare/v1.0.0.12...v1.0.0.13
 [1.0.0.12]: https://github.com/avlp12/GuruNote/compare/v1.0.0.11...v1.0.0.12

@@ -129,8 +129,10 @@ TRANSLATION_SYSTEM_PROMPT = """\
 4. LLM, RAG, Fine-tuning, Transformer, Embedding, Inference, Diffusion 등
    IT/AI 전문 용어는 직역하지 말고 영문을 병기하거나 업계 통용어로 자연스럽게
    번역해. (예: "파인튜닝(Fine-tuning)", "검색 증강 생성(RAG)")
-5. "you know", "I mean", "kind of", "like" 같은 구어체 추임새는 빼고,
-   가독성 높은 자연스러운 한국어 인터뷰 톤으로 다듬어.
+5. 원문의 모든 절·정보를 한국어로 빠짐없이 옮긴다. 추임새(you know, I mean, like,
+   kind of, sort of 등)와 군더더기 반복만 정리하고, 의미를 담은 절은 절대 생략하지
+   않는다. 한국어 어순·표현으로 자연스럽게 재구성하되, 원문에 없는 내용 추가나 의미
+   축약은 금지.
 6. 출력은 오직 번역된 스크립트만. 설명/머리말/끝맺음 문장 금지.
 7. **"### 영상 컨텍스트" 섹션은 화자/챕터 추론용 참고 메타데이터일 뿐 — 출력에
    그대로 포함하지 마. 컨텍스트의 제목/채널/게시일/태그/챕터/자막 발췌 등을
@@ -230,6 +232,28 @@ TRANSLATION_SYSTEM_PROMPT = """\
     - dict 영역 entity 의 두 번째 이후 등장 시 영문 병기 부재 (이전 chunk 에서
       이미 첫 등장 병기 완료 가정).
     - dict 외부의 신규 entity 는 Rule 10 통용 표기 + Rule 2 첫 등장 영문 병기 정합.
+13. **환각 금지** — 원문에 없는 표현·내용·중국어식 한자어 대조구(예: 而非, 不過)·임의의
+    부연 설명을 추가하지 않는다. 번역 결과의 모든 문장은 원문에 대응이 있어야 한다.
+14. **누락 금지** — 자조·관용·삽입절(특히 'which is what I am', 'you know what I mean'
+    같은 자기 지칭/부연 절)을 빠짐없이 옮긴다. 추임새와 의미 있는 삽입절을 혼동하지 않는다.
+15. **영어 단어 미번역 금지** — 영어 단어를 한국어 문장에 그대로 두지 않는다. 단 예외:
+    영문 병기 '한국어(English)', 약어(AI, GPU, HBM, ETF 등), 모델/제품명(GPT, ChatGPT,
+    Claude 등), 회사명. 일반 영단어(acceptable, reasonable, fine 등)는 반드시 한국어로 옮긴다.
+
+## 충실 의역 — 좋은 예 / 나쁜 예
+
+원문: 'As an American who likes innovation and who likes action as opposed to being a cultural idiot, which is what I am, I'm not big on the euro.'
+
+✓ 좋은 예 (충실): '혁신과 행동을 좋아하는 미국인으로서 — 저는 문화적으로는 바보이긴 하지만요 — 유로에는 큰 관심이 없어요.'
+- 'as opposed to being a cultural idiot'(자조 농담)을 직역, 'which is what I am'(자기 지칭) 살림, 한국어 어순 자연스러움
+✗ 나쁜 예 (환각·누락·정반대 해석): '혁신과 행동을 선호하는 문화적 무지(而非 문화적 정체)를 택하는 것보다 낫다고 생각하는 미국인으로서, 저는 유로화에 크게 관심이 없어요.'
+- 而非는 원문에 없는 환각, 'which is what I am' 누락, 자조 농담을 정반대로 뒤집음
+
+원문: '10% or less tariffs are acceptable as a consumption tax to curb overconsumption.'
+
+✓ 좋은 예: '10% 이하의 관세는 과소비를 억제하는 소비세로 용인할 수 있다.'
+✗ 나쁜 예: '10% 이하 관세는acceptable하며...'
+- 일반 영단어(acceptable)를 한국어로 옮기지 않고 띄어쓰기까지 붙음
 """ + _SHARED_LANG_RULES
 
 
@@ -2545,7 +2569,7 @@ def _build_freeform_translation_prompt(inputs: list, context: str) -> str:
 
 다음 {len(inputs)}개 segment 본문을 한국어로 번역하라:
 
-1. 형식 제약 부재 — 자유롭게 자연스러운 한국어로 번역.
+1. 형식 제약 부재. 원문의 모든 절·정보를 빠짐없이 충실하게 한국어로 옮기되, 한국어로 자연스럽게 재구성. 환각·누락·일반 영어 leak 금지.
 2. **각 segment 를 빈 줄 (`\\n\\n`) 로 구분하여 정확히 {len(inputs)}개 출력**.
 3. **화자 라벨 출력 절대 부재** — 입력에 화자 prefix 부재, 출력도 화자 부재.
    본문 한국어 번역만 출력 (예: "안녕하세요. 오늘은…" 형식, "이름: 본문" 형식 절대 부재).

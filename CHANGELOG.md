@@ -7,6 +7,22 @@
 
 ## [Unreleased]
 
+## [1.0.0.18] - 2026-05-28
+
+### Changed
+- **본문 번역 — 충실 의역 전환** (환각·누락·영어 leak 차단). 기존 Rule 5 "자연스럽게
+  다듬어" 가 의역을 유발하고 환각/누락 방지 규칙이 없어, 실측에서 자조 농담의 정반대
+  해석 + 원문에 없는 한자 대조구 "(而非 문화적 정체)" 환각 + "which is what I am" 절 누락 +
+  "관세는acceptable하며" 영어 leak 발생:
+  - `TRANSLATION_SYSTEM_PROMPT` Rule 5 재구성 — "원문의 모든 절·정보를 빠짐없이 옮기고,
+    추임새·군더더기만 정리, 자연스럽게 재구성하되 추가·축약 금지".
+  - Rule 13(환각 금지)·14(누락 금지 — 자조·삽입절)·15(일반 영어 단어 미번역 금지, 병기/
+    약어/모델명 예외) 신규. 충실 의역 좋은 예/나쁜 예(드러켄밀러·acceptable 실측) 추가.
+  - 2-pass 1단계 자유 번역 문구를 "충실 번역(환각·누락·영어 leak 금지)" 으로 교체.
+  - 프롬프트 문구만 — 본문/2-pass 로직·후처리·요약/제목 프롬프트 무변. 실측 확인 —
+    자조 농담 보존 + 而非 0 + acceptable→"용인할 수 있다".
+  - 한계: 관용표현 이해는 모델 능력이라 새 패턴은 또 빠질 수 있음 (큰 방향 개선, 완벽 통제 아님).
+
 ## [1.0.0.17] - 2026-05-28
 
 ### Added
@@ -1586,7 +1602,8 @@ bash run_desktop.sh
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v1.0.0.17...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v1.0.0.18...HEAD
+[1.0.0.18]: https://github.com/avlp12/GuruNote/compare/v1.0.0.17...v1.0.0.18
 [1.0.0.17]: https://github.com/avlp12/GuruNote/compare/v1.0.0.16...v1.0.0.17
 [1.0.0.16]: https://github.com/avlp12/GuruNote/compare/v1.0.0.15...v1.0.0.16
 [1.0.0.15]: https://github.com/avlp12/GuruNote/compare/v1.0.0.14...v1.0.0.15

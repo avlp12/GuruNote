@@ -135,6 +135,11 @@
 - 검증: 임시 vault end-to-end — 표식 삽입/매칭 삭제/표식 없는 파일 보존/무관 job_id 안전(0)/중복 방지. `delete_history` 직접 호출은 실제 job 삭제라 미실행(분류기 차단 정상) — vault 측 `delete_from_vault` 독립 검증으로 대체.
 - 잔여(별도): 표식 없는 기존 vault 파일은 자동 삭제 대상 아님 (설계 의도). bridge `save_pdf` / `send_notion` 은 여전히 stub.
 
+### B17: 제목·요약 한자/일본어 혼입 (Phase 3 우회 경로) — 완료 (v1.0.0.14)
+
+- 배경: 한자 후처리(`post_process_cjk`)가 본문(translate_transcript:1988)에만 적용, 제목(`extract_metadata`)·요약(`summarize_translation`)은 우회. 실측 4건 leak — 직격谈话(간체) 제목 2건 + 設計/評価 요약 2건. 프롬프트에 한자 금지 룰 있어도 확률적 누출, cjk_lookup.yaml 에 해당 글자 없었음.
+- 해결: `post_process_cjk_text` 신규 (Sub-path A 사전 + B LLM 재매핑, **C 영문 fallback 제외** = segment-less). `summarize_translation` 반환 + `extract_metadata` organized_title/field/tags 에 배선. 본문 post_process_cjk 무변(회귀 방지). cjk_lookup.yaml 에 谈话→담화/設計→설계/評価→평가 보강. A·B 후 잔존 한자는 그대로(노트 편집 보정). tests 6건, 219 passed.
+
 ### B15: 인명/고유명사 번역 품질 — 통용 표기 + 영문 병기 오타
 
 - 배경: 통용 표기 dict 미수록 인명을 LLM 이 외래어 규칙으로 철자 추정 → 통용과 어긋남 (팰머 러커이/리크 리더). entity_cache 가 첫 표기를 고정해 "일관되게 틀림". 별개로 영문 병기 철자 오염 (Anduril→Danduril, 제목 포함).

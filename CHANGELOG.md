@@ -7,6 +7,20 @@
 
 ## [Unreleased]
 
+## [1.0.0.14] - 2026-05-27
+
+### Fixed
+- **제목·요약 한자/일본어 혼입 차단 (Phase 3 보완)**. 한자 후처리가 본문(전체
+  스크립트)에만 적용되고 제목(`extract_metadata`)·요약(`summarize_translation`,
+  인사이트/타임라인)은 우회해, 실측에서 `직격谈话`(간체)·`設計`·`評価`(요약) 4건 leak.
+  - `post_process_cjk_text` 신규 — 본문 후처리의 Sub-path A(사전)+B(LLM 재매핑) 골격
+    재사용, **Sub-path C(영문 fallback, segment 의존)는 제외**한 segment-less 변형.
+    A·B 후에도 남는 한자는 그대로 둠 (드묾 — 노트 편집으로 보정).
+  - `summarize_translation` 반환 + `extract_metadata` 의 organized_title/field/tags 에 배선.
+    본문 `post_process_cjk`(translate_transcript)는 변경 없음 (회귀 방지).
+  - `cjk_lookup.yaml` 보강: 谈话→담화, 設計→설계, 評価→평가 등 (Sub-path A 결정론 적중).
+  - `tests/test_cjk_text_postprocess.py` 6건. 한자 없는 정상 텍스트는 무동작(과처리 부재).
+
 ## [1.0.0.13] - 2026-05-27
 
 ### Added
@@ -1532,7 +1546,8 @@ bash run_desktop.sh
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v1.0.0.13...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v1.0.0.14...HEAD
+[1.0.0.14]: https://github.com/avlp12/GuruNote/compare/v1.0.0.13...v1.0.0.14
 [1.0.0.13]: https://github.com/avlp12/GuruNote/compare/v1.0.0.12...v1.0.0.13
 [1.0.0.12]: https://github.com/avlp12/GuruNote/compare/v1.0.0.11...v1.0.0.12
 [1.0.0.11]: https://github.com/avlp12/GuruNote/compare/v1.0.0.10...v1.0.0.11

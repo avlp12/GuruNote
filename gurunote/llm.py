@@ -847,6 +847,49 @@ def post_process_cjk(
     return "\n\n".join(processed)
 
 
+def post_process_cjk_text(
+    text: str,
+    config: "LLMConfig",
+    log: Optional[ProgressFn] = None,
+) -> str:
+    """segment 없는 텍스트(제목·요약)용 CJK 후처리 — Sub-path A 사전 + B LLM 재매핑.
+
+    본문 ``post_process_cjk`` 와 같은 A/B 골격을 재사용하되, **Sub-path C(영문 fallback)
+    는 제외** — 제목·요약은 segment timestamp 매핑이 없기 때문. A·B 후에도 남는 한자는
+    그대로 둔다 (드묾 — 사용자 노트 편집으로 보정; 비우거나 추가 재요청 안 함).
+
+    한자 없으면 즉시 반환 (비용 0). 본문 후처리(``post_process_cjk``)는 건드리지 않는다.
+    """
+    if not text or not _detect_cjk_outside_brackets(text):
+        return text
+    log_fn = log or (lambda _msg: None)
+    lookup = _load_cjk_lookup()
+    a_hits = 0
+    b_hits = 0
+    out: List[str] = []
+    for part in text.split("\n\n"):
+        if not _detect_cjk_outside_brackets(part):
+            out.append(part)
+            continue
+        # Sub-path A — 사전 lookup
+        after_a = _apply_cjk_dict_lookup(part, lookup)
+        if not _detect_cjk_outside_brackets(after_a):
+            a_hits += 1
+            out.append(after_a)
+            continue
+        # Sub-path B — LLM 재매핑 (성공 시 clean, 실패 시 None)
+        after_b = _llm_remap_cjk(after_a, config, max_retries=3)
+        if after_b is not None:
+            b_hits += 1
+            out.append(after_b)
+            continue
+        # Sub-path C 제외 — A 적용본(최선) 유지, 잔재는 그대로
+        out.append(after_a)
+    if log and (a_hits or b_hits):
+        log_fn(f"   🔧 CJK 후처리(제목·요약) — Sub-A {a_hits}건, Sub-B {b_hits}건")
+    return "\n\n".join(out)
+
+
 def _detect_unexpected_changes(
     original: str,
     canonical: str,
@@ -2076,21 +2119,25 @@ def summarize_translation(
         )
         log("📝 부분 요약 통합 중…")
         _check_stop()
-        return _call_llm(
+        merged = _call_llm(
             config,
             system=system,
             user=merged_user,
             max_tokens=config.summary_max_tokens or SUMMARY_MAX_TOKENS,
         ).strip()
+        # Phase 3 보완 — 요약 섹션 한자/일본어 후처리 (segment-less A+B).
+        return post_process_cjk_text(merged, config, log)
 
     log("📝 GuruNote 요약본 생성 중…")
     _check_stop()
-    return _call_llm(
+    summary = _call_llm(
         config,
         system=system,
         user=translated_text,
         max_tokens=config.summary_max_tokens or SUMMARY_MAX_TOKENS,
     ).strip()
+    # Phase 3 보완 — 요약 섹션 한자/일본어 후처리 (segment-less A+B).
+    return post_process_cjk_text(summary, config, log)
 
 
 # =============================================================================
@@ -2204,6 +2251,13 @@ def extract_metadata(
             meta["organized_title"] = _correct_english_annotations(
                 meta["organized_title"], title_corpus
             )
+        # Phase 3 보완 — 제목/분야/태그 한자·일본어 후처리 (segment-less A+B).
+        if meta.get("organized_title"):
+            meta["organized_title"] = post_process_cjk_text(meta["organized_title"], config, log)
+        if meta.get("field"):
+            meta["field"] = post_process_cjk_text(meta["field"], config, log)
+        if meta.get("tags"):
+            meta["tags"] = [post_process_cjk_text(t, config, log) for t in meta["tags"]]
         return meta
     except Exception as exc:  # noqa: BLE001
         log(f"  메타데이터 추출 실패 (무시하고 계속): {exc}")

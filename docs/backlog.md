@@ -135,6 +135,11 @@
 - 검증: 임시 vault end-to-end — 표식 삽입/매칭 삭제/표식 없는 파일 보존/무관 job_id 안전(0)/중복 방지. `delete_history` 직접 호출은 실제 job 삭제라 미실행(분류기 차단 정상) — vault 측 `delete_from_vault` 독립 검증으로 대체.
 - 잔여(별도): 표식 없는 기존 vault 파일은 자동 삭제 대상 아님 (설계 의도). bridge `save_pdf` / `send_notion` 은 여전히 stub.
 
+### B19: 노트에 생성 GuruNote 버전 표시 (추적성) — 완료 (v1.0.0.17)
+
+- 배경: 노트가 어느 빌드로 생성됐는지 안 보여, 발견한 품질 문제가 수정 전/후 어느 버전 산출인지 혼동(실제 v1.0.0.14 빌드로 처리해 제목 수정 미적용 혼동).
+- 해결: exporter.py `_build_frontmatter` 에 `gurunote_version: "..."` + `build_gurunote_markdown` 메타 블록에 `- **생성:** GuruNote v...`. `gurunote.__version__` 단일 출처 동적 주입(`from gurunote import __version__`, 순환 없음). 226 passed.
+
 ### B18: 제목 품질 — 원본 직역 우선 + 인명 통용 표기 — 완료 (v1.0.0.15)
 
 - 배경: 원본 제목("Bonus: I Say Economy, You Say…with Stan Druckenmiller")이 있는데 내용 요약 제목("스타니슬라프 드루킨밀러: 금리·관세…") 생성 + 인명 오음차(Stan→스타니슬라프). 진단: ①METADATA 프롬프트가 "광고/불명확이면 새로 작성" 재량 → LLM 요약 ②제목은 extract_metadata 독립 LLM 출력이라 본문 entity dict 교정 우회.

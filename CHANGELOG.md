@@ -7,6 +7,16 @@
 
 ## [Unreleased]
 
+## [1.0.0.17] - 2026-05-28
+
+### Added
+- **노트에 생성 GuruNote 버전 표시 (추적성)** — 어느 빌드로 만든 노트인지 식별해, 발견한
+  품질 문제가 어느 버전 산출인지 추적:
+  - frontmatter `gurunote_version: "1.0.0.x"` (Obsidian 메타/검색·필터용).
+  - 본문 메타 블록에 `- **생성:** GuruNote v1.0.0.x` 한 줄 (재생 시간 아래).
+  - 버전은 `gurunote.__version__` 단일 출처에서 **동적 주입** (하드코딩 아님 — 버전 업 시 자동 반영).
+  - `exporter.py` `_build_frontmatter` + `build_gurunote_markdown` 메타 블록만 추가. 다른 로직 무변.
+
 ## [1.0.0.16] - 2026-05-27
 
 ### Changed
@@ -1576,7 +1586,8 @@ bash run_desktop.sh
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v1.0.0.16...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v1.0.0.17...HEAD
+[1.0.0.17]: https://github.com/avlp12/GuruNote/compare/v1.0.0.16...v1.0.0.17
 [1.0.0.16]: https://github.com/avlp12/GuruNote/compare/v1.0.0.15...v1.0.0.16
 [1.0.0.15]: https://github.com/avlp12/GuruNote/compare/v1.0.0.14...v1.0.0.15
 [1.0.0.14]: https://github.com/avlp12/GuruNote/compare/v1.0.0.13...v1.0.0.14

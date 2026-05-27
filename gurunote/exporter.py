@@ -9,6 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Iterable, List, Optional
 
+from gurunote import __version__ as _GURUNOTE_VERSION
 from gurunote.types import Transcript, _format_ts
 
 # autosave 기본 경로
@@ -171,6 +172,8 @@ def build_gurunote_markdown(
     meta_lines.append(f"- **화자 수:** {len(transcript.speakers)}")
     if transcript.duration:
         meta_lines.append(f"- **재생 시간:** {_format_ts(transcript.duration)}")
+    # 추적성 — 이 노트를 생성한 GuruNote 빌드 버전 (동적, gurunote.__version__).
+    meta_lines.append(f"- **생성:** GuruNote v{_GURUNOTE_VERSION}")
     meta_lines.append("")
 
     chapters_section = build_chapters_section(chapters or [])
@@ -256,6 +259,8 @@ def _build_frontmatter(
         # frontend / 다른 도구가 LANGUAGE_FLAG / LANGUAGE_LABEL 매핑으로 표시.
         lines.append(f'detected_language: "{_yaml_escape(detected_language)}"')
     lines.append(f'created: {datetime.now().isoformat(timespec="seconds")}')
+    # 추적성 — 이 노트를 생성한 GuruNote 빌드 버전 (동적, Obsidian 메타/검색·필터용).
+    lines.append(f'gurunote_version: "{_GURUNOTE_VERSION}"')
     lines.append("---")
     return "\n".join(lines)
 

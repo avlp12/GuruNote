@@ -4,7 +4,6 @@ Step 4 & 5: 최종 GuruNote 마크다운 조립 + 파일명 sanitize + autosave.
 
 from __future__ import annotations
 
-import os
 import re
 from datetime import datetime
 from pathlib import Path
@@ -58,29 +57,6 @@ def sanitize_filename(name: str, max_len: int = 80) -> str:
     return cleaned or "untitled"
 
 
-# 전체 스크립트 타임스탬프 prefix — 라인 머리의 `[MM:SS] ` / `[HH:MM:SS] ` 만 매칭.
-# `\d` 로 시작하는 시각 패턴만 잡으므로 marker(`[번역 누락]`/`[⚠ …]`)·영문 병기
-# (`화자(English):`) 는 보존된다. MULTILINE 으로 각 라인 머리에 적용.
-_TS_PREFIX_RE = re.compile(r"^\[\d{1,2}:\d{2}(?::\d{2})?\]\s+", re.MULTILINE)
-
-
-def _show_timestamps() -> bool:
-    """전체 스크립트 타임스탬프 표시 토글 — 기본 켜짐(현 동작). "0" 일 때만 끔.
-
-    GURUNOTE_SHOW_TIMESTAMPS 를 os.environ 에서 직접 읽는다 (GURUNOTE_TWO_PASS 등
-    처리 옵션과 동일 패턴 — save_settings 가 .env + os.environ 동기화).
-    """
-    return os.environ.get("GURUNOTE_SHOW_TIMESTAMPS", "1") != "0"
-
-
-def _strip_timestamp_prefix(text: str) -> str:
-    """본문 각 라인 머리의 `[MM:SS] `/`[HH:MM:SS] ` 타임스탬프 prefix 제거 (화자명 유지).
-
-    presentation 레이어 전용 — 번역/STT 결과 문자열은 무변, 마크다운 출력만 strip.
-    """
-    return _TS_PREFIX_RE.sub("", text)
-
-
 def build_full_script_section(translated_text: str, *, language: Optional[str] = None) -> str:
     """전체 스크립트 섹션 — 한국어 detected 시 '한국어 원본', 그 외 '번역본' 헤더.
 
@@ -91,10 +67,7 @@ def build_full_script_section(translated_text: str, *, language: Optional[str] =
         header = "# 📝 전체 스크립트 (한국어 원본)"
     else:
         header = "# 📝 전체 스크립트 번역본"
-    body = translated_text.strip()
-    if not _show_timestamps():
-        body = _strip_timestamp_prefix(body)
-    return f"{header}\n\n{body}\n"
+    return f"{header}\n\n{translated_text.strip()}\n"
 
 
 def build_original_script_section(transcript: Transcript, *, language: Optional[str] = None) -> str:
@@ -106,13 +79,9 @@ def build_original_script_section(transcript: Transcript, *, language: Optional[
     flag = _language_flag(language)
     label = _language_label(language)
     lines = [f"# {flag} 원문 스크립트 ({label})", ""]
-    show_ts = _show_timestamps()
     for seg in transcript.segments:
-        if show_ts:
-            ts = _format_ts(seg.start)
-            lines.append(f"**[{ts}] Speaker {seg.speaker}:** {seg.text}")
-        else:
-            lines.append(f"**Speaker {seg.speaker}:** {seg.text}")
+        ts = _format_ts(seg.start)
+        lines.append(f"**[{ts}] Speaker {seg.speaker}:** {seg.text}")
         lines.append("")
     return "\n".join(lines)
 

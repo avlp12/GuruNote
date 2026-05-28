@@ -67,10 +67,6 @@ _KNOWN_SETTINGS: tuple[str, ...] = (
     # llm.py:2811(GURUNOTE_TWO_PASS) / stt_mlx.py(GURUNOTE_SEGMENT_RESPLIT) 가
     # os.environ 을 읽으므로 키 추가만으로 저장/로드/반영 (백엔드 로직 무변).
     "GURUNOTE_TWO_PASS", "GURUNOTE_SEGMENT_RESPLIT",
-    # 전체 스크립트 타임스탬프 표시 — exporter.py 가 os.environ 을 읽어 본문/원문
-    # 라인의 [MM:SS] prefix 표시 여부 결정 ("0"=숨김, 미설정/그 외=표시).
-    # 타임라인 요약 섹션 타임스탬프는 별개 경로(summary_md)라 무영향.
-    "GURUNOTE_SHOW_TIMESTAMPS",
 )
 
 _SECRET_KEYS: frozenset[str] = frozenset({

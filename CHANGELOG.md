@@ -7,6 +7,15 @@
 
 ## [Unreleased]
 
+## [1.0.0.24] - 2026-05-29
+
+### Changed
+- **통용 표기 "추가" 행을 목록 맨 위로** — 통용 표기 화면에서 "추가"를 누르면 새 빈 행이 목록
+  끝에 붙어 한참 스크롤해야 보이던 문제. 새 빈 행을 맨 앞에 넣어 추가 직후 스크롤 없이 바로
+  입력하게 함(검색어도 함께 해제 — 빈 행이 필터에 안 걸려 안 보이는 문제 방지). 렌더는 rows
+  배열 순서 그대로라 맨 앞 추가가 즉시 반영되고, 알파벳 정렬은 저장 시 다시 적용됨. 검색 중
+  수정·삭제의 원본 인덱스 보존은 그대로 유지. `SettingsScreen.jsx` 한 파일, 백엔드 무변.
+
 ## [1.0.0.23] - 2026-05-29
 
 ### Changed
@@ -1674,7 +1683,8 @@ bash run_desktop.sh
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v1.0.0.23...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v1.0.0.24...HEAD
+[1.0.0.24]: https://github.com/avlp12/GuruNote/compare/v1.0.0.23...v1.0.0.24
 [1.0.0.23]: https://github.com/avlp12/GuruNote/compare/v1.0.0.22...v1.0.0.23
 [1.0.0.22]: https://github.com/avlp12/GuruNote/compare/v1.0.0.21...v1.0.0.22
 [1.0.0.21]: https://github.com/avlp12/GuruNote/compare/v1.0.0.20...v1.0.0.21

@@ -643,8 +643,10 @@ function SettingsCanonicalNames() {
   const updateRow = (i, field, val) =>
     setRows((rs) => rs.map((r, idx) => (idx === i ? { ...r, [field]: val } : r)));
   const removeRow = (i) => setRows((rs) => rs.filter((_, idx) => idx !== i));
-  // 검색 활성 시 빈 행은 필터에 안 걸려 안 보이므로, 추가 시 검색어를 비운다.
-  const addRow = () => { setQuery(''); setRows((rs) => [...rs, { english: '', auto: '', user: '' }]); };
+  // 새 빈 행을 목록 맨 앞에 넣어 추가 직후 스크롤 없이 바로 입력할 수 있게 한다.
+  //   (렌더는 rows 배열 순서 그대로 — 정렬 강제 부재. 알파벳 정렬은 저장 시 _rowsFromNames 가
+  //    다시 적용.) 검색 활성 시 빈 행은 필터에 안 걸려 안 보이므로 검색어도 함께 비운다.
+  const addRow = () => { setQuery(''); setRows((rs) => [{ english: '', auto: '', user: '' }, ...rs]); };
 
   const handleSave = async () => {
     setSaving(true);
@@ -960,7 +962,7 @@ function SettingsAbout() {
         </div>
         <div className="settings-about__name">GuruNote</div>
         <div className="settings-about__version">
-          v{appInfo?.version || '1.0.0.23'}
+          v{appInfo?.version || '1.0.0.24'}
         </div>
         <div className="settings-about__desc">
           유튜브 링크 한 줄로 한국어 요약본을 생성합니다.

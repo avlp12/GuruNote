@@ -1,6 +1,6 @@
 # GuruNote Backlog
 
-마지막 갱신: 2026-05-28 (B22 요약 섹션 충실도 강화 완료, v1.0.0.20)
+마지막 갱신: 2026-05-28 (B23 전체 스크립트 타임스탬프 표시 토글 완료, v1.0.0.21)
 운영 규칙: WIP=1 (동시 active 작업 1개 제한)
 상태 정의: not_started / active / blocked / passing
 
@@ -134,6 +134,12 @@
   - `HistoryScreen` DeleteConfirmDialog: 사본 있을 때만 안내, 완료 토스트에 삭제 수.
 - 검증: 임시 vault end-to-end — 표식 삽입/매칭 삭제/표식 없는 파일 보존/무관 job_id 안전(0)/중복 방지. `delete_history` 직접 호출은 실제 job 삭제라 미실행(분류기 차단 정상) — vault 측 `delete_from_vault` 독립 검증으로 대체.
 - 잔여(별도): 표식 없는 기존 vault 파일은 자동 삭제 대상 아님 (설계 의도). bridge `save_pdf` / `send_notion` 은 여전히 stub.
+
+### B23: 전체 스크립트 타임스탬프 표시 토글 — 완료 (v1.0.0.21)
+
+- 배경: 전체 스크립트(번역본·원문)의 `[MM:SS]` 타임스탬프가 위치 참조엔 유용하나 가독성을 해칠 때가 있어 설정 토글로 끄고 싶음. 타임라인 요약 타임스탬프는 핵심 정보라 무변. read-only 진단(9aad35e): 타임스탬프 세 조립 자리 — ①번역 본문(llm.py:3271, 번역 레이어), ②한국어 원본(to_plaintext), ③영어 원문(exporter:84). 타임라인 요약은 별개 경로(summary_md, LLM 생성).
+- 해결 (갈래 K-a + 설정 읽기 a): exporter presentation 레이어에서만 처리. `GURUNOTE_SHOW_TIMESTAMPS` 토글(기본 켜짐 = 현 동작) — exporter 가 os.environ 직접 읽음(TWO_PASS 패턴). `_strip_timestamp_prefix`(정규식 `^\[\d{1,2}:\d{2}(?::\d{2})?\]\s+` MULTILINE — 본문 ①② 라인 머리 타임스탬프 제거, marker·영문 병기 보존) + 영어 원문 ③ 조립 시 `**[MM:SS]**` 생략. 토글 off("0")일 때만. _KNOWN_SETTINGS 1줄 + SettingsScreen 처리 옵션 스위치 1개. 번역(translate_transcript)·to_plaintext·STT·요약 path 전부 무변. tests 10건(`test_timestamp_toggle.py`), 248 passed. end-to-end: 토글 off 시 본문 strip·영어 ts 생략·요약 타임라인 유지·화자 영문 병기 유지 확인.
+- 한계: 타임스탬프 제거 후 같은 화자 연속 발화가 `화자: …\n\n화자: …` 로 반복돼 가독성이 떨어질 수 있음 — 연속 화자 합치기는 이번 범위 밖(별도).
 
 ### B22: 요약 섹션 충실도 강화 — 환각·영어 leak·인명 일관 + dict 후처리 — 완료 (v1.0.0.20)
 

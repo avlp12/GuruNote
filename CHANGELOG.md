@@ -7,6 +7,21 @@
 
 ## [Unreleased]
 
+## [1.0.0.21] - 2026-05-28
+
+### Added
+- **전체 스크립트 타임스탬프 표시 토글** — 설정 → 고급 → 처리 옵션에 "전체 스크립트
+  타임스탬프 표시" 스위치(`GURUNOTE_SHOW_TIMESTAMPS`, 기본 켜짐 = 현 동작). 끄면 전체
+  스크립트(번역본·한국어 원본·영어 원문)의 `[MM:SS]` 타임스탬프가 사라지고 화자명만 남아
+  읽기 편함. 새로 처리하는 영상부터 적용(기존 노트 소급 부재).
+  - exporter presentation 레이어에서만 처리 — `_strip_timestamp_prefix`(본문 라인 머리
+    `[MM:SS] `/`[HH:MM:SS] ` prefix 정규식 제거, 화자명·영문 병기 유지) + 영어 원문은
+    조립 시 `**[MM:SS]**` 생략. `os.environ` 직접 읽기(`GURUNOTE_TWO_PASS` 패턴).
+  - **보존**: 타임라인 요약 섹션 타임스탬프(별개 경로 `summary_md`)·marker(`[번역 누락]`/
+    `[⚠ …]`)는 토글과 무관하게 유지. 번역(`translate_transcript`)·`to_plaintext`·STT·
+    요약 path 전부 무변.
+  - `tests/test_timestamp_toggle.py` 10건.
+
 ## [1.0.0.20] - 2026-05-28
 
 ### Added
@@ -1637,7 +1652,8 @@ bash run_desktop.sh
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v1.0.0.20...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v1.0.0.21...HEAD
+[1.0.0.21]: https://github.com/avlp12/GuruNote/compare/v1.0.0.20...v1.0.0.21
 [1.0.0.20]: https://github.com/avlp12/GuruNote/compare/v1.0.0.19...v1.0.0.20
 [1.0.0.19]: https://github.com/avlp12/GuruNote/compare/v1.0.0.18...v1.0.0.19
 [1.0.0.18]: https://github.com/avlp12/GuruNote/compare/v1.0.0.17...v1.0.0.18

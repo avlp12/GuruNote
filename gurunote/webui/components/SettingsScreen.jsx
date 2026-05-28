@@ -765,6 +765,12 @@ function SettingsAdvanced({ values, secretsSet, onChange, onSave, dirty }) {
           checked={(values.GURUNOTE_SEGMENT_RESPLIT ?? '') !== '0'}
           onChange={(on) => onChange('GURUNOTE_SEGMENT_RESPLIT', on ? '1' : '0')}
         />
+        <SettingsSwitch
+          label="전체 스크립트 타임스탬프 표시"
+          hint="전체 스크립트(번역본·원문)의 [MM:SS] 타임스탬프 표시 여부. 끄면 화자명만 남아 더 읽기 편합니다. 타임라인 요약은 항상 유지. 새로 처리하는 영상부터 적용."
+          checked={(values.GURUNOTE_SHOW_TIMESTAMPS ?? '') !== '0'}
+          onChange={(on) => onChange('GURUNOTE_SHOW_TIMESTAMPS', on ? '1' : '0')}
+        />
       </div>
 
       {/* === 통용 표기 (A-2 ②) — 자체 state/저장, .env 와 별개 === */}
@@ -921,7 +927,7 @@ function SettingsAbout() {
         </div>
         <div className="settings-about__name">GuruNote</div>
         <div className="settings-about__version">
-          v{appInfo?.version || '1.0.0.20'}
+          v{appInfo?.version || '1.0.0.21'}
         </div>
         <div className="settings-about__desc">
           유튜브 링크 한 줄로 한국어 요약본을 생성합니다.

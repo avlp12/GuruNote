@@ -313,6 +313,10 @@
   word-break: keep-all;
   overflow-wrap: break-word;
   color: var(--gn-on-surface);
+  /* 본문 텍스트 선택 + 복사 영역 — webview default 영역의 selectability 명시 (.log-pane 정합). */
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
 }
 .result-transcript strong {
   font-weight: 600;
@@ -320,6 +324,10 @@
 .result-rendered {
   font-size: 14px;
   line-height: 1.65;
+  /* 요약 텍스트 선택 + 복사 영역 — webview default 영역의 selectability 명시 (.log-pane 정합). */
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
 }
 .result-rendered h1, .result-rendered h2, .result-rendered h3 {
   margin: 1.2em 0 0.5em;

@@ -7,12 +7,21 @@
 
 ## [Unreleased]
 
+## [1.0.0.21] - 2026-05-28
+
 ### Added
 - **뷰어 타임스탬프 표시 토글** — 노트 뷰어(`ResultPanel`)의 한국어·영어 원문 탭에 "타임스탬프"
   인라인 토글 추가. 끄면 전체 스크립트 라인의 `[MM:SS]` 가 화면에서만 사라지고 화자명은 유지.
   보기 전용 클라이언트 상태(기본 켜짐, 영속화 부재) — 원본 `result.md`·job 데이터 불변,
   백엔드/exporter/환경변수 미경유. 요약 탭(타임라인 타임스탬프)은 무변. 라이브·히스토리 상세·
   편집기 미리보기 세 곳 공통 적용. ※ 9a12566(exporter 판) revert 후 뷰어 표시 방식으로 재구현.
+
+### Fixed
+- **뷰어 본문 드래그 선택·복사 불가** — 노트 뷰어의 한국어·영어 원문 탭(`.result-transcript`)과
+  요약 탭(`.result-rendered`) 본문을 마우스로 드래그 선택해 복사할 수 없던 문제. 이 webview
+  환경은 콘텐츠가 기본적으로 선택되지 않아 `user-select: text` 명시가 필요한데, Log 탭
+  (`.log-pane`)에만 있고 본문·요약 셀렉터엔 빠져 있었음. 두 셀렉터에 `.log-pane` 과 동일하게
+  `user-select: text; -webkit-user-select: text; cursor: text;` 추가 (`main.css` 한 파일).
 
 ## [1.0.0.20] - 2026-05-28
 
@@ -1644,7 +1653,8 @@ bash run_desktop.sh
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v1.0.0.20...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v1.0.0.21...HEAD
+[1.0.0.21]: https://github.com/avlp12/GuruNote/compare/v1.0.0.20...v1.0.0.21
 [1.0.0.20]: https://github.com/avlp12/GuruNote/compare/v1.0.0.19...v1.0.0.20
 [1.0.0.19]: https://github.com/avlp12/GuruNote/compare/v1.0.0.18...v1.0.0.19
 [1.0.0.18]: https://github.com/avlp12/GuruNote/compare/v1.0.0.17...v1.0.0.18

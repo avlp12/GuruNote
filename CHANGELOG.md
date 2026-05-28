@@ -7,6 +7,15 @@
 
 ## [Unreleased]
 
+## [1.0.0.22] - 2026-05-29
+
+### Fixed
+- **뷰어 "생성일" KST 표시** — 노트 상세 패널·삭제 확인 대화상자의 "생성일"이 저장 원본인
+  ISO UTC 문자열(`2026-05-28T15:11:40.942242+00:00`)로 그대로 노출되던 문제. 표시 단계에서
+  `Asia/Seoul` 고정으로 변환해 `2026-05-29 00:11` (`YYYY-MM-DD HH:mm`, 업로드일과 같은 결)로
+  표시. 저장 필드(`created_at`, ISO)는 불변 — 정렬(`localeCompare`/`Date.parse`)이 ISO 에
+  의존하므로 표시만 변환. 파싱 실패·빈 값이면 원본 그대로 반환. `HistoryScreen.jsx` 한 파일.
+
 ## [1.0.0.21] - 2026-05-28
 
 ### Added
@@ -1653,7 +1662,8 @@ bash run_desktop.sh
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v1.0.0.21...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v1.0.0.22...HEAD
+[1.0.0.22]: https://github.com/avlp12/GuruNote/compare/v1.0.0.21...v1.0.0.22
 [1.0.0.21]: https://github.com/avlp12/GuruNote/compare/v1.0.0.20...v1.0.0.21
 [1.0.0.20]: https://github.com/avlp12/GuruNote/compare/v1.0.0.19...v1.0.0.20
 [1.0.0.19]: https://github.com/avlp12/GuruNote/compare/v1.0.0.18...v1.0.0.19

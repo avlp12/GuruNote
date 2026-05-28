@@ -134,6 +134,25 @@ async function historyRefreshCanonical(jobId) {
   return null;
 }
 
+/* created_at(저장 형식 = ISO UTC) 을 KST "YYYY-MM-DD HH:mm" 으로 표시.
+   저장값은 불변 — 정렬(localeCompare/Date.parse)이 ISO 에 의존하므로 표시 단계만 변환.
+   timeZone 'Asia/Seoul' 고정(시스템 로컬 무관) + hourCycle h23(자정 = 00). formatToParts
+   로 부분을 뽑아 업로드일(2026-03-12)과 같은 결의 "-" 구분자로 조립. 파싱 실패/빈 값이면
+   원본 그대로 반환 (Invalid Date / NaN 출력 회피 — RULE 12). */
+const HISTORY_KST_DT_FMT = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Seoul',
+  year: 'numeric', month: '2-digit', day: '2-digit',
+  hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+});
+function historyFormatCreatedAt(iso) {
+  if (!iso) return iso || '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  const p = {};
+  for (const part of HISTORY_KST_DT_FMT.formatToParts(d)) p[part.type] = part.value;
+  return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}`;
+}
+
 /* === Search helpers (Phase 2B-3b) === */
 function useDebounced(value, delay) {
   const [debouncedValue, setDebouncedValue] = useState(value);
@@ -538,7 +557,7 @@ function DetailPanel({ item, onClose, onEdit, onOpenRelated }) {
             {item.field        && (<><dt>주제</dt><dd>{item.field}</dd></>)}
             {item.uploader     && (<><dt>업로더</dt><dd>{item.uploader}</dd></>)}
             {item.upload_date  && (<><dt>업로드일</dt><dd>{item.upload_date}</dd></>)}
-            {item.created_at   && (<><dt>생성일</dt><dd>{item.created_at}</dd></>)}
+            {item.created_at   && (<><dt>생성일</dt><dd>{historyFormatCreatedAt(item.created_at)}</dd></>)}
             {dur               && (<><dt>길이</dt><dd>{dur}</dd></>)}
             {item.num_speakers > 0 && (<><dt>화자 수</dt><dd>{item.num_speakers}명</dd></>)}
             {item.stt_engine   && (<><dt>STT</dt><dd>{item.stt_engine}</dd></>)}
@@ -703,7 +722,7 @@ function DeleteConfirmDialog({ item, onCancel, onConfirm, loading }) {
 
   if (!item) return null;
   const title = item.title || '(제목 없음)';
-  const createdAt = item.created_at || '(생성일 부재)';
+  const createdAt = item.created_at ? historyFormatCreatedAt(item.created_at) : '(생성일 부재)';
   const numSpeakers = item.num_speakers ?? '?';
   const field = item.field || '미분류';
   return (

@@ -7,6 +7,18 @@
 
 ## [Unreleased]
 
+## [1.0.0.23] - 2026-05-29
+
+### Changed
+- **통용 표기 독립 화면 이동 + 검색** — 통용 표기 편집(`SettingsCanonicalNames`)을 설정 "고급"
+  인라인에서 떼어 좌측 설정 네비의 독립 항목("통용 표기", Notion 다음·고급 앞)으로 이동.
+  auto 자동 채움으로 항목이 늘어 고급 화면을 뒤덮던 문제 해소. 우측 전체 화면 + 섹션 헤더.
+  - **검색 추가** — 영문·auto·user 셋 다 대소문자 무시 부분 일치 필터. 검색 시에도 원본 인덱스를
+    보존해 수정·삭제가 맞는 행에만 적용(필터된 목록 인덱스로 다른 행을 망가뜨리지 않음).
+    빈 행 추가 시 검색어 자동 해제.
+  - 고급에는 처리 옵션·다른 LLM provider 키·WhisperX 등 본래 항목만 남김.
+  - `SettingsScreen.jsx` 한 파일. bridge(`get/save_canonical_names`)·백엔드 무변.
+
 ## [1.0.0.22] - 2026-05-29
 
 ### Fixed
@@ -1662,7 +1674,8 @@ bash run_desktop.sh
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v1.0.0.22...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v1.0.0.23...HEAD
+[1.0.0.23]: https://github.com/avlp12/GuruNote/compare/v1.0.0.22...v1.0.0.23
 [1.0.0.22]: https://github.com/avlp12/GuruNote/compare/v1.0.0.21...v1.0.0.22
 [1.0.0.21]: https://github.com/avlp12/GuruNote/compare/v1.0.0.20...v1.0.0.21
 [1.0.0.20]: https://github.com/avlp12/GuruNote/compare/v1.0.0.19...v1.0.0.20

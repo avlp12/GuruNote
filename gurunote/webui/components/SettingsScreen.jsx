@@ -18,6 +18,7 @@ const SETTINGS_NAV_ITEMS = [
   { id: 'stt',       icon: 'mic',       label: 'STT 엔진' },
   { id: 'obsidian',  icon: 'hub',       label: 'Obsidian' },
   { id: 'notion',    icon: 'cloud',     label: 'Notion' },
+  { id: 'canonical', icon: 'spellcheck', label: '통용 표기' },
   { id: 'advanced',  icon: 'tune',      label: '고급' },
   { id: 'about',     icon: 'info',      label: 'GuruNote 정보' },
 ];
@@ -611,6 +612,7 @@ function SettingsCanonicalNames() {
   const [rows, setRows] = useState([]);   // [{english, auto, user}]
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [query, setQuery] = useState('');  // 검색 — 영문/auto/user 부분 일치
 
   const _rowsFromNames = (names) =>
     Object.keys(names || {}).sort().map((eng) => ({
@@ -641,7 +643,8 @@ function SettingsCanonicalNames() {
   const updateRow = (i, field, val) =>
     setRows((rs) => rs.map((r, idx) => (idx === i ? { ...r, [field]: val } : r)));
   const removeRow = (i) => setRows((rs) => rs.filter((_, idx) => idx !== i));
-  const addRow = () => setRows((rs) => [...rs, { english: '', auto: '', user: '' }]);
+  // 검색 활성 시 빈 행은 필터에 안 걸려 안 보이므로, 추가 시 검색어를 비운다.
+  const addRow = () => { setQuery(''); setRows((rs) => [...rs, { english: '', auto: '', user: '' }]); };
 
   const handleSave = async () => {
     setSaving(true);
@@ -666,13 +669,46 @@ function SettingsCanonicalNames() {
     }
   };
 
+  // 검색 — 원본 인덱스(i)를 보존해야 updateRow/removeRow 가 맞는 행에 적용된다.
+  //   단순 filter 하면 필터된 목록의 i 가 원본 rows 의 i 와 어긋나 다른 행을 망가뜨림.
+  const q = query.trim().toLowerCase();
+  const indexedRows = rows.map((r, i) => ({ r, i }));
+  const visibleRows = q
+    ? indexedRows.filter(({ r }) =>
+        (r.english || '').toLowerCase().includes(q)
+        || (r.auto || '').toLowerCase().includes(q)
+        || (r.user || '').toLowerCase().includes(q))
+    : indexedRows;
+
   return (
-    <div className="settings-group">
-      <div className="settings-group__title">통용 표기 (인명·회사명)</div>
+    <>
+      <div className="settings-content__header">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-2)' }}>
+          <div className="settings-section-icon">
+            <span className="msi">spellcheck</span>
+          </div>
+          <div>
+            <div className="settings-content__title">통용 표기</div>
+            <div className="settings-content__sub">인명·회사명 한국어 표기 — auto 확인 + user 수정 (다음 작업부터 적용)</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="settings-group">
       <div className="settings-group__sub">
         GuruNote 가 자동으로 채운 표기(auto)를 확인하고, 틀리면 수정 표기(user)에 올바른 한국어를
         입력하세요. 수정한 표기가 우선 적용됩니다 (다음 작업부터).
       </div>
+      {!loading && rows.length > 0 && (
+        <input
+          type="text"
+          className="settings-field__input"
+          placeholder="검색 (영문·표기)"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          style={{ marginBottom: 10 }}
+        />
+      )}
       {loading ? (
         <div style={{ fontSize: 13, color: 'var(--gn-on-surface-muted)' }}>불러오는 중…</div>
       ) : (
@@ -682,7 +718,12 @@ function SettingsCanonicalNames() {
               아직 기록된 표기가 없습니다. 작업을 실행하면 자동으로 채워집니다.
             </div>
           )}
-          {rows.map((r, i) => (
+          {rows.length > 0 && visibleRows.length === 0 && (
+            <div style={{ fontSize: 13, color: 'var(--gn-on-surface-muted)', padding: '6px 0' }}>
+              검색 결과가 없습니다.
+            </div>
+          )}
+          {visibleRows.map(({ r, i }) => (
             <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
               <input
                 type="text"
@@ -730,7 +771,8 @@ function SettingsCanonicalNames() {
           </div>
         </>
       )}
-    </div>
+      </div>
+    </>
   );
 }
 
@@ -744,7 +786,7 @@ function SettingsAdvanced({ values, secretsSet, onChange, onSave, dirty }) {
           </div>
           <div>
             <div className="settings-content__title">고급</div>
-            <div className="settings-content__sub">처리 옵션 + 통용 표기 + 다른 LLM provider 키 + WhisperX (NVIDIA)</div>
+            <div className="settings-content__sub">처리 옵션 + 다른 LLM provider 키 + WhisperX (NVIDIA)</div>
           </div>
         </div>
       </div>
@@ -766,9 +808,6 @@ function SettingsAdvanced({ values, secretsSet, onChange, onSave, dirty }) {
           onChange={(on) => onChange('GURUNOTE_SEGMENT_RESPLIT', on ? '1' : '0')}
         />
       </div>
-
-      {/* === 통용 표기 (A-2 ②) — 자체 state/저장, .env 와 별개 === */}
-      <SettingsCanonicalNames />
 
       {/* === Anthropic === */}
       <div className="settings-group">
@@ -921,7 +960,7 @@ function SettingsAbout() {
         </div>
         <div className="settings-about__name">GuruNote</div>
         <div className="settings-about__version">
-          v{appInfo?.version || '1.0.0.22'}
+          v{appInfo?.version || '1.0.0.23'}
         </div>
         <div className="settings-about__desc">
           유튜브 링크 한 줄로 한국어 요약본을 생성합니다.
@@ -1120,6 +1159,9 @@ function SettingsScreen() {
               onSave={handleSave}
               dirty={dirtyCount}
             />
+          )}
+          {activeNav === 'canonical' && (
+            <SettingsCanonicalNames />
           )}
           {activeNav === 'advanced' && (
             <SettingsAdvanced

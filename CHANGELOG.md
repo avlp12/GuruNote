@@ -7,6 +7,26 @@
 
 ## [Unreleased]
 
+## [1.0.0.20] - 2026-05-28
+
+### Added
+- **요약 섹션 충실도 강화** — 요약(`SUMMARY_SYSTEM_PROMPT`)이 본문(`translate_transcript`)과
+  별도 LLM 경로라 v1.0.0.18 충실도 강화(환각·영어 leak 금지 룰)가 미적용이던 문제. 요약 LLM 이
+  본문(이미 dict 교정된 한국어)을 압축하며 자율 변형·날조하던 실측 사례를 차단.
+  - **프롬프트 조항 추가** (확률적):
+    - 환각 금지 — 입력 번역본에 실제로 있는 내용·인물만. 입력에 없는 인물(실측: 본문에 없는
+      'Janet Yellen', 'Jerome Powell')을 요약에 등장시키지 않음.
+    - 영어 단어 미번역 금지 — 일반 영단어 한국어화 (실측: 'formidable(강력한) 존재감' →
+      '강력한 존재감'). 병기/약어/모델·제품명/회사명은 예외.
+    - 인명 표기 일관 — 입력 번역본 표기를 그대로 (실측: 본문 '스탠 드러켄밀러' 인데 요약이
+      '스턴 드러켄밀러' 로 재음차). 첫 등장 영문 병기는 유지.
+  - **dict 인명 후처리** (결정론): `summarize_translation` 출력에 `_correct_korean_in_annotations`
+    적용 — `한국어(English)` 병기의 영문 key 로 통용 dict 조회 → 한국어 강제 교정(스턴→스탠).
+    제목(`extract_metadata`)과 같은 helper 재사용. 영문 병기 있는 인명에만 적용.
+  - 본문 `translate_transcript`/`TRANSLATION_SYSTEM_PROMPT`·제목 `extract_metadata`·
+    `_SHARED_LANG_RULES`·`post_process_cjk_text` 전부 무변 (요약 경로만 변경).
+  - `tests/test_summary_fidelity.py` 3건.
+
 ## [1.0.0.19] - 2026-05-28
 
 ### Fixed
@@ -1617,7 +1637,8 @@ bash run_desktop.sh
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v1.0.0.19...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v1.0.0.20...HEAD
+[1.0.0.20]: https://github.com/avlp12/GuruNote/compare/v1.0.0.19...v1.0.0.20
 [1.0.0.19]: https://github.com/avlp12/GuruNote/compare/v1.0.0.18...v1.0.0.19
 [1.0.0.18]: https://github.com/avlp12/GuruNote/compare/v1.0.0.17...v1.0.0.18
 [1.0.0.17]: https://github.com/avlp12/GuruNote/compare/v1.0.0.16...v1.0.0.17

@@ -1,6 +1,6 @@
 # GuruNote Backlog
 
-마지막 갱신: 2026-05-25 (B11 다운로드 wiring + 출처 링크 완료, B12 등록)
+마지막 갱신: 2026-05-28 (B22 요약 섹션 충실도 강화 완료, v1.0.0.20)
 운영 규칙: WIP=1 (동시 active 작업 1개 제한)
 상태 정의: not_started / active / blocked / passing
 
@@ -134,6 +134,12 @@
   - `HistoryScreen` DeleteConfirmDialog: 사본 있을 때만 안내, 완료 토스트에 삭제 수.
 - 검증: 임시 vault end-to-end — 표식 삽입/매칭 삭제/표식 없는 파일 보존/무관 job_id 안전(0)/중복 방지. `delete_history` 직접 호출은 실제 job 삭제라 미실행(분류기 차단 정상) — vault 측 `delete_from_vault` 독립 검증으로 대체.
 - 잔여(별도): 표식 없는 기존 vault 파일은 자동 삭제 대상 아님 (설계 의도). bridge `save_pdf` / `send_notion` 은 여전히 stub.
+
+### B22: 요약 섹션 충실도 강화 — 환각·영어 leak·인명 일관 + dict 후처리 — 완료 (v1.0.0.20)
+
+- 배경: 요약(`SUMMARY_SYSTEM_PROMPT`)이 본문(`translate_transcript`)과 별도 LLM 경로라 v1.0.0.18 충실도 룰(환각·영어 leak 금지) 미적용. 요약 입력은 dict 교정·반복 축약된 본문 한국어인데, 요약 LLM 이 압축하며 자율 변형·날조. 실측(v1.0.0.19 드러켄밀러 노트): 본문에 없는 'Janet Yellen'/'Jerome Powell' 환각, "formidable(강력한)" 영어 leak(본문은 "무서운 존재들"), 본문 "스탠 드러켄밀러"인데 요약 "스턴 드러켄밀러" 재음차.
+- 해결: ① SUMMARY_SYSTEM_PROMPT 에 환각 금지·영어 단어 미번역 금지·인명 표기 일관 조항 + 실측 예시(Yellen/Powell·formidable·스턴) 추가 (확률적). ② `summarize_translation` 출력에 `_correct_korean_in_annotations` 적용 — `한국어(English)` 병기 영문 key 로 통용 dict 조회 → 한국어 강제 교정(스턴→스탠, 결정론). 제목(extract_metadata)과 같은 helper 재사용. 본문·제목·`_SHARED_LANG_RULES`·`post_process_cjk_text` 전부 무변(요약 경로만). tests 3건(`test_summary_fidelity.py`), 238 passed.
+- 한계: 요약은 LLM 압축이라 환각 0 보장 불가(프롬프트로 줄임). 인명 일관은 결정론이나 영문 병기 있는 인명에만 적용(병기 없으면 매칭 불가). `_SHARED_LANG_RULES` 통합(세 경로 중복 룰 일원화)은 별도 리팩토링 세션으로 미룸.
 
 ### B21: 본문 연속 반복 라인 — 더듬거림 회귀 축약 — 완료 (v1.0.0.19)
 

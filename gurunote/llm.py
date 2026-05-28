@@ -281,6 +281,20 @@ SUMMARY_SYSTEM_PROMPT = """\
 - "전체 스크립트 번역본" 섹션은 호출자가 별도로 붙이므로 여기에 포함하지 마.
 - **공통 룰**: 한자/일본어 mix 절대 부재 + 통용 표기 dict 정합 + 첫 등장 영문 병기.
   아래 [출력 언어 + 표기 — 양쪽 prompt 공통 룰] 섹션 정합.
+
+충실도 룰 (요약은 압축하되 왜곡·날조는 금지):
+- **환각 금지** — 입력 번역본에 실제로 있는 내용·인물만 쓴다. 입력에 등장하지 않는
+  인물·기관·수치·발언을 새로 만들어 넣지 마라.
+  예) 입력 본문에 없는 'Janet Yellen(재닛 옐런)', 'Jerome Powell(제롬 파월)' 을
+      요약에 등장시키면 안 됨 (입력에 그 이름이 없으면 쓰지 마).
+- **영어 단어 미번역 금지** — 영어 단어를 한국어 문장에 그대로 두지 않는다. 일반
+  영단어는 반드시 한국어로 옮긴다. 단 예외: 영문 병기 '한국어(English)', 약어(AI,
+  GPU, ETF 등), 모델/제품명, 회사명.
+  예) '개인 투자자들의 formidable(강력한) 존재감' ✗ → '개인 투자자들의 강력한 존재감' ✓
+- **인명 표기 일관** — 입력 번역본에 쓰인 인명 표기를 그대로 따른다. 같은 인물을
+  요약에서 새로 음차하지 마라. 첫 등장 영문 병기는 유지.
+  예) 본문이 '스탠 드러켄밀러' 면 요약도 '스탠 드러켄밀러' — '스턴 드러켄밀러' 처럼
+      바꾸지 말 것.
 """ + _SHARED_LANG_RULES
 
 
@@ -2184,7 +2198,10 @@ def summarize_translation(
             max_tokens=config.summary_max_tokens or SUMMARY_MAX_TOKENS,
         ).strip()
         # Phase 3 보완 — 요약 섹션 한자/일본어 후처리 (segment-less A+B).
-        return post_process_cjk_text(merged, config, log)
+        merged = post_process_cjk_text(merged, config, log)
+        # 요약 충실도 (5/28) — 인명 병기의 영문 key 로 통용 dict 조회 → 한국어 강제 교정.
+        #   요약 LLM 이 본문 표기('스탠')를 자율 변형('스턴')해도 결정론적으로 통일.
+        return _correct_korean_in_annotations(merged, _load_canonical_names())
 
     log("📝 GuruNote 요약본 생성 중…")
     _check_stop()
@@ -2195,7 +2212,10 @@ def summarize_translation(
         max_tokens=config.summary_max_tokens or SUMMARY_MAX_TOKENS,
     ).strip()
     # Phase 3 보완 — 요약 섹션 한자/일본어 후처리 (segment-less A+B).
-    return post_process_cjk_text(summary, config, log)
+    summary = post_process_cjk_text(summary, config, log)
+    # 요약 충실도 (5/28) — 인명 병기의 영문 key 로 통용 dict 조회 → 한국어 강제 교정.
+    #   요약 LLM 이 본문 표기('스탠')를 자율 변형('스턴')해도 결정론적으로 통일.
+    return _correct_korean_in_annotations(summary, _load_canonical_names())
 
 
 # =============================================================================

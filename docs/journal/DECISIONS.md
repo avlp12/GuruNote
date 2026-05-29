@@ -281,6 +281,98 @@
 
 ---
 
+### ADR-017. 인명 관리 자동화 — auto/user dict + 편집 UI + 결정론 교정 (v1.0.0.10~13, 5/26~27)
+
+**맥락**: ADR-015(A)에서 음차 통용 표기를 프롬프트(Rule 10)로 끌어내기로 했으나, 실제 daily 영상에서 "팰머 러커이"가 계속 굳었다. 재진단 결과 세 겹 원인 — bootstrap 의 first-seen 표기 고정 / bootstrap 프롬프트에 발음 우선 규칙 미반영 / **디스크 캐시가 옛 표기를 그대로 로드해 프롬프트를 우회**. 프롬프트만으로는 캐시에 굳은 표기를 못 바꾼다.
+
+**결정**: 프롬프트(ADR-015) 위에 **결정론 교정 계층**을 얹는다. ADR-015 의 후속·확장이며, v1.0.0.6(프롬프트)과 별개의 문제(캐시 고정)를 다룬다.
+- **v1.0.0.10** (`9d342b6`): 편집 가능 통용 dict `~/.gurunote/canonical_names.json` 신설. `entity_cache`·`speaker_cache` 의 한국어 표기를 dict 로 강제 교정(대소문자 무시, 미수록은 불변). bootstrap(디스크 캐시 적중 포함) 직후 + chunk loop 전에 적용 → 저장 시 디스크 캐시 self-heal. bootstrap 프롬프트에도 발음 우선 지시 추가.
+- **v1.0.0.11** (`d106430`): dict 구조를 `{English:{auto,user}}` 로 확장(옛 flat → user 마이그레이션). 작업 중 raw 표기를 auto 로 자동 누적(user 불변), 교정은 user 우선. atomic 저장.
+- **v1.0.0.12** (`c8311ae`): 설정 "고급"에 `SettingsCanonicalNames` 편집 UI(영문 | auto 읽기전용 | user 입력 | 삭제). bridge `get_canonical_names`/`save_canonical_names` 신규(llm `_load`/`_save` 호출만, .env 와 별개 state).
+- **v1.0.0.13** (`390d69b`, +`50d0140` 라벨 보강): `refresh_canonical_in_markdown` + bridge `refresh_job_canonical` — 이미 저장된 노트의 옛 표기를 auto·user 둘 다 있는 항목만 단일 패스 정규식으로 치환(연쇄 치환 없음). HistoryScreen "표기 새로고침" 버튼.
+
+**대안**: dict 일괄 보강(유지비 큼, 기각) / 캐시 비활성(일관성 손실, 기각) / 프롬프트만 더 강화(캐시 우회 못 함, 이미 실패).
+
+**이유**: 음차 자체는 모델의 한국어 지식이라 프롬프트가 맞지만(ADR-015), 캐시에 굳은 표기는 프로그램이 결정론적으로 덮어써야 확실하다. user 우선 dict 로 사용자가 최종 통제권을 갖는다.
+
+**결과**: B15 A-2 전체 완료. 인명 품질 자동화 완결(자동 누적 + 편집 + 기존 노트 소급). tests 7~8건 누적, 213 passed.
+
+---
+
+### ADR-018. 번역 충실도 방향 — 충실 의역 전환 + 환각·영어 차단 (v1.0.0.14~20, 5/27~28)
+
+**맥락**: 본문·제목·요약이 각각 별도 LLM 경로라 품질 규칙이 고르게 적용되지 않았다. 직역이 모호해 형식(게임 문답·말장난)을 뭉개거나, 요약에 원문에 없는 인물이 섞이거나, 영어 단어가 한국어로 안 옮겨지는 사례가 daily 에서 누적.
+
+**결정**: "직역 vs 의역" 을 **충실 의역**으로 정리하고, 각 경로에 환각·영어·인명 일관 규칙을 프롬프트 + 결정론 후처리로 일관 적용.
+- **v1.0.0.14** (`2692cd0`): 제목·요약 한자 혼입 차단 — Phase 3 CJK 후처리를 segment 없는 경로(제목·요약)에도 적용(`post_process_cjk_text`).
+- **v1.0.0.15·16** (`5ef0e2f`·`01553af`): 제목 원본 직역 우선 + 인명 dict 교정(15), 제목 구조·형식·문답·말장난 보존 규칙 구체화(16). "I Say Economy, You Say…" 게임 구조 보존 확인.
+- **v1.0.0.17** (`89f68ec`): 노트 frontmatter 에 생성 GuruNote 버전 표시(추적성, B19).
+- **v1.0.0.18** (`c372c72`): 본문 번역을 충실 의역으로 전환 — 환각·누락·영어 비번역 금지 + 예시(B20).
+- **v1.0.0.19** (`ab04856`): 본문 연속 반복 라인 축약(`_collapse_repeated_lines`) — 더듬거림 구간을 2-pass 정렬이 같은 문장으로 채우던 회귀 차단(B21).
+- **v1.0.0.20** (`9aad35e`): 요약 충실도 — `SUMMARY_SYSTEM_PROMPT` 환각·영어·인명 규칙 + 요약 결과 dict 인명 후처리(B22).
+
+**이유**: 직역의 모호함을 "충실 의역(의미·형식 보존, 날조·생략 금지)"으로 못박고, 프롬프트로 부족한 부분(인명·CJK)은 결정론 후처리로 메운다. 본체·제목·요약 세 경로의 규칙을 정합시켜 편차를 줄인다.
+
+**결과**: B17~B22 완료(v1.0.0.14~20). 단 프롬프트 레벨이라 완벽 통제는 아님 — 노트 편집·검색 그라운딩(ADR-020)으로 보완.
+
+---
+
+### ADR-019. LLM temperature 0.6 확정 (5/29)
+
+**맥락**: 같은 영상(드러켄밀러)을 temperature 0.8 과 0.6 으로 대조 처리해 품질을 비교.
+
+**결정**: **temperature 0.6 유지**(설정값, 코드 무관).
+
+**대안**: 0.8(더 자유로운 표현, 단 누출·환각 증가) / 0.6(채택) / 더 낮춤(경직·반복 우려).
+
+**이유**: 0.6 에서 제목의 "경제" 같은 핵심어가 살아남고, `formidable`·`things` 같은 영어 누출이 한국어로 더 옮겨지며, 전반적으로 더 충실했다. Besson/Wash 류 인명 오인식은 0.8·0.6 무승부 — 이는 temperature 가 아니라 검색 그라운딩(ADR-020)이 다룰 사안.
+
+**결과 / 한계**: 0.6 확정. 단 **0.6 도 영어 누출·인명 환각을 100% 차단하지 못함** — 5/29 재처리에서 `formidable`/`brilliant`/`Rates` 누출 + 원문에 없는 "제롬 파월" 환각 재확인(DEBUGGING §8). 프롬프트·temperature 의 한계 → 검색 그라운딩(ADR-020) + 요약 충실도(B22) 대상.
+
+---
+
+### ADR-020. 검색 그라운딩 — AgentSearch(SearXNG) 채택 + entity-only 번역 검증 (5/29, 채택·구현 대기)
+
+**맥락**: 프롬프트(ADR-018)·temperature(ADR-019) 로는 인명·회사명 오인식·환각을 못 막는다(Besson/Wash, "제롬 파월"). 모델 내부 지식만으로는 한계라 외부 근거가 필요.
+
+**결정 (채택, 구현 대기)**: **AgentSearch** — SearXNG 를 FastAPI 로 래핑(gesicht 에 Docker)해 검색 그라운딩 계층을 만든다. 전체 번역이 아니라 **인명·회사명만 번역 후 entity 검증 패스**로 좁히고, 기존 `entity_cache`·통용 dict 를 재사용한다. 토글로 켜고, 오프라인이면 자동 스킵. Wash→Warsh 같은 작은 검증부터 착수.
+
+**대안**: 더 큰 모델로 교체(모델 비의존 방향과 충돌) / 프롬프트 추가 강화(이미 한계) / dict 수동 확대(유지비·커버리지 한계).
+
+**이유**: 오류가 좁은 영역(고유명사)에 몰려 있어 전면 검색이 아니라 entity 한정 검증이 비용 대비 효과가 크다. 토글·오프라인 스킵으로 완전 로컬 정체성을 깨지 않는다.
+
+**결과**: 설계 확정. **착수는 신선한 세션**(현재 구현 0). 진행 시 entity 검증 패스 + 토글 + Wash→Warsh 검증 순.
+
+---
+
+### ADR-021. 자동 내보내기 중복 스킵 정책 — Q23=C (v1.0.0.25, 5/29)
+
+**맥락**: 자동 내보내기 본체는 이미 v1.0.0.9(B16-2, `83551bc`)에 완료(작업 완료 시 `App.onResult` 에서 `send_obsidian`, 기본 꺼짐, best-effort). 단 `save_to_vault` 는 같은 파일명이면 timestamp 접미사로 새 파일을 만들어, 자동을 켠 채 같은 영상을 재처리하면 vault 사본이 쌓였다.
+
+**결정 (Q23=C)**: **자동 호출일 때만**, 같은 `gurunote_job_id` 표식 노트가 vault 에 이미 있으면 내보내기를 건너뛴다. **수동 "Obsidian" 버튼은 종전대로 항상 새로 저장**(스킵 안 함). 기존 `obsidian.find_vault_copies`(읽기 전용) 재사용.
+
+**대안**: 항상 덮어쓰기(수동 의도 훼손) / 항상 스킵(수동 재내보내기 불가) / 파일명 해시 비교(표식이 더 안정적, 기각).
+
+**이유**: 자동은 "중복 누적 방지", 수동은 "사용자가 일부러 다시 내보냄" — 의도가 다르므로 자동에만 스킵. 표식 기반(ADR-014)이라 파일명 변경에 영향 없음.
+
+**결과**: v1.0.0.25(`86ce877`). `bridge.send_obsidian` 에 `skip_if_exists` 인자(기본 꺼짐, 자동 호출만 켬), 스킵 시 안내 토스트. `save_to_vault`·`obsidian.py`·`semantic.py` 무변(재사용만).
+
+---
+
+### ADR-022. 토스트 타입 시각 재도입 — Phase 2B-6d 제약을 지킨 복원 (v1.0.0.26, 5/29)
+
+**맥락**: Phase 2B-6d 에서 토스트의 타입별 시각(반투명 tint 배경·좌측 color strip)을 **의도적으로 제거**했다. 사유는 tint 배경이 TopBar 검색창 위에 겹칠 때 반투명하게 보여 가독성이 떨어졌기 때문(`main.css` 주석). 그 결과 성공·건너뜀·실패를 텍스트로만 구분해야 했다.
+
+**결정**: 제거 결정의 **반전이 아니라, 그 제약(배경 불투명 유지)을 지킨 재도입**. 배경은 불투명 흰색 그대로 두고 **좌측 보더 색만** 부여(성공=`--gn-success`, 정보=`--gn-primary`, 경고=`--gn-warning`, 실패=`--gn-danger`). 기존 토큰 재사용, info 는 전용 토큰이 없어 primary 차용.
+
+**대안**: tint 배경 복원(원래 가독성 문제 재발, 기각) / 텍스트만 유지(구분 약함, 현행) / 아이콘 추가(레이아웃 변경 큼).
+
+**이유**: 원래 제거 사유는 "반투명 배경"이지 "타입 구분 자체"가 아니었다. 좌측 보더는 불투명 배경을 건드리지 않으면서 구분을 준다. 사용자 확인 후 진행한 선택.
+
+**결과**: v1.0.0.26(`a05925c`). `main.css` 한 파일. 직전에 자동 내보내기 토스트 누락이 "버그 아님"으로 규명되며(DEBUGGING §8) 함께 정리.
+
+---
+
 ## 기각된 대안
 
 ### REJ-001. VibeVoice / Nemotron Omni 통합 모델 (시점 기록 부재)
@@ -344,10 +436,20 @@
 | ADR-011 v1.0.0.0 선언 | __init__.py, gui.py, package_desktop.py, SettingsScreen.jsx, README, CHANGELOG, CLAUDE.md, run_webview.command (신규), backlog.md | 5/24 (`2971939`) |
 | ADR-012 main 통합 | origin/main (force-with-lease), origin/archive/main-pre-cli (신규 보존) | 5/24 |
 | ADR-013 gui/app Path C | (파일 이동 부재) — README 진입점 안내, backlog B09/B10 | 5/24 |
+| ADR-014 Obsidian 표식 동기화 | gurunote/obsidian.py, webui/bridge.py | 5/25 (v1.0.0.3~0.5) |
+| ADR-015 인명 음차/영문 철자 | gurunote/llm.py | 5/26 (v1.0.0.6~0.7) |
+| ADR-016 처리 옵션 토글 | webui/bridge.py, SettingsScreen.jsx | 5/26 (v1.0.0.8) |
+| ADR-017 인명 관리 자동화 | gurunote/llm.py, webui/bridge.py, SettingsCanonicalNames.jsx, HistoryScreen.jsx | 5/26~27 (v1.0.0.10~13) |
+| ADR-018 충실도 방향 | gurunote/llm.py, exporter.py | 5/27~28 (v1.0.0.14~20) |
+| ADR-019 temperature 0.6 | (설정값, 코드 무관) | 5/29 |
+| ADR-020 검색 그라운딩 AgentSearch | (구현 대기) | 5/29 |
+| ADR-021 자동 내보내기 스킵 정책 | webui/bridge.py, webui/components/App.jsx | 5/29 (v1.0.0.25) |
+| ADR-022 토스트 타입 시각 | webui/styles/main.css | 5/29 (v1.0.0.26) |
 
 ---
 
 **자료 한계 명시**:
 - REJ-001/REJ-002/REJ-005 시점 일부 본인 기억 2차 사료.
 - ADR-001/004/006/007/008/010/011/012 는 commit hash + session_history_digest + git ref 1차 사료.
+- ADR-014~022 는 commit hash 1차 사료(전부 redesign 트리 git log 로 확인). **ADR-020(검색 그라운딩)은 채택 결정만 기록 — 구현 0, 착수 대기.** ADR-019(temperature)는 설정값이라 코드 commit 없음.
 - ADR-012 의 unrelated histories 발생 정확한 시점 (별도 init 한 commit) 은 **기록 부재** — 양쪽 root commit 메시지 동일 ("Initial commit"), 4/11 같은 날, hash `4bcbee6` vs `af50c2e`. 본인 기억으로는 4/19 직후 환경 전환.

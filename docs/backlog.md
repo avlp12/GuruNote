@@ -1,6 +1,6 @@
 # GuruNote Backlog
 
-마지막 갱신: 2026-05-28 (B22 요약 섹션 충실도 강화 완료, v1.0.0.20)
+마지막 갱신: 2026-05-29 (v1.0.0.21~26 뷰어 사용성 + 자동 내보내기 스킵 정책 + 토스트 시각, 검색 그라운딩 신규 대기)
 운영 규칙: WIP=1 (동시 active 작업 1개 제한)
 상태 정의: not_started / active / blocked / passing
 
@@ -15,6 +15,21 @@
 - 상태: **완료** (5/24, commit `527d2ea` + default on `feat: Phase 5 재분할 + 2-pass default on`)
 - 요약: GURUNOTE_SEGMENT_RESPLIT + GURUNOTE_TWO_PASS 기본값을 on으로 전환. daily 검증 2개 영상 통과 (영상1 96→49 segments, 영상2 586→294 segments, timeout 0, CJK 0, 화자 이름 정상 부착).
 - 토글 off 안전망 유지: GURUNOTE_SEGMENT_RESPLIT=0 / GURUNOTE_TWO_PASS=0 으로 기존 동작 복원 가능.
+
+### 검색 그라운딩 — AgentSearch (SearXNG) + entity 검증 패스
+
+- 배경: 프롬프트(ADR-018)·temperature 0.6(ADR-019)으로도 인명·회사명 오인식·환각을 못 막음(Besson/Wash, 원문에 없는 "제롬 파월" 환각 — 드러켄밀러 재처리 5/29). 모델 내부 지식 한계 → 외부 근거 필요.
+- 설계 (ADR-020): SearXNG 를 FastAPI 로 래핑(gesicht Docker). 전체 번역이 아니라 **인명·회사명만 번역 후 entity 검증 패스**로 좁힘. 기존 `entity_cache`·통용 dict 재사용. 토글(오프라인 자동 스킵 — 완전 로컬 정체성 유지). Wash→Warsh 작은 검증부터.
+- 상태: **채택, 구현 0 (착수 대기 — 신선한 세션)**
+- 우선순위: P1 (인명 품질 마지막 한계)
+- 비용: 큼 (Docker + 검증 패스 + 토글 + 검증)
+
+### 뷰어 사용성 — v1.0.0.21~24 (완료, 5/28~29)
+
+- **타임스탬프 토글 (v1.0.0.21, 완료)**: 뷰어 한·영 탭에서 `[MM:SS]` 표시 토글(보기 전용, 원본 불변). exporter 적용판을 먼저 만들었다가 적용 지점 오판으로 revert(`9a12566`→`c3b58bb`) 후 `ResultPanel` 뷰어판 재구현(`ca9ebf1`). 본문 드래그 복사도 함께 수정(`26b3f2a`, `user-select:text`). DEBUGGING §7.
+- **생성일 KST 표시 (v1.0.0.22, 완료)**: `historyFormatCreatedAt` — ISO UTC 원본이 그대로 노출되던 것을 `Asia/Seoul` 변환 표시. 저장 필드 불변(정렬 무영향).
+- **통용 표기 독립 화면 + 검색 (v1.0.0.23, 완료)**: 설정 "고급" 인라인에서 떼어 좌측 네비 독립 항목으로. 영문·표기 검색(검색 중에도 수정·삭제 원본 인덱스 보존).
+- **통용 표기 추가 행 맨 위 (v1.0.0.24, 완료)**: "추가" 시 새 빈 행을 목록 맨 앞에(스크롤 없이 바로 입력, 검색어 해제).
 
 ### B01: Phase 2 — entity cache + 화자 cache
 
@@ -185,6 +200,8 @@
 - 배경: 환경변수로만 조절하던 처리 옵션을 앱 UI 에서 켜고 끄기. 작업 완료 시 Obsidian 자동 내보내기.
 - **1단계 (처리 옵션 토글) — 완료 (v1.0.0.8)**: 재사용 `SettingsSwitch` 컴포넌트 신규. 설정 "고급"에 2-pass 번역(`GURUNOTE_TWO_PASS`) + STT 재분할(`GURUNOTE_SEGMENT_RESPLIT`) 토글. `_KNOWN_SETTINGS` 두 키 추가 → get_settings/save_settings 연동. 백엔드 env 읽기 로직 무변. 기본값 보존 — 미설정(빈 값)은 ON 표시, 저장 시 "1"/"0" 만 기록 (빈 값 저장 함정 회피). 격리 .env 검증 + 전체 191 passed.
 - **2단계 (자동 내보내기) — 완료 (v1.0.0.9)**: 설정-Obsidian 에 "작업 완료 후 자동 내보내기" 토글 (`GURUNOTE_OBSIDIAN_AUTOEXPORT`, 기본 꺼짐 — "1"만 on). 트리거 A 채택 — React `App.onResult`(작업 완료 이벤트)에서 토글 on 시 `api.send_obsidian(job_id)`. 백엔드 파이프라인·send_obsidian 무변(호출만). best-effort(작업 결과 이미 저장 → 내보내기 실패해도 완료 정상). 결과 toast(성공/NO_VAULT/실패). 격리 .env 검증 — 미설정→off, "1"→on. 191 passed. 1단계 자동 삭제 동기화(v1.0.0.4)와 함께 자동 동기화 완성. 실제 작업 자동 내보내기 최종 확인은 본인 GUI.
+- **3단계 (중복 스킵 정책, Q23=C) — 완료 (v1.0.0.25, `86ce877`)**: 자동을 켠 채 같은 영상 재처리 시 `save_to_vault` 가 timestamp 접미사로 사본을 쌓던 문제. 자동 호출일 때만 같은 `gurunote_job_id` 표식 노트가 vault 에 있으면 스킵(`bridge.send_obsidian` 에 `skip_if_exists`, `obsidian.find_vault_copies` 재사용·읽기 전용). 수동 버튼은 항상 새로 저장(보존). `save_to_vault`·obsidian.py·semantic.py 무변. ADR-021. 235 passed.
+- **참고 (v1.0.0.26)**: 자동 내보내기 "성공 토스트 누락" 보고는 계측 결과 버그 아님으로 규명(4초 표시 안에 놓친 인지 문제) — 토스트 타입별 좌측 보더 시각 구분으로 정리(ADR-022, DEBUGGING §8).
 
 ### B03: Phase 1 fix-up #3 — schema text leak
 

@@ -8,7 +8,7 @@
 
 **정체성 진화**: "IT/AI 구루 요약 앱"(PRD, 4/11) → "24/7 지식 증류기 + Obsidian"(WORK_ORDER) → "**모델 비의존 한국어 지식 정리**"(5/24).
 
-## 현재 지점 (2026-05-26, HEAD d6a5d12, v1.0.0.8)
+## 현재 지점 (2026-05-29, HEAD a05925c, v1.0.0.26)
 
 ### 완료
 - **Phase 0~1 (v0.1.0 ~ v0.8.0.6)**: 5-step 파이프라인 → CustomTkinter GUI → openai_compatible local LLM → YouTube metadata → 모델 갱신 → SSL 인증서 fix
@@ -26,6 +26,7 @@
 - **Phase 5 마무리 (`6dc9934`, 5/24)**: daily 검증 영상 2개 통과 (xKK5ze3FukQ 96→49 segments, zNuOOMM20Tk 586→294 segments, timeout 0, CJK 0, 화자 이름 정상 부착). `GURUNOTE_SEGMENT_RESPLIT` + `GURUNOTE_TWO_PASS` 기본값 on 전환. 토글 off 안전망 유지 (`=0` 명시 시 기존 동작).
 - **v1.0.0.0 선언 + main 통합 (`2971939`, 5/24)**: 버전 0.8.0.6 → 1.0.0.0 (7 곳 일치). 1.0 근거 — License MIT → Elastic 2.0, UI CustomTkinter/Streamlit → React/Material 3/PyWebView (`app_webview.py`), 번역 1-pass → 2-pass DCCD + entity_cache + CJK + STT 재분할. README 약 60% 재작성, `run_webview.command` 신규. **main 통합 (force-with-lease)**: origin/main `9b6c621`(v0.8.0.6) → `2971939`(v1.0.0.0), 옛 main 211 commit (root `4bcbee6`) 은 `origin/archive/main-pre-cli` 에 영구 보존.
 - **v1.0.0.1~0.8 daily 사용성·인명 품질 (5/25~26)**: 출처 링크+다운로드 wiring(`add66d2` B11) → RAG React 재배선(`4615843` B12, gesicht 의존성 설치+28노트 인덱스 검증) → Obsidian 내보내기+RAG wikilink(`8eaa538` B13) → 삭제↔사본 동기화(`ef4426d` B14, `gurunote_job_id` 표식) → 파일명 접두사 제거(`8b2125e`) → 인명 음차 통용 표기 우선(`77dd6b0` B15-A) → 영문 병기 철자 소스 검증(`8f836a0` B15-B, Danduril 차단) → 처리 옵션 토글(`d6a5d12` B16-1, 2-pass/재분할). 자세히 [HISTORY](./HISTORY.md) §4 + [DECISIONS](./DECISIONS.md) ADR-014~016.
+- **v1.0.0.9~26 자동 내보내기·인명 자동화·품질·사용성 (5/26~29)**: 자동 내보내기 토글(`83551bc` B16-2 **완료**) → 인명 관리 자동화 A-2(`9d342b6`~`390d69b` v1.0.0.10~13, 결정론 교정+auto/user dict+편집 UI+노트 새로고침, ADR-017) → 한국어 출력 품질 2차(한자 차단·제목 직역·생성 버전·충실 의역·반복 축약·요약 충실도, v1.0.0.14~20, ADR-018, B17~B22) → 뷰어 사용성(타임스탬프 토글·드래그 복사·KST·통용 표기 화면, v1.0.0.21~24) → 자동 내보내기 중복 스킵 정책(`86ce877` v1.0.0.25, ADR-021) → 토스트 타입 시각(`a05925c` v1.0.0.26, ADR-022). temperature 0.6 확정(ADR-019) + 검색 그라운딩 채택(ADR-020, 구현 대기). 자세히 [HISTORY](./HISTORY.md) §4 + [DECISIONS](./DECISIONS.md) ADR-017~022 + [DEBUGGING](./DEBUGGING.md) §7~8.
 
 ### 진행 중 (없음 — WIP=1)
 
@@ -48,14 +49,14 @@
 | [CHANGELOG.md](./CHANGELOG.md) | 버전별 변경 (기존 `CHANGELOG.md` + 백엔드 Phase 연계) | "v0.x.x에 무엇이 바뀌었나" |
 
 저장소 다른 핵심 자료:
-- `docs/backlog.md` — WIP=1 운영, B01~B06 추적
+- `docs/backlog.md` — WIP=1 운영, B01~B22 추적 (B11~B22 완료, 검색 그라운딩 신규 대기)
 - `docs/quality.md` — 모듈별 등급 (STT A / LLM B+ / 후처리 A / 화자 B / UI 확인필요 / 검증 B)
 - `docs/research/` — Phase 1~3 spec + 외래어 표기법 원본
 - `docs/legacy/handoff/` — Phase 2A 사전 디자인 handoff
 - `docs/legacy/webview-ui/{ARCHITECTURE,TECH_CHOICE}.md` — feat/webview-ui (4/20, 폐기) 결정
 - `docs/wip/session_history_digest.md` — 18개 세션 사료 (4/19~5/24, 1차 자료)
 
-## 핵심 결정 8개 (자세히 [DECISIONS.md](./DECISIONS.md))
+## 핵심 결정 — 큰 줄기 8개 (전체 ADR-001~022, 자세히 [DECISIONS.md](./DECISIONS.md))
 
 1. **STT 엔진 여정 (VibeVoice → WhisperX → mlx-whisper)**: 초기 VibeVoice-ASR 채택 → RTX5090 32GB **OOM 32분 처리 시간** → **v0.4.0 WhisperX 전면교체** → Mac 사용자 위해 **v0.6.0 mlx-whisper 합류** → **AssemblyAI 완전 제거 → 완전 로컬** 결정. (큰 줄기)
 2. **PyWebView + React 채택, PySide6 폐기** (4/19~4/27): "경로 C-1: PyWebView + HTML/CSS/JS + gurunote/* 로직 그대로 재사용" → Phase 1-B MVP 성공 → "Phase 2B-0: 신축 baseline 준비 (vanilla 폐기)" — feat/webview-ui 폐기, Phase 2B 진입.
@@ -68,8 +69,9 @@
 
 ## 다음 할 일
 
-- 역사 문서 주기적 갱신 (본 commit = v1.0.0.1~0.7 + 트랙 B 요약 반영; v1.0.0.8 토글은 다음 묶음).
-- **B16-2** Obsidian 자동 내보내기 토글 — 작업 완료 직후 자동 `send_obsidian` (`PipelineSession._poll` 종료 지점), 기본 꺼짐.
+- 역사 문서 주기적 갱신 (본 commit = v1.0.0.9~26 + 5/26~29 결정/디버깅 반영, ADR-017~022 + DEBUGGING §7~8).
+- **검색 그라운딩 AgentSearch** (ADR-020) — SearXNG + entity 검증 패스. 착수는 신선한 세션(Wash→Warsh 작은 검증부터).
+- ~~**B16-2** Obsidian 자동 내보내기 토글~~ → **완료** (v1.0.0.9 `83551bc`, `App.onResult` 트리거, 기본 꺼짐). 중복 스킵 정책은 v1.0.0.25(ADR-021).
 - 트랙 B 원본 raw → `docs/legacy` 보관 (본인이 원본 텍스트 제공 시).
 - ~~`docs/wip/daily_verify_phase5.py` / `verify_results/daily_phase5/` 운명 결정~~ → **commit 완료** (`208f18a`, 5/25).
 - ~~GitHub release 태그 `v1.0.0.0`~~ → **생성 완료** (5/25, `2971939` + GitHub release).

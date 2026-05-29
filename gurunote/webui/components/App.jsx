@@ -312,8 +312,10 @@ function App() {
           try {
             const s = await window.pywebview?.api?.get_settings();
             if (!(s?.ok && s.values?.GURUNOTE_OBSIDIAN_AUTOEXPORT === '1')) return;
-            const r = await window.pywebview.api.send_obsidian(jid);
-            if (r?.ok) {
+            const r = await window.pywebview.api.send_obsidian(jid, true);
+            if (r?.skipped) {
+              window.showToast?.('이미 내보낸 노트 — 건너뜀', 'info');
+            } else if (r?.ok) {
               const rc = r.related_count || 0;
               window.showToast?.(`Obsidian 자동 내보내기 완료${rc ? ` (연관 노트 ${rc}개)` : ''}`, 'success');
             } else if (r?.code === 'NO_VAULT') {

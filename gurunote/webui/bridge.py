@@ -1376,7 +1376,7 @@ class Api:
     def save_pdf(self, job_id: str, target_path: Optional[str] = None) -> dict:
         raise NotImplementedError("save_pdf: wired in Phase 2-B")
 
-    def send_obsidian(self, job_id: Any = None) -> dict:
+    def send_obsidian(self, job_id: Any = None, skip_if_exists: Any = False) -> dict:
         """저장된 노트를 Obsidian vault 로 내보낸다 (RAG 유사 노트 wikilink 포함).
 
         흐름: result.md 로드 → 의미 검색(설치+인덱스 시)으로 유사 노트 top5(≥0.5)
@@ -1391,7 +1391,9 @@ class Api:
         from gurunote.history import get_job_markdown, load_index  # noqa: PLC0415
 
         if isinstance(job_id, dict):
+            skip_if_exists = job_id.get("skip_if_exists", skip_if_exists)
             job_id = job_id.get("job_id")
+        skip_if_exists = bool(skip_if_exists)
         if not isinstance(job_id, str) or not job_id:
             return self._err("INVALID_ID", "job_id must be a non-empty string")
         if "/" in job_id or "\\" in job_id or ".." in job_id:
@@ -1400,6 +1402,20 @@ class Api:
         md = get_job_markdown(job_id)
         if md is None:
             return self._err("HISTORY_NOT_FOUND", f"no result.md for job {job_id}")
+
+        # 자동 내보내기(skip_if_exists)에서만: 같은 job_id 표식 노트가 vault 에 이미
+        #   있으면 건너뛴다. 같은 영상 재처리 시 vault 사본 누적을 막는다. 수동 버튼은
+        #   플래그를 보내지 않아 항상 새로 저장. find_vault_copies 는 읽기 전용이며
+        #   vault 미설정 시 빈 목록 → 건너뛰지 않고 아래 NO_VAULT 흐름으로 이어진다.
+        if skip_if_exists:
+            existing = obsidian.find_vault_copies(job_id)
+            if existing:
+                return {
+                    "ok": True,
+                    "skipped": True,
+                    "path": str(existing[0]),
+                    "related_count": 0,
+                }
 
         meta = next((e for e in load_index() if e.get("job_id") == job_id), {})
         title = meta.get("organized_title") or meta.get("title") or job_id

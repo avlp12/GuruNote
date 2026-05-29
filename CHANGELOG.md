@@ -7,6 +7,18 @@
 
 ## [Unreleased]
 
+## [1.0.0.25] - 2026-05-29
+
+### Changed
+- **자동 Obsidian 내보내기 중복 건너뛰기** — 자동 내보내기 토글
+  (`GURUNOTE_OBSIDIAN_AUTOEXPORT="1"`) 이 켜진 상태에서 같은 영상을 다시 처리하면 vault 에
+  같은 노트 사본이 타임스탬프 접미사로 계속 쌓이던 문제. 자동 호출에 한해 같은
+  `gurunote_job_id` 표식 노트가 vault 에 이미 있으면(`obsidian.find_vault_copies` 재사용,
+  읽기 전용) 내보내기를 건너뛰고 "이미 내보낸 노트 — 건너뜀" 토스트로 안내. 수동 "Obsidian"
+  버튼은 종전대로 항상 새로 저장(건너뛰지 않음). `bridge.send_obsidian` 에 `skip_if_exists`
+  인자 추가(기본 꺼짐, 자동 호출만 켬), `App.jsx` 자동 호출만 플래그 전달.
+  `save_to_vault`·`obsidian.py`·`semantic.py` 는 호출만 — 변경 없음.
+
 ## [1.0.0.24] - 2026-05-29
 
 ### Changed
@@ -1683,7 +1695,8 @@ bash run_desktop.sh
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v1.0.0.24...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v1.0.0.25...HEAD
+[1.0.0.25]: https://github.com/avlp12/GuruNote/compare/v1.0.0.24...v1.0.0.25
 [1.0.0.24]: https://github.com/avlp12/GuruNote/compare/v1.0.0.23...v1.0.0.24
 [1.0.0.23]: https://github.com/avlp12/GuruNote/compare/v1.0.0.22...v1.0.0.23
 [1.0.0.22]: https://github.com/avlp12/GuruNote/compare/v1.0.0.21...v1.0.0.22

@@ -7,6 +7,15 @@
 
 ## [Unreleased]
 
+## [1.0.0.26] - 2026-05-29
+
+### Added
+- **토스트 알림 타입별 좌측 보더 색 구분** — 성공(초록)·정보(파랑)·경고(주황)·실패(빨강)를
+  좌측 3px 보더 색으로 구분(기존 `--gn-*` 토큰 재사용, info 는 primary 차용). 배경은 불투명
+  흰색을 그대로 유지해 Phase 2B-6d 의 가독성 결정(반투명 tint 제거)을 존중 — tint 배경은
+  재도입하지 않음. 기존엔 타입별 시각 차이가 없어 성공·건너뜀·실패를 텍스트로만 구분해야
+  했음. `main.css` 한 파일, 백엔드 무변.
+
 ## [1.0.0.25] - 2026-05-29
 
 ### Changed
@@ -1695,7 +1704,8 @@ bash run_desktop.sh
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v1.0.0.25...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v1.0.0.26...HEAD
+[1.0.0.26]: https://github.com/avlp12/GuruNote/compare/v1.0.0.25...v1.0.0.26
 [1.0.0.25]: https://github.com/avlp12/GuruNote/compare/v1.0.0.24...v1.0.0.25
 [1.0.0.24]: https://github.com/avlp12/GuruNote/compare/v1.0.0.23...v1.0.0.24
 [1.0.0.23]: https://github.com/avlp12/GuruNote/compare/v1.0.0.22...v1.0.0.23

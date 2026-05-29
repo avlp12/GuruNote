@@ -313,9 +313,6 @@ function App() {
             const s = await window.pywebview?.api?.get_settings();
             if (!(s?.ok && s.values?.GURUNOTE_OBSIDIAN_AUTOEXPORT === '1')) return;
             const r = await window.pywebview.api.send_obsidian(jid, true);
-            // TEMP 계측 — 다음 턴 제거. 새 job_id 첫 자동 내보내기에서 성공 분기 진입
-            //   여부 확정용 (r 이 ok:true 인지 skipped 인지 _err 인지 노출).
-            window.showToast?.('[계측] ' + JSON.stringify(r), 'info');
             if (r?.skipped) {
               window.showToast?.('이미 내보낸 노트 — 건너뜀', 'info');
             } else if (r?.ok) {

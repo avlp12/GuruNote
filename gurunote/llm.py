@@ -1610,6 +1610,48 @@ def _load_entity_cache_full(
     return {"entities": entities, "speakers": speakers}
 
 
+def load_speaker_names(video_context: Optional[dict]) -> dict:
+    """영상의 화자 라벨 → English 실명 매핑을 디스크 cache 에서 읽어 반환.
+
+    exporter 의 영어 원문 섹션이 화자 라벨(`A`/`B`) 대신 실명을 찍도록 쓰는 공개 헬퍼.
+    `translate_transcript` 가 번역 끝에 저장한 entity cache(`speakers` 필드)를 재사용한다.
+    cache_key 산출은 `translate_transcript` 의 저장 경로와 **같은 우선순위**(id → video_id
+    → title hash)를 따라 단일 출처를 유지.
+
+    Args:
+        video_context: `AudioDownloadResult.to_context_dict()` 형태 (id/video_id/title).
+
+    Returns:
+        `{라벨: English 실명}` dict. 다음 경우 모두 **빈 dict**(호출자는 라벨 fallback):
+        cache 파일 부재 / schema·spec 버전 불일치 (`_load_entity_cache_full` → None) /
+        speakers 부재 / phase2 off 로 저장된 적 없음 / 손상. 예외는 삼켜 깨지지 않는다.
+    """
+    if not video_context:
+        return {}
+    try:
+        cache_key = (
+            video_context.get("id")
+            or video_context.get("video_id")
+            or _compute_cache_key_from_title(video_context.get("title", ""))
+        )
+        if not cache_key:
+            return {}
+        full = _load_entity_cache_full(cache_key)
+        if not full:
+            return {}
+        speakers = full.get("speakers") or {}
+        names: dict = {}
+        for label, meta in speakers.items():
+            if not isinstance(meta, dict):
+                continue
+            english = (meta.get("english") or "").strip()
+            if label and english:
+                names[label] = english
+        return names
+    except Exception:  # noqa: BLE001 — 표시용 부가 정보라 실패는 빈 dict 로 degrade
+        return {}
+
+
 # =============================================================================
 # Health check — omlx xgrammar 사전 점검 (5/23)
 # =============================================================================

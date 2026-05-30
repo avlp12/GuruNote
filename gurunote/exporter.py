@@ -70,18 +70,33 @@ def build_full_script_section(translated_text: str, *, language: Optional[str] =
     return f"{header}\n\n{translated_text.strip()}\n"
 
 
-def build_original_script_section(transcript: Transcript, *, language: Optional[str] = None) -> str:
+def build_original_script_section(
+    transcript: Transcript,
+    *,
+    language: Optional[str] = None,
+    speaker_names: Optional[dict] = None,
+) -> str:
     """원문 스크립트 섹션 — 헤더가 detected language 따라 동적.
 
     Phase 2B-3-backend Step 3b-1: language === 'ko' 시 호출자가 skip 권장
     (한국어는 단일 섹션). 'en' / 'ja' / 'zh' 등은 flag + label 표시.
+
+    speaker_names: `{라벨: English 실명}` (``llm.load_speaker_names`` 산출). 주어지면
+    화자 라벨(``seg.speaker``)을 실명으로 치환해 ``**[MM:SS] {실명}:**`` 로 찍는다.
+    한국어 번역본은 번역 중 실명이 본문에 들어가는데 영어 원문은 라벨뿐이라, 같은
+    화자 매핑을 원문에도 적용해 비대칭을 없앤다. 매핑 없는 라벨은 기존
+    ``**[MM:SS] Speaker {라벨}:**`` 로 fallback (화자분리 미식별·cache miss·라벨이
+    글자 아님 등에서 보존 — 비거나 깨지지 않는다).
     """
     flag = _language_flag(language)
     label = _language_label(language)
+    names = speaker_names or {}
     lines = [f"# {flag} 원문 스크립트 ({label})", ""]
     for seg in transcript.segments:
         ts = _format_ts(seg.start)
-        lines.append(f"**[{ts}] Speaker {seg.speaker}:** {seg.text}")
+        english = names.get(seg.speaker)
+        prefix = english if english else f"Speaker {seg.speaker}"
+        lines.append(f"**[{ts}] {prefix}:** {seg.text}")
         lines.append("")
     return "\n".join(lines)
 
@@ -122,6 +137,8 @@ def build_gurunote_markdown(
     tags: Optional[List[str]] = None,
     # Phase 2B-3-backend Step 3b-1
     detected_language: Optional[str] = None,
+    # 영어 원문 섹션 화자 라벨 → English 실명 매핑 (llm.load_speaker_names). None 시 라벨 유지.
+    speaker_names: Optional[dict] = None,
 ) -> str:
     """
     최종 다운로드용 마크다운 조립.
@@ -194,7 +211,9 @@ def build_gurunote_markdown(
     ])
     if not is_korean:
         parts.extend([
-            build_original_script_section(transcript, language=detected_language),
+            build_original_script_section(
+                transcript, language=detected_language, speaker_names=speaker_names
+            ),
             "",
         ])
     parts.extend([

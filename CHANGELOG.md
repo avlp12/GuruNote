@@ -7,6 +7,17 @@
 
 ## [Unreleased]
 
+## [1.0.0.27] - 2026-05-30
+
+### Added
+- **영어 원문 스크립트 화자 표기를 라벨에서 실제 이름으로** — 한국어 번역본은 번역 중
+  화자 실명이 본문에 들어가는데 영어 원문 섹션은 `Speaker A/B` 라벨뿐이라 비대칭이었다.
+  같은 화자 매핑(`speaker_cache`)을 영어 원문 섹션에도 적용해 라벨을 English 실명으로
+  표기. 매핑 없는 라벨(화자분리 미식별·캐시 miss)은 기존 `Speaker X` 로 fallback. 디스크
+  entity cache 의 `speakers` 필드를 재사용(`load_speaker_names`), 저장 게이트를 entity 0건
+  영상도 화자 매핑이 남도록 보완(`entity_cache or speaker_cache`). 한국어 번역본·STT·화자
+  식별 로직 무변, 표시 + 전달 경로만.
+
 ## [1.0.0.26] - 2026-05-29
 
 ### Added
@@ -1704,7 +1715,8 @@ bash run_desktop.sh
   `os.environ` 에 쓰던 로직을 제거하고 `LLMConfig.from_env(provider=...)`
   override 로 request-local 하게 주입.
 
-[Unreleased]: https://github.com/avlp12/GuruNote/compare/v1.0.0.26...HEAD
+[Unreleased]: https://github.com/avlp12/GuruNote/compare/v1.0.0.27...HEAD
+[1.0.0.27]: https://github.com/avlp12/GuruNote/compare/v1.0.0.26...v1.0.0.27
 [1.0.0.26]: https://github.com/avlp12/GuruNote/compare/v1.0.0.25...v1.0.0.26
 [1.0.0.25]: https://github.com/avlp12/GuruNote/compare/v1.0.0.24...v1.0.0.25
 [1.0.0.24]: https://github.com/avlp12/GuruNote/compare/v1.0.0.23...v1.0.0.24

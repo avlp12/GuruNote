@@ -43,9 +43,10 @@ from gurunote.audio import (
 )
 from gurunote.exporter import autosave_result, build_gurunote_markdown, sanitize_filename
 from gurunote.llm import (
-    LLMConfig, extract_metadata, load_speaker_names, summarize_translation,
-    test_connection, translate_transcript,
+    LLMConfig, extract_metadata, load_speaker_names, load_stt_corrections,
+    summarize_translation, test_connection, translate_transcript,
 )
+from gurunote.search_grounding import build_search_fn, context_from_video
 from gurunote.progress_tee import install_tee
 from gurunote.settings import save_settings
 from gurunote.history import (
@@ -289,10 +290,14 @@ class PipelineWorker:
                 self._log(f"[Step 3] OK: 한국어 원본 사용 ({len(translated):,} chars)")
             else:
                 self._log("[Step 3] LLM 한국어 번역 중...")
+                # 검색 그라운딩 search_fn 주입 (영상 메타 맥락 closure 캡처). 실제 검색 실행은
+                # translate_transcript 내부의 GURUNOTE_SEARCH_GROUNDING 토글이 제어(기본 꺼짐)
+                # — TWO_PASS 등과 동일하게 토글은 llm.py 에서 소비. 끄면 search_fn 미사용(무변).
                 translated = translate_transcript(
                     transcript, config=llm_cfg, progress=self._log,
                     video_context=video_ctx,
                     stop_event=self._stop_event,
+                    search_fn=build_search_fn(context=context_from_video(video_ctx)),
                 )
                 self._log(f"[Step 3] OK: 번역 완료 ({len(translated):,} chars)")
             self._set_progress(0.78)
@@ -332,6 +337,8 @@ class PipelineWorker:
             self._log("[Step 5] 마크다운 조립 중...")
             # 영어 원문 섹션 화자 라벨 → English 실명 (디스크 cache 재사용, 없으면 빈 dict).
             speaker_names = load_speaker_names(video_ctx)
+            # 검색 그라운딩 교정 쌍 (디스크 cache 재사용). 토글 꺼짐·검색 미실행이면 빈 dict.
+            stt_corrections = load_stt_corrections(video_ctx)
             full_md = build_gurunote_markdown(
                 title=audio.video_title,
                 webpage_url=audio.webpage_url,
@@ -350,6 +357,8 @@ class PipelineWorker:
                 detected_language=transcript.language or None,
                 # 영어 원문 섹션 화자 실명 매핑 (없으면 라벨 fallback).
                 speaker_names=speaker_names,
+                # 검색 그라운딩 교정 쌍 (영어 원문 표시 치환 + frontmatter 기록).
+                stt_corrections=stt_corrections,
             )
             self._log("[Done] GuruNote 생성 완료")
             self._set_progress(1.0)

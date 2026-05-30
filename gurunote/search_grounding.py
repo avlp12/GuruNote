@@ -51,11 +51,22 @@ _STOPWORDS = frozenset({
 _CAP_TOKEN_RE = re.compile(r"[A-Z][A-Za-z]+(?:'[A-Za-z]+)?")
 
 
+def _build_query(name: str, hint: Optional[str], context: str) -> str:
+    """검색 질의 문자열 — name + hint(엔티티 타입) + 영상 맥락(title·tags 등) 결합.
+
+    빈 조각은 제외 — 빈 맥락이면 기존 "name hint" 형태, hint 도 비면 name 단독으로 안전
+    fallback (안 깨짐). 순수 함수(네트워크 없음) — 질의 구성만 단위 테스트 가능.
+    """
+    parts = [(name or "").strip(), (hint or "").strip(), (context or "").strip()]
+    return " ".join(p for p in parts if p)
+
+
 def _searxng_query(
     name: str,
     hint: Optional[str],
     base_url: str,
     timeout: float,
+    context: str = "",
 ) -> List[dict]:
     """SearXNG `format=json` 조회 → results 리스트 반환.
 
@@ -64,7 +75,7 @@ def _searxng_query(
 
     localhost 평문 GET 이라 SSL context 불필요 — 표준 urllib 만 사용(새 의존성 없음).
     """
-    query = f"{name} {hint}".strip() if hint else name.strip()
+    query = _build_query(name, hint, context)
     url = base_url.rstrip("/") + "/search?" + urllib.parse.urlencode(
         {"q": query, "format": "json"}
     )
@@ -152,21 +163,43 @@ def _pick_correction(
     return best_cand
 
 
+def context_from_video(video_context: Optional[dict], max_chars: int = 200) -> str:
+    """영상 메타(title·tags·description)를 검색 질의 보강용 맥락 문자열로 만든다.
+
+    옵션 1(영상 수준 맥락) — 인물별 직책이 아니라 영상 주제어로 도메인 앵커를 준다. title·
+    tags 를 앞세우고 description 은 앞부분만(전체 합쳐 max_chars 로 절단 — 질의가 과하게
+    길어지면 SearXNG 결과가 희석되므로). 맥락 재료가 없으면 빈 문자열(질의는 name+hint 로 fallback).
+    """
+    if not video_context:
+        return ""
+    title = (video_context.get("title") or "").strip()
+    tags = video_context.get("tags") or []
+    tag_str = " ".join(str(t).strip() for t in tags if str(t).strip())
+    description = (video_context.get("description") or "").strip()
+    combined = " ".join(p for p in [title, tag_str, description] if p)
+    return combined[:max_chars].strip()
+
+
 def build_search_fn(
+    context: str = "",
     base_url: Optional[str] = None,
     threshold: float = _DEFAULT_THRESHOLD,
     timeout: float = _DEFAULT_TIMEOUT,
 ) -> Callable[[str, Optional[str]], Optional[str]]:
-    """`search_fn(name, hint) -> 교정 english | None` 클로저 생성 (gui 가 단계 3에서 주입).
+    """`search_fn(name, hint) -> 교정 english | None` 클로저 생성 (gui 가 주입).
 
+    context: 영상 수준 맥락 문자열(`context_from_video` 산출) — closure 에 캡처되어 모든 질의에
+    보태진다(계약 search_fn(name, hint) 는 불변, 맥락은 여기로). 빈 맥락이면 기존 동작.
     base_url 기본 = env `GURUNOTE_SEARXNG_URL` → 없으면 `http://localhost:8080`.
     네트워크 실패는 search_fn 밖으로 전파(= _verify graceful skip). 검색은 성공했으나 정답
     후보 부재면 None(= _verify 가 무교정 마킹).
     """
     resolved = (base_url or os.environ.get("GURUNOTE_SEARXNG_URL") or _DEFAULT_BASE_URL)
+    captured_context = (context or "").strip()
 
     def search_fn(name: str, hint: Optional[str] = None) -> Optional[str]:
-        results = _searxng_query(name, hint, resolved, timeout)  # 실패 시 raise → graceful skip
+        # 실패 시 raise → graceful skip. 영상 맥락은 closure 에서 질의에 보탬.
+        results = _searxng_query(name, hint, resolved, timeout, context=captured_context)
         return _pick_correction(name, results, threshold)
 
     return search_fn

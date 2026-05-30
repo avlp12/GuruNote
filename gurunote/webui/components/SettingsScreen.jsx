@@ -809,6 +809,12 @@ function SettingsAdvanced({ values, secretsSet, onChange, onSave, dirty }) {
           checked={(values.GURUNOTE_SEGMENT_RESPLIT ?? '') !== '0'}
           onChange={(on) => onChange('GURUNOTE_SEGMENT_RESPLIT', on ? '1' : '0')}
         />
+        <SettingsSwitch
+          label="검색 그라운딩 (실험적)"
+          hint="인명·회사명 STT 오인식을 웹 검색으로 교정합니다(예: 베센트). 기본 꺼짐 — 켜면 처리 시간이 늘고, 오프라인이거나 검색 서버가 없으면 자동으로 건너뜁니다."
+          checked={(values.GURUNOTE_SEARCH_GROUNDING ?? '') === '1'}
+          onChange={(on) => onChange('GURUNOTE_SEARCH_GROUNDING', on ? '1' : '0')}
+        />
       </div>
 
       {/* === Anthropic === */}

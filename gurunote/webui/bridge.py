@@ -67,6 +67,9 @@ _KNOWN_SETTINGS: tuple[str, ...] = (
     # llm.py:2811(GURUNOTE_TWO_PASS) / stt_mlx.py(GURUNOTE_SEGMENT_RESPLIT) 가
     # os.environ 을 읽으므로 키 추가만으로 저장/로드/반영 (백엔드 로직 무변).
     "GURUNOTE_TWO_PASS", "GURUNOTE_SEGMENT_RESPLIT",
+    # 검색 그라운딩 — "1"=on / 그 외=off (**기본 꺼짐**). llm.py translate_transcript 의
+    # 검색 패스가 os.environ 으로 읽음. 켜면 인명·회사명 STT 오인식을 검색으로 교정.
+    "GURUNOTE_SEARCH_GROUNDING",
 )
 
 _SECRET_KEYS: frozenset[str] = frozenset({

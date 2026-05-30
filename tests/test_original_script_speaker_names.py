@@ -10,12 +10,16 @@
 """
 from __future__ import annotations
 
+from unittest.mock import patch
+
 from gurunote import llm
 from gurunote.exporter import build_original_script_section
 from gurunote.llm import (
+    LLMConfig,
     _compute_cache_key_from_title,
     _save_entity_cache,
     load_speaker_names,
+    translate_transcript,
 )
 from gurunote.types import Segment, Transcript
 
@@ -94,3 +98,61 @@ def test_load_speaker_names_cache_miss_returns_empty(tmp_path, monkeypatch):
 def test_load_speaker_names_none_context_returns_empty():
     """video_context 부재 — 빈 dict."""
     assert load_speaker_names(None) == {}
+
+
+def test_save_gate_persists_speakers_when_no_entities(tmp_path, monkeypatch):
+    """P2 회귀: entity 0건 + speaker 존재 영상도 화자 매핑을 디스크에 저장한다.
+
+    이전 게이트 `if config.enable_phase2 and entity_cache:` 는 entity_cache 가 비면
+    speaker_cache 까지 저장을 건너뛰어, load_speaker_names 가 {} → 영어 원문이 라벨로
+    fallback (번역본 실명/원문 라벨 불일치). 게이트를 `entity_cache or speaker_cache` 로
+    넓힌 뒤로는 화자 매핑이 남아야 한다. 이 테스트는 **수정 전 코드에서 실패**한다.
+
+    translate_transcript 의 외부 경계만 mock — bootstrap(화자만, entity 0건),
+    청크 번역(영문 병기 없는 한국어 → entity 추출 0건 유지), xgrammar 점검, CJK 후처리.
+    저장 게이트는 실제 코드가 실행된다. CACHE_DIR 는 autouse fixture 로 tmp 격리,
+    canonical_names 는 prod 쓰기 방지를 위해 tmp 로 격리.
+    """
+    monkeypatch.setattr(llm, "_CANONICAL_NAMES_PATH", tmp_path / "canonical_names.json")
+
+    transcript = Transcript(
+        segments=[Segment(speaker="A", start=0.0, end=2.0, text="Hello there.")],
+        language="en",
+    )
+    video_context = {"title": "Entity-less Conversation"}
+    cfg = LLMConfig(
+        provider="openai_compatible", model="mock", api_key="mock", base_url="http://mock.local/v1",
+    )  # enable_phase2 기본 True
+
+    speakers_only = {"__speakers__": {"A": {"english": "Iliana Bouzali", "korean": "일리아나 부잘리"}}}
+    # 영문 병기 없는 한국어 → _extract_entities 가 0건 → entity_cache 빈 채 유지.
+    chunk_out = "[00:00] 일리아나 부잘리: 안녕하세요."
+
+    with patch.object(llm, "_check_xgrammar_available", return_value=True), \
+         patch.object(llm, "_bootstrap_entity_cache_from_metadata", return_value=speakers_only), \
+         patch.object(llm, "translate_chunk_index_mapping_v2", return_value=chunk_out), \
+         patch.object(llm, "post_process_cjk", side_effect=lambda result, *a, **k: result):
+        translate_transcript(transcript, config=cfg, video_context=video_context)
+
+    # entity 0건이지만 화자 매핑이 디스크에 남아 load 가 실명을 돌려준다 (이전엔 {}).
+    assert load_speaker_names(video_context) == {"A": "Iliana Bouzali"}
+
+
+def test_save_gate_skips_when_phase2_off(tmp_path, monkeypatch):
+    """회귀 방어: enable_phase2 off 면 speaker 가 있어도 저장 안 함 (게이트의 phase2 조건 유지)."""
+    monkeypatch.setattr(llm, "_CANONICAL_NAMES_PATH", tmp_path / "canonical_names.json")
+    transcript = Transcript(
+        segments=[Segment(speaker="A", start=0.0, end=2.0, text="Hello there.")],
+        language="en",
+    )
+    video_context = {"title": "Phase2 Off Video"}
+    cfg = LLMConfig(
+        provider="openai_compatible", model="mock", api_key="mock", base_url="http://mock.local/v1",
+        enable_phase2=False,
+    )
+    with patch.object(llm, "_check_xgrammar_available", return_value=True), \
+         patch.object(llm, "translate_chunk_index_mapping_v2", return_value="[00:00] 안녕하세요."), \
+         patch.object(llm, "post_process_cjk", side_effect=lambda result, *a, **k: result):
+        translate_transcript(transcript, config=cfg, video_context=video_context)
+
+    assert load_speaker_names(video_context) == {}

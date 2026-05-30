@@ -2112,7 +2112,9 @@ def translate_transcript(
 
     # B06 — 영상 처리 완료 시 entity_cache 디스크 저장 (spec §4.4).
     # cache key 는 video_id 우선, 부재 시 video_title hash fallback.
-    if config.enable_phase2 and entity_cache:
+    # speaker_cache 만 있고 entity 0건인 영상도 저장 — 안 그러면 영어 원문 화자 실명이
+    # 디스크에 안 남아 load_speaker_names 가 {} → 라벨 fallback (번역본 실명/원문 라벨 불일치).
+    if config.enable_phase2 and (entity_cache or speaker_cache):
         video_title_for_cache = (video_context or {}).get("title", "") if video_context else ""
         cache_key = (
             (video_context or {}).get("id")

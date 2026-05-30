@@ -75,6 +75,7 @@ def build_original_script_section(
     *,
     language: Optional[str] = None,
     speaker_names: Optional[dict] = None,
+    stt_corrections: Optional[dict] = None,
 ) -> str:
     """원문 스크립트 섹션 — 헤더가 detected language 따라 동적.
 
@@ -87,16 +88,28 @@ def build_original_script_section(
     화자 매핑을 원문에도 적용해 비대칭을 없앤다. 매핑 없는 라벨은 기존
     ``**[MM:SS] Speaker {라벨}:**`` 로 fallback (화자분리 미식별·cache miss·라벨이
     글자 아님 등에서 보존 — 비거나 깨지지 않는다).
+
+    stt_corrections: `{원래 english: 교정 english}` (``llm.load_stt_corrections``).
+    검색 그라운딩이 STT 오인식(Kevin Wurst → Kevin Warsh)을 교정했으면, 영어 원문
+    **표시 텍스트**에서만 원래 철자를 교정 철자로 치환(``seg.text`` 원본 불변). 교정명이
+    화자 실명이기도 하면 prefix(화자명)도 함께 치환. 검색 off·교정 부재면 표시 무변.
     """
     flag = _language_flag(language)
     label = _language_label(language)
     names = speaker_names or {}
+    corrections = stt_corrections or {}
     lines = [f"# {flag} 원문 스크립트 ({label})", ""]
     for seg in transcript.segments:
         ts = _format_ts(seg.start)
         english = names.get(seg.speaker)
         prefix = english if english else f"Speaker {seg.speaker}"
-        lines.append(f"**[{ts}] {prefix}:** {seg.text}")
+        text = seg.text
+        # 교정명이 화자 실명이기도 하면 prefix 도 같은 교정 적용 (본문만 고치고 화자명이
+        # stale 하게 남는 불일치 방지). speaker_names 원본은 불변 — 표시 문자열만 치환.
+        for _orig, _corr in corrections.items():
+            prefix = prefix.replace(_orig, _corr)
+            text = text.replace(_orig, _corr)
+        lines.append(f"**[{ts}] {prefix}:** {text}")
         lines.append("")
     return "\n".join(lines)
 
@@ -139,6 +152,9 @@ def build_gurunote_markdown(
     detected_language: Optional[str] = None,
     # 영어 원문 섹션 화자 라벨 → English 실명 매핑 (llm.load_speaker_names). None 시 라벨 유지.
     speaker_names: Optional[dict] = None,
+    # 검색 그라운딩 교정 쌍 {원래 english: 교정 english} (llm.load_stt_corrections).
+    # 영어 원문 표시 치환 + frontmatter 기록. None 시 교정 없음.
+    stt_corrections: Optional[dict] = None,
 ) -> str:
     """
     최종 다운로드용 마크다운 조립.
@@ -167,6 +183,7 @@ def build_gurunote_markdown(
         duration_sec=transcript.duration,
         num_speakers=len(transcript.speakers),
         detected_language=detected_language,
+        stt_corrections=stt_corrections,
     )
 
     meta_lines = [f"# 🎙️ GuruNote — {display_title}", ""]
@@ -212,7 +229,8 @@ def build_gurunote_markdown(
     if not is_korean:
         parts.extend([
             build_original_script_section(
-                transcript, language=detected_language, speaker_names=speaker_names
+                transcript, language=detected_language, speaker_names=speaker_names,
+                stt_corrections=stt_corrections,
             ),
             "",
         ])
@@ -237,11 +255,15 @@ def _build_frontmatter(
     duration_sec: float,
     num_speakers: int,
     detected_language: Optional[str] = None,
+    stt_corrections: Optional[dict] = None,
 ) -> str:
     """
     Obsidian / Notion / Hugo / Jekyll 호환 YAML frontmatter.
 
     필요한 값이 하나도 없으면 빈 문자열 반환.
+
+    stt_corrections: `{원래 english: 교정 english}` — 검색 그라운딩이 교정한 인명·회사명을
+    ``stt_corrections: ["Wurst→Warsh", ...]`` 로 기록 (추적성). 비면 필드 생략.
     """
     if not (organized_title or field or tags):
         return ""
@@ -280,6 +302,14 @@ def _build_frontmatter(
     lines.append(f'created: {datetime.now().isoformat(timespec="seconds")}')
     # 추적성 — 이 노트를 생성한 GuruNote 빌드 버전 (동적, Obsidian 메타/검색·필터용).
     lines.append(f'gurunote_version: "{_GURUNOTE_VERSION}"')
+    # 검색 그라운딩 교정 기록 — 인명·회사명 STT 오인식을 무엇으로 교정했는지 (추적성).
+    if stt_corrections:
+        items = [
+            f'"{_yaml_escape(orig)}→{_yaml_escape(corr)}"'
+            for orig, corr in stt_corrections.items()
+        ]
+        if items:
+            lines.append(f"stt_corrections: [{', '.join(items)}]")
     lines.append("---")
     return "\n".join(lines)
 

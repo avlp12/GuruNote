@@ -1507,15 +1507,21 @@ def _save_entity_cache(
     """
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-    entities_list = [
-        {
+    def _entity_item(english: str, meta: dict) -> dict:
+        item = {
             "english": english,
             "korean": meta.get("korean", ""),
             "type": meta.get("type", "unknown"),
             "source": meta.get("source", "unknown"),
         }
-        for english, meta in entities.items()
-    ]
+        # 검색 그라운딩 교정 entity 만 원래 철자를 기록 (load_stt_corrections 가 역추적).
+        # 비교정 entity 는 필드 자체를 생략 — additive·optional (옛 cache·기존 동작 호환).
+        orig = (meta.get("original_english") or "").strip()
+        if orig:
+            item["original_english"] = orig
+        return item
+
+    entities_list = [_entity_item(english, meta) for english, meta in entities.items()]
 
     speakers_list = [
         {
@@ -1597,6 +1603,9 @@ def _load_entity_cache_full(
             "type": item.get("type", "unknown"),
             "source": item.get("source", "unknown"),
         }
+        orig = (item.get("original_english") or "").strip()
+        if orig:
+            entities[english]["original_english"] = orig
 
     speakers: dict = {}
     for item in data.get("speakers", []):
@@ -1648,6 +1657,97 @@ def load_speaker_names(video_context: Optional[dict]) -> dict:
             if label and english:
                 names[label] = english
         return names
+    except Exception:  # noqa: BLE001 — 표시용 부가 정보라 실패는 빈 dict 로 degrade
+        return {}
+
+
+def _verify_entities_with_search(entity_cache: dict, search_fn: Callable, log=None) -> dict:
+    """검색 그라운딩 — person/company entity 의 영문 철자를 주입받은 search_fn 으로 검증·교정.
+
+    인명·회사명 STT 오인식(예: Kevin Wurst → Kevin Warsh)을 외부 근거로 통일. search_fn 은
+    의존성 주입 (`search_fn(name, hint) -> 교정 english | None`). 테스트는 가짜 함수를 주입.
+
+    동작:
+        - 대상: `type ∈ {person, company}` 이고 아직 검색 안 한 (source != "search") entity.
+        - 교정 시 entity_cache 의 key 를 정답으로 교체 — 원래 key 는 `original_english` 로
+          보존(frontmatter/원문 전파용), `source="search"` 마킹(재검색 방지).
+        - 같은 이름 불일치 통일: 한 영상에 Wurst·Warsh 둘 다 있으면 정답(Warsh)으로 병합.
+        - search_fn 실패(예외)는 마킹 안 함(다음 기회 재시도). 성공·교정불필요(None/동일)는
+          source 만 마킹.
+
+    Returns:
+        `{원래 english: 교정 english}` — 본문 병기 치환 + 소스 풀 주입에 쓴다. 교정 없으면 {}.
+    """
+    corrections: dict = {}
+    if not entity_cache:
+        return corrections
+    targets = [
+        eng for eng, meta in list(entity_cache.items())
+        if eng != "__speakers__" and isinstance(meta, dict)
+        and meta.get("type") in ("person", "company")
+        and meta.get("source") != "search"
+    ]
+    for eng in targets:
+        meta = entity_cache.get(eng)
+        if not isinstance(meta, dict) or meta.get("source") == "search":
+            continue  # 같은 run 에서 통일로 이미 처리된 경우 skip
+        searched_ok = True
+        try:
+            corrected = search_fn(eng, meta.get("type"))
+        except Exception:  # noqa: BLE001 — 검색 실패는 graceful skip (교정 없이 진행)
+            corrected = None
+            searched_ok = False  # 실패는 마킹 안 함 — 다음 기회 재시도 (transient 보호)
+        if not corrected or not isinstance(corrected, str) or corrected.strip() == eng:
+            if searched_ok:
+                meta["source"] = "search"  # 검색했으나 교정 불필요 — 마킹 (재검색 방지)
+            continue
+        corrected = corrected.strip()
+        existing = entity_cache.get(corrected)
+        new_meta = dict(existing) if isinstance(existing, dict) else dict(meta)
+        new_meta["source"] = "search"
+        new_meta["original_english"] = eng
+        new_meta.setdefault("type", meta.get("type", "unknown"))
+        if not new_meta.get("korean"):
+            new_meta["korean"] = meta.get("korean", "")
+        entity_cache[corrected] = new_meta
+        if eng != corrected:
+            entity_cache.pop(eng, None)
+        corrections[eng] = corrected
+    if log and corrections:
+        log("   🔎 검색 그라운딩 교정 "
+            f"{len(corrections)}건: " + ", ".join(f"{o}→{c}" for o, c in corrections.items()))
+    return corrections
+
+
+def load_stt_corrections(video_context: Optional[dict]) -> dict:
+    """검색 그라운딩 교정 쌍을 디스크 cache 에서 읽어 `{원래 english: 교정 english}` 반환.
+
+    exporter 가 영어 원문 섹션 표시 치환(Wurst→Warsh) + frontmatter 기록에 쓰는 공개 헬퍼.
+    `_verify_entities_with_search` 가 entity meta 에 남긴 `original_english` 를 역으로 모은다.
+    cache 부재·schema 불일치·교정 부재·손상은 모두 **빈 dict** (호출자는 교정 없이 진행).
+    load_speaker_names 와 같은 cache_key 우선순위(단일 출처).
+    """
+    if not video_context:
+        return {}
+    try:
+        cache_key = (
+            video_context.get("id")
+            or video_context.get("video_id")
+            or _compute_cache_key_from_title(video_context.get("title", ""))
+        )
+        if not cache_key:
+            return {}
+        full = _load_entity_cache_full(cache_key)
+        if not full:
+            return {}
+        out: dict = {}
+        for english, meta in (full.get("entities") or {}).items():
+            if not isinstance(meta, dict):
+                continue
+            orig = (meta.get("original_english") or "").strip()
+            if orig and english and orig != english:
+                out[orig] = english
+        return out
     except Exception:  # noqa: BLE001 — 표시용 부가 정보라 실패는 빈 dict 로 degrade
         return {}
 
@@ -1984,6 +2084,7 @@ def translate_transcript(
     progress: Optional[ProgressFn] = None,
     video_context: Optional[dict] = None,
     stop_event=None,  # threading.Event — chunk 사이 polling
+    search_fn: Optional[Callable] = None,  # 검색 그라운딩 의존성 주입 (인명·회사명 교정)
 ) -> str:
     """
     Transcript → 한국어로 번역된 스크립트 (문자열).
@@ -2105,6 +2206,22 @@ def translate_transcript(
 
     log("✅ 번역 완료")
 
+    # 검색 그라운딩 (GURUNOTE_SEARCH_GROUNDING, 기본 off) — 인명·회사명 STT 오인식을
+    # 주입받은 search_fn 으로 교정. entity_cache 의 english key 를 정답으로 교체(원래 키는
+    # original_english 로 보존) + source="search" 마킹(재검색 방지). 디스크 저장(아래) 전에
+    # 실행해 교정된 cache 가 영속. 반환 {원래 english: 교정 english} 는 본문/원문/frontmatter
+    # 전파에 쓴다. 토글 off·search_fn 부재·예외는 교정 없이 graceful skip.
+    stt_corrections: dict = {}
+    if (config.enable_phase2 and search_fn is not None
+            and os.environ.get("GURUNOTE_SEARCH_GROUNDING", "0") == "1"):
+        # 캐시-히트 재처리 — 이미 교정된 entity(source="search")는 _verify 가 건너뛰므로,
+        # original_english 로 교정 쌍을 먼저 복원해야 본문 병기·소스 주입이 일관 유지된다.
+        for _eng, _meta in entity_cache.items():
+            if isinstance(_meta, dict) and _meta.get("original_english"):
+                stt_corrections[_meta["original_english"]] = _eng
+        # 신규(아직 검색 안 한) entity 교정을 누적.
+        stt_corrections.update(_verify_entities_with_search(entity_cache, search_fn, log))
+
     # A-2 ① — 자동 채움: 작업 중 본 고유명사의 raw 표기를 통용 dict 의 auto 로 누적 저장.
     #   user 는 불변. ②편집 UI 가 auto 를 보여주고 사용자가 user 로 수정 → 다음 작업부터 적용.
     if config.enable_phase2 and auto_acc:
@@ -2149,12 +2266,21 @@ def translate_transcript(
     # entity_cache 의 canonical 표기 + 외래어 표기법 short version 으로 chunk drift 통일.
     if config.enable_phase2:
         result = _canonicalize_entity_names(result, entity_cache, config, log)
+    # 검색 그라운딩 — 한국어 본문 병기의 교정 영문 전파 (Wurst)→(Warsh).
+    #   result 텍스트 치환 (병기는 괄호 안 영문). 영어 원문 섹션·frontmatter 는 exporter 가
+    #   디스크 cache(original_english)에서 따로 전파 (load_stt_corrections).
+    for _orig, _corr in stt_corrections.items():
+        result = result.replace(f"({_orig})", f"({_corr})")
     # B (5/26) — 영문 병기 철자를 소스(transcript 전문 + 제목)로 결정론적 검증.
     #   LLM 이 영문 원어를 자유 생성하다 오염(Anduril→Danduril)시키는 것 차단.
     _src_title = (video_context or {}).get("title", "") if video_context else ""
     source_corpus = " ".join(s.text for s in transcript.segments)
     if _src_title:
         source_corpus = f"{source_corpus} {_src_title}"
+    # 검색 그라운딩 — 교정 영문을 소스 풀에 주입해 _correct_english_annotations 가 교정
+    #   병기((Warsh))를 소스 부재로 DROP 하지 않게 (소스는 raw STT=Wurst 라 누락 위험).
+    if stt_corrections:
+        source_corpus = f"{source_corpus} " + " ".join(stt_corrections.values())
     result = _correct_english_annotations(result, source_corpus, log)
     # 영상 단위 영문 병기 첫 등장만 남기고 반복 병기 dedup (Layer 13 정합).
     return _strip_repeated_annotations(result)

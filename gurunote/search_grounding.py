@@ -134,6 +134,13 @@ def _pick_correction(
         # "Kevin Wurst" 의 성씨 "Wurst" 나 "Kevin" 단독은 철자를 안 바꾸므로 제외).
         if all(t.lower() in misheard_set for t in cand.split()):
             continue
+        # 동명이인 가드 — 철자 교정이면 성씨(마지막 토큰)가 바뀌어야 한다. 후보 성씨가
+        # 오인식 성씨와 완전 동일하면(예: misheard "Besson" vs 후보 "Luc Besson") 철자 교정이
+        # 아니라 같은 성씨의 다른 인물 → 점수(성씨 1.0)와 무관하게 기각. echo 가드와 분리:
+        # 저쪽은 "모든 토큰이 입력에 있음", 이쪽은 "마지막 토큰만 동일".
+        # PROVISIONAL — 성은 맞고 이름만 틀린 동명이인(예: 다른 "Kevin Wurst")은 못 거른다(허용).
+        if cand.split()[-1].lower() == m_token_list[-1].lower():
+            continue
         score = _name_similarity(cand, misheard)
         if score < threshold:
             continue

@@ -86,3 +86,43 @@ def test_build_search_fn_returns_callable_without_network():
     """build_search_fn 은 네트워크 호출 없이 callable 을 돌려준다 (주입용)."""
     fn = build_search_fn(base_url="http://localhost:8080")
     assert callable(fn)
+
+
+# =============================================================================
+# 동명이인 가드 — 후보 성씨가 오인식 성씨와 동일하면 기각 (철자 교정이면 성씨가 바뀐다)
+# =============================================================================
+def test_homonym_guard_rejects_same_surname_only():
+    """결과에 동명이인(Luc Besson)만 있으면 None — 성씨 Besson 동일이라 교정 아님."""
+    results = [
+        {"title": "Luc Besson new film premiere"},
+        {"title": "Luc Besson interview at Cannes"},
+        {"title": "Director Luc Besson profile"},
+    ]
+    assert _pick_correction("Besson", results) is None
+
+
+def test_homonym_guard_prefers_changed_surname_over_higher_score():
+    """핵심: Bessent·Luc Besson 둘 다일 때, Luc Besson 의 difflib 점수(성씨 1.0)가 더
+    높아도 성씨 동일이라 기각되고, 성씨가 바뀐 Bessent 가 채택된다."""
+    results = [
+        {"title": "Scott Bessent Treasury Secretary testifies"},
+        {"title": "Scott Bessent on the economy outlook"},
+        {"title": "Luc Besson new film premiere"},
+        {"title": "Luc Besson interview at Cannes"},
+    ]
+    out = _pick_correction("Besson", results)
+    assert out is not None
+    assert "Bessent" in out
+    assert "Besson" not in out  # Luc Besson 안 뽑힘
+
+
+def test_homonym_guard_does_not_affect_besson_fixture():
+    """회귀: 기존 besson fixture(Luc Besson 없음) → 여전히 Bessent (가드 무영향)."""
+    out = _pick_correction("Besson", _load("searxng_besson.json"))
+    assert out is not None and "Bessent" in out and "Besson" not in out
+
+
+def test_homonym_guard_does_not_affect_wurst_fixture():
+    """회귀: 기존 wurst fixture → 여전히 Warsh (성씨 Warsh≠Wurst 라 가드 무관, None 아님)."""
+    out = _pick_correction("Kevin Wurst", _load("searxng_wurst.json"))
+    assert out is not None and "Warsh" in out and "Wurst" not in out
